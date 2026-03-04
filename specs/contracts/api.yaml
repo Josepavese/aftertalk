@@ -1,0 +1,667 @@
+openapi: 3.0.3
+info:
+  title: Aftertalk Core API
+  description: REST API for Aftertalk Core Engine - Session management, transcription retrieval, and minutes operations
+  version: 1.0.0
+  contact:
+    name: Aftertalk Team
+    
+servers:
+  - url: https://api.aftertalk.io/v1
+    description: Production server
+  - url: https://api-staging.aftertalk.io/v1
+    description: Staging server
+  - url: http://localhost:3000/v1
+    description: Development server
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
+
+paths:
+  /sessions:
+    post:
+      summary: Create a new session
+      description: Initialize a new conversational session with participants
+      operationId: createSession
+      tags:
+        - Sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '201':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sessions/{sessionId}:
+    get:
+      summary: Get session details
+      description: Retrieve session information and status
+      operationId: getSession
+      tags:
+        - Sessions
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    patch:
+      summary: Update session status
+      description: End session or update status
+      operationId: updateSession
+      tags:
+        - Sessions
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSessionRequest'
+      responses:
+        '200':
+          description: Session updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          description: Invalid state transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sessions/{sessionId}/participants:
+    get:
+      summary: List session participants
+      description: Get all participants in a session
+      operationId: listParticipants
+      tags:
+        - Participants
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of participants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Participant'
+
+  /sessions/{sessionId}/transcriptions:
+    get:
+      summary: Get session transcriptions
+      description: Retrieve all transcription segments for a session
+      operationId: getTranscriptions
+      tags:
+        - Transcriptions
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, processing, ready, error]
+        - name: startMs
+          in: query
+          required: false
+          description: Filter segments starting after this timestamp (milliseconds)
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Transcription segments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptionList'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sessions/{sessionId}/minutes:
+    get:
+      summary: Get session minutes
+      description: Retrieve minutes for a session
+      operationId: getMinutes
+      tags:
+        - Minutes
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: version
+          in: query
+          required: false
+          description: Specific version to retrieve (defaults to latest)
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Session minutes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Minutes'
+        '404':
+          description: Minutes not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      summary: Update session minutes
+      description: Edit minutes (creates new version)
+      operationId: updateMinutes
+      tags:
+        - Minutes
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMinutesRequest'
+      responses:
+        '200':
+          description: Minutes updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Minutes'
+        '400':
+          description: Invalid minutes content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sessions/{sessionId}/minutes/versions:
+    get:
+      summary: Get minutes version history
+      description: Retrieve all versions of minutes for audit trail
+      operationId: getMinutesVersions
+      tags:
+        - Minutes
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Minutes version history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MinutesVersion'
+
+  /health:
+    get:
+      summary: Health check
+      description: Check service health status
+      operationId: healthCheck
+      tags:
+        - Health
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /ready:
+    get:
+      summary: Readiness check
+      description: Check if service is ready to accept requests
+      operationId: readinessCheck
+      tags:
+        - Health
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+        '503':
+          description: Service not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service authentication
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for user authentication
+
+  schemas:
+    CreateSessionRequest:
+      type: object
+      required:
+        - participants
+      properties:
+        participants:
+          type: array
+          minItems: 2
+          items:
+            type: object
+            required:
+              - userId
+              - role
+            properties:
+              userId:
+                type: string
+                maxLength: 255
+              role:
+                type: string
+                maxLength: 50
+                pattern: '^[a-z0-9_]+$'
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Session:
+      type: object
+      required:
+        - id
+        - status
+        - createdAt
+        - participantCount
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, ended, processing, completed, error]
+        createdAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        participantCount:
+          type: integer
+          minimum: 2
+        metadata:
+          type: object
+          additionalProperties: true
+
+    UpdateSessionRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [ended, error]
+        endedAt:
+          type: string
+          format: date-time
+
+    Participant:
+      type: object
+      required:
+        - id
+        - sessionId
+        - userId
+        - role
+        - tokenJti
+        - tokenExpiresAt
+        - tokenUsed
+      properties:
+        id:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        role:
+          type: string
+        tokenJti:
+          type: string
+          format: uuid
+        tokenExpiresAt:
+          type: string
+          format: date-time
+        tokenUsed:
+          type: boolean
+        connectedAt:
+          type: string
+          format: date-time
+        disconnectedAt:
+          type: string
+          format: date-time
+
+    TranscriptionList:
+      type: object
+      required:
+        - segments
+        - total
+      properties:
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TranscriptionSegment'
+        total:
+          type: integer
+
+    TranscriptionSegment:
+      type: object
+      required:
+        - id
+        - sessionId
+        - segmentIndex
+        - role
+        - startMs
+        - endMs
+        - text
+        - provider
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        segmentIndex:
+          type: integer
+        role:
+          type: string
+        startMs:
+          type: integer
+          description: Milliseconds since session start
+        endMs:
+          type: integer
+          description: Milliseconds since session start
+        text:
+          type: string
+        confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+        provider:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, processing, ready, error]
+
+    Minutes:
+      type: object
+      required:
+        - id
+        - sessionId
+        - version
+        - themes
+        - contentsReported
+        - professionalInterventions
+        - progressIssues
+        - nextSteps
+        - citations
+        - status
+        - provider
+      properties:
+        id:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        themes:
+          type: array
+          items:
+            type: string
+        contentsReported:
+          type: array
+          items:
+            type: object
+            required:
+              - text
+              - timestampMs
+            properties:
+              text:
+                type: string
+              timestampMs:
+                type: integer
+        professionalInterventions:
+          type: array
+          items:
+            type: object
+            required:
+              - text
+              - timestampMs
+            properties:
+              text:
+                type: string
+              timestampMs:
+                type: integer
+        progressIssues:
+          type: object
+          required:
+            - progress
+            - issues
+          properties:
+            progress:
+              type: array
+              items:
+                type: string
+            issues:
+              type: array
+              items:
+                type: string
+        nextSteps:
+          type: array
+          items:
+            type: string
+        citations:
+          type: array
+          items:
+            type: object
+            required:
+              - timestampMs
+              - text
+              - role
+            properties:
+              timestampMs:
+                type: integer
+              text:
+                type: string
+              role:
+                type: string
+        generatedAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pending, ready, delivered, error]
+        provider:
+          type: string
+
+    UpdateMinutesRequest:
+      type: object
+      required:
+        - themes
+        - contentsReported
+        - professionalInterventions
+        - progressIssues
+        - nextSteps
+        - citations
+      properties:
+        themes:
+          type: array
+          items:
+            type: string
+        contentsReported:
+          type: array
+          items:
+            type: object
+        professionalInterventions:
+          type: array
+          items:
+            type: object
+        progressIssues:
+          type: object
+        nextSteps:
+          type: array
+          items:
+            type: string
+        citations:
+          type: array
+          items:
+            type: object
+
+    MinutesVersion:
+      type: object
+      required:
+        - version
+        - editedAt
+      properties:
+        version:
+          type: integer
+        editedAt:
+          type: string
+          format: date-time
+        editedBy:
+          type: string
+
+    HealthStatus:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+                enum: [pass, fail]
+              message:
+                type: string
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true

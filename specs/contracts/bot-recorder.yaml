@@ -1,0 +1,369 @@
+asyncapi: 2.6.0
+info:
+  title: Aftertalk Bot Recorder API
+  description: WebSocket API for real-time audio streaming from WebRTC clients to Bot Recorder
+  version: 1.0.0
+  contact:
+    name: Aftertalk Team
+
+servers:
+  production:
+    url: wss://bot.aftertalk.io/ws
+    description: Production WebSocket server
+  staging:
+    url: wss://bot-staging.aftertalk.io/ws
+    description: Staging WebSocket server
+  development:
+    url: ws://localhost:3001/ws
+    description: Development WebSocket server
+
+defaultContentType: application/json
+
+channels:
+  /ws:
+    description: Main WebSocket endpoint for audio streaming
+    subscribe:
+      summary: Receive messages from Bot Recorder
+      message:
+        oneOf:
+          - $ref: '#/components/messages/ConnectionAcknowledged'
+          - $ref: '#/components/messages/AudioChunkReceived'
+          - $ref: '#/components/messages/SessionEnded'
+          - $ref: '#/components/messages/Error'
+    publish:
+      summary: Send messages to Bot Recorder
+      message:
+        oneOf:
+          - $ref: '#/components/messages/Authenticate'
+          - $ref: '#/components/messages/AudioChunk'
+          - $ref: '#/components/messages/EndSession'
+
+components:
+  messages:
+    Authenticate:
+      name: authenticate
+      title: Authentication request
+      summary: Authenticate WebSocket connection with JWT token
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AuthenticatePayload'
+      examples:
+        - name: Valid authentication
+          payload:
+            type: authenticate
+            token: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJjYWxsSWQiOiIxMjM0NTY3OC0xMjM0LTEyMzQtMTIzNC0xMjM0NTY3ODkwMTIiLCJ1c2VySWQiOiJ1c2VyLTEyMyIsInJvbGUiOiJwcm9mZXNzaW9uaXN0YSIsImV4cCI6MTcwOTU2MDAwMCwianRpIjoiMTIzNDU2NzgtMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEzIn0.signature
+
+    ConnectionAcknowledged:
+      name: connection_acknowledged
+      title: Connection acknowledged
+      summary: Server confirms successful authentication
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ConnectionAcknowledgedPayload'
+      examples:
+        - name: Successful connection
+          payload:
+            type: connection_acknowledged
+            sessionId: 12345678-1234-1234-1234-123456789012
+            role: professionista
+            timestamp: 1709560000000
+
+    AudioChunk:
+      name: audio_chunk
+      title: Audio chunk
+      summary: Binary audio data chunk from client
+      contentType: application/octet-stream
+      payload:
+        $ref: '#/components/schemas/AudioChunkPayload'
+      examples:
+        - name: Audio chunk with metadata
+          payload:
+            type: audio_chunk
+            sequenceNumber: 42
+            timestamp: 1709560042000
+            duration: 15000
+            data: <binary data>
+
+    AudioChunkReceived:
+      name: audio_chunk_received
+      title: Audio chunk received
+      summary: Server confirms receipt of audio chunk
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AudioChunkReceivedPayload'
+      examples:
+        - name: Chunk acknowledgment
+          payload:
+            type: audio_chunk_received
+            sequenceNumber: 42
+            timestamp: 1709560042000
+
+    EndSession:
+      name: end_session
+      title: End session
+      summary: Client signals end of audio streaming
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EndSessionPayload'
+      examples:
+        - name: Normal session end
+          payload:
+            type: end_session
+            reason: normal
+            timestamp: 1709560300000
+
+    SessionEnded:
+      name: session_ended
+      title: Session ended
+      summary: Server confirms session termination
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SessionEndedPayload'
+      examples:
+        - name: Session summary
+          payload:
+            type: session_ended
+            sessionId: 12345678-1234-1234-1234-123456789012
+            duration: 300000
+            totalChunks: 20
+            timestamp: 1709560300000
+
+    Error:
+      name: error
+      title: Error message
+      summary: Server reports an error
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ErrorPayload'
+      examples:
+        - name: Authentication failed
+          payload:
+            type: error
+            code: AUTH_FAILED
+            message: Invalid or expired token
+            timestamp: 1709560000000
+        - name: Token already used
+          payload:
+            type: error
+            code: TOKEN_USED
+            message: Token has already been used
+            timestamp: 1709560000000
+
+  schemas:
+    AuthenticatePayload:
+      type: object
+      required:
+        - type
+        - token
+      properties:
+        type:
+          type: string
+          const: authenticate
+        token:
+          type: string
+          description: JWT token containing sessionId, userId, role, exp, and jti
+
+    ConnectionAcknowledgedPayload:
+      type: object
+      required:
+        - type
+        - sessionId
+        - role
+        - timestamp
+      properties:
+        type:
+          type: string
+          const: connection_acknowledged
+        sessionId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          description: Role extracted from JWT token
+        timestamp:
+          type: integer
+          description: Server timestamp in milliseconds
+
+    AudioChunkPayload:
+      type: object
+      required:
+        - type
+        - sequenceNumber
+        - timestamp
+        - duration
+        - data
+      properties:
+        type:
+          type: string
+          const: audio_chunk
+        sequenceNumber:
+          type: integer
+          description: Sequential chunk number (starts at 0)
+        timestamp:
+          type: integer
+          description: Client-side timestamp in milliseconds
+        duration:
+          type: integer
+          description: Duration of audio chunk in milliseconds (10000-30000)
+        data:
+          type: string
+          format: byte
+          description: Base64-encoded Opus audio data
+
+    AudioChunkReceivedPayload:
+      type: object
+      required:
+        - type
+        - sequenceNumber
+        - timestamp
+      properties:
+        type:
+          type: string
+          const: audio_chunk_received
+        sequenceNumber:
+          type: integer
+          description: Confirms which chunk was received
+        timestamp:
+          type: integer
+          description: Server timestamp in milliseconds
+
+    EndSessionPayload:
+      type: object
+      required:
+        - type
+        - reason
+        - timestamp
+      properties:
+        type:
+          type: string
+          const: end_session
+        reason:
+          type: string
+          enum: [normal, disconnect, error]
+        timestamp:
+          type: integer
+          description: Client-side timestamp in milliseconds
+
+    SessionEndedPayload:
+      type: object
+      required:
+        - type
+        - sessionId
+        - duration
+        - totalChunks
+        - timestamp
+      properties:
+        type:
+          type: string
+          const: session_ended
+        sessionId:
+          type: string
+          format: uuid
+        duration:
+          type: integer
+          description: Total session duration in milliseconds
+        totalChunks:
+          type: integer
+          description: Total number of audio chunks received
+        timestamp:
+          type: integer
+          description: Server timestamp in milliseconds
+
+    ErrorPayload:
+      type: object
+      required:
+        - type
+        - code
+        - message
+        - timestamp
+      properties:
+        type:
+          type: string
+          const: error
+        code:
+          type: string
+          enum:
+            - AUTH_FAILED
+            - TOKEN_USED
+            - TOKEN_EXPIRED
+            - INVALID_SESSION
+            - ROLE_MISMATCH
+            - STREAM_ERROR
+            - INTERNAL_ERROR
+        message:
+          type: string
+          description: Human-readable error message
+        timestamp:
+          type: integer
+          description: Server timestamp in milliseconds
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional error details
+
+x-websocket-extensions:
+  - name: Authentication
+    description: |
+      All WebSocket connections must authenticate within 5 seconds of connection.
+      Authentication is performed by sending an `authenticate` message with a valid JWT token.
+      
+      The JWT token must contain:
+      - `callId`: Session identifier
+      - `userId`: User identifier
+      - `role`: User's role in the session
+      - `exp`: Expiration timestamp
+      - `jti`: Unique token identifier (for single-use validation)
+      
+      The server validates:
+      1. Token signature (RS256)
+      2. Token expiration
+      3. Token not previously used (checks jti in Redis)
+      4. Session exists and is active
+      5. Role matches session participants
+
+  - name: Audio Streaming
+    description: |
+      Audio is streamed in chunks of 10-30 seconds.
+      
+      Client workflow:
+      1. Authenticate with JWT
+      2. Wait for `connection_acknowledged`
+      3. Send `audio_chunk` messages sequentially
+      4. Wait for `audio_chunk_received` acknowledgment
+      5. Send `end_session` when done
+      6. Wait for `session_ended` confirmation
+      
+      Server workflow:
+      1. Validate authentication
+      2. Register client in session state
+      3. Receive audio chunks
+      4. Convert Opus to PCM mono 16kHz
+      5. Assign server-side timestamps (monotonic clock)
+      6. Store chunks temporarily in Redis
+      7. Push to transcription queue on session end
+
+  - name: Error Handling
+    description: |
+      Errors are sent as `error` messages with error codes.
+      
+      Connection is closed after sending an error in these cases:
+      - AUTH_FAILED: Invalid or malformed token
+      - TOKEN_USED: Token has already been used
+      - TOKEN_EXPIRED: Token has expired
+      - INVALID_SESSION: Session doesn't exist or is not active
+      - ROLE_MISMATCH: Role doesn't match session participants
+      
+      Connection remains open for:
+      - STREAM_ERROR: Transient streaming error (client should retry)
+      - INTERNAL_ERROR: Server-side error (client should reconnect)
+
+  - name: Reconnection
+    description: |
+      If connection is lost, client can reconnect with a new JWT token.
+      
+      Reconnection rules:
+      1. Previous token is marked as used (cannot reconnect with same token)
+      2. Backend must issue new JWT for reconnection
+      3. New token must have same sessionId and role
+      4. Audio chunks already received are preserved
+      5. Transcription continues from last received chunk
