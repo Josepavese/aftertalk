@@ -1,0 +1,84 @@
+package jwt
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+)
+
+type Claims struct {
+	SessionID string `json:"session_id"`
+	UserID    string `json:"user_id"`
+	Role      string `json:"role"`
+	jwt.RegisteredClaims
+}
+
+type JWTManager struct {
+	secret     []byte
+	issuer     string
+	expiration time.Duration
+}
+
+func NewJWTManager(secret, issuer string, expiration time.Duration) *JWTManager {
+	return &JWTManager{
+		secret:     []byte(secret),
+		issuer:     issuer,
+		expiration: expiration,
+	}
+}
+
+func (j *JWTManager) Generate(sessionID, userID, role string) (string, string, error) {
+	jti := uuid.New().String()
+
+	now := time.Now()
+	claims := &Claims{
+		SessionID: sessionID,
+		UserID:    userID,
+		Role:      role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
+			Issuer:    j.issuer,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(j.expiration)),
+			NotBefore: jwt.NewNumericDate(now),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(j.secret)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to sign token: %w", err)
+	}
+
+	return tokenString, jti, nil
+}
+
+func (j *JWTManager) Validate(tokenString string) (*Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return j.secret, nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid token claims")
+	}
+
+	return claims, nil
+}
+
+func (j *JWTManager) GetJTI(tokenString string) (string, error) {
+	claims, err := j.Validate(tokenString)
+	if err != nil {
+		return "", err
+	}
+	return claims.ID, nil
+}

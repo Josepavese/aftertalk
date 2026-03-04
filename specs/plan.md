@@ -18,12 +18,11 @@ Aftertalk Core è un modulo AI agnostico per generare automaticamente minute di 
 - HTTP: `chi` or `gin` (REST API routing)
 - STT: Pluggable adapters via HTTP client (Google Cloud Speech-to-Text, AWS Transcribe, Azure Speech)
 - LLM: Pluggable adapters via HTTP client (OpenAI GPT-4, Anthropic Claude, Azure OpenAI)
-- Database: `lib/pq` or `pgx` v5 (PostgreSQL driver)
-- Cache: `go-redis/redis` v9 or in-process cache
+- Database: `modernc.org/sqlite` (pure Go SQLite driver, no CGO)
 - Config: `knadh/koanf` (configuration management)
 - Logging: `uber-go/zap` or `rs/zerolog` (structured logging)
 
-**Storage**: PostgreSQL 15+ (trascrizioni append-only), Redis 7+ (session state - optional), in-process cache (hot data)
+**Storage**: SQLite (embedded database, all data in single file) + In-memory cache (session state, tokens, processing queues)
 
 **Testing**: Go testing package, `testify`, `mockery` (mock generation), `k6` (load testing)
 
@@ -126,8 +125,8 @@ aftertalk/
 │   │       └── repository.go    # Minutes data access
 │   │
 │   ├── storage/
-│   │   ├── postgres/            # PostgreSQL access
-│   │   │   ├── db.go            # Connection pool
+│   │   ├── sqlite/             # SQLite access
+│   │   │   ├── db.go            # Database connection
 │   │   │   ├── migrations/      # SQL migrations
 │   │   │   │   ├── 001_init.up.sql
 │   │   │   │   └── 001_init.down.sql
@@ -135,9 +134,10 @@ aftertalk/
 │   │   │       ├── session.sql
 │   │   │       ├── transcription.sql
 │   │   │       └── minutes.sql
-│   │   └── redis/               # Redis access (optional)
-│   │       ├── client.go        # Redis client
-│   │       └── keys.go          # Key patterns
+│   │   └── cache/               # In-memory cache
+│   │       ├── session.go       # Session state cache
+│   │       ├── token.go         # Token tracking
+│   │       └── queue.go         # Processing queue
 │   │
 │   └── config/
 │       ├── config.go            # Configuration struct

@@ -34,7 +34,7 @@
 - Index: `status`, `created_at` (for querying active/completed sessions)
 - Index: `created_at` (for time-based queries and cleanup)
 
-**Storage**: PostgreSQL table `sessions`
+**Storage**: SQLite table `sessions`
 
 ### 2. Participant (Partecipante)
 
@@ -68,7 +68,7 @@
 - Unique: `token_jti`
 - Index: `token_expires_at` (for cleanup expired tokens)
 
-**Storage**: PostgreSQL table `participants`
+**Storage**: SQLite table `participants`
 
 ### 3. AudioStream (Stream Audio)
 
@@ -100,7 +100,7 @@
 - Foreign key: `participant_id` references `participants(id)` ON DELETE CASCADE
 - Index: `status`, `started_at`
 
-**Storage**: PostgreSQL table `audio_streams`
+**Storage**: SQLite table `audio_streams`
 
 **Note**: Actual audio data is processed in-memory and never persisted to disk/database.
 
@@ -138,7 +138,7 @@
 - Index: `session_id`, `start_ms` (for ordering by time)
 - Index: `status` (for querying pending/ready transcriptions)
 
-**Storage**: PostgreSQL table `transcriptions`
+**Storage**: SQLite table `transcriptions`
 
 **Retention Policy**: Configurable retention period (default: 90 days), automatic cleanup via scheduled job.
 
@@ -177,7 +177,7 @@
 - Unique: `session_id`
 - Index: `status`, `generated_at`
 
-**Storage**: PostgreSQL table `minutes`
+**Storage**: SQLite table `minutes`
 
 ### 6. MinutesHistory (Cronologia Minuta)
 
@@ -202,7 +202,7 @@
 - Foreign key: `minutes_id` references `minutes(id)` ON DELETE CASCADE
 - Index: `minutes_id`, `version` (for retrieving version history)
 
-**Storage**: PostgreSQL table `minutes_history`
+**Storage**: SQLite table `minutes_history`
 
 **Retention Policy**: Same as transcriptions (configurable, default 90 days).
 
@@ -236,15 +236,17 @@
 - Unique: `payload_hash`
 - Index: `status`, `created_at` (for querying pending events)
 
-**Storage**: PostgreSQL table `webhook_events`
+**Storage**: SQLite table `webhook_events`
 
-## Redis Data Structures
+## In-Memory Cache Structures
 
-### 1. Session State
+SQLite è il database primario per tutti i dati persistenti. Per performance, usiamo cache in-memory Go per:
 
-**Key Pattern**: `session:{session_id}:state`
+### 1. Session State Cache
 
-**Type**: Hash
+**Structure**: In-memory map with TTL
+
+**Purpose**: Fast access to active session state
 
 **Fields**:
 - `status`: Current session status
@@ -252,85 +254,73 @@
 - `participant_count`: Number of participants
 - `active_participants`: Number of currently connected participants
 
-**TTL**: Session duration + 1 hour (auto-cleanup)
+**TTL**: Session duration + 1 hour (auto-cleanup via Go time.Timer)
 
-### 2. Token Tracking
+### 2. Token Tracking Cache
 
-**Key Pattern**: `token:{jti}`
-
-**Type**: String (value: session_id)
+**Structure**: In-memory map with TTL
 
 **Purpose**: Track used JWT tokens for single-use validation
+
+**Key**: `jti` (JWT ID)
+
+**Value**: `session_id`
 
 **TTL**: Same as JWT expiration time
 
 ### 3. Audio Stream Buffer
 
-**Key Pattern**: `stream:{stream_id}:chunks`
-
-**Type**: List
+**Structure**: In-memory buffer (chan []byte)
 
 **Purpose**: Temporary storage for audio chunks before processing
 
-**TTL**: Session duration + 30 minutes (auto-cleanup after transcription)
+**Cleanup**: After transcription completes
 
-### 4. Transcription Cache
+### 4. Processing Queue
 
-**Key Pattern**: `transcription:{audio_hash}`
-
-**Type**: String (JSON)
-
-**Purpose**: Cache transcription results for retry scenarios
-
-**TTL**: 7 days
-
-### 5. Processing Queue
-
-**Key Pattern**: `queue:transcription`, `queue:minutes`
-
-**Type**: Stream (Redis Streams)
+**Structure**: Go channel with worker pool
 
 **Purpose**: Job queues for async processing
 
-**Consumer Groups**: Multiple consumers for parallel processing
+**Workers**: Configurable number of goroutines for parallel processing
 
 ## Data Flow
 
 ```
 1. Session Creation
    Backend → Core API: Create session with participants
-   Core API → PostgreSQL: Insert session + participants
-   Core API → Redis: Initialize session state
+   Core API → SQLite: Insert session + participants
+   Core API → In-memory cache: Initialize session state
 
 2. Audio Capture
    Client → Bot Recorder: WebRTC connection with JWT
-   Bot Recorder → Redis: Validate token (check jti)
-   Bot Recorder → Redis: Store audio chunks temporarily
-   Bot Recorder → PostgreSQL: Create audio_stream record
+   Bot Recorder → In-memory cache: Validate token (check jti)
+   Bot Recorder → In-memory buffer: Store audio chunks temporarily
+   Bot Recorder → SQLite: Create audio_stream record
 
 3. Transcription
-   Bot Recorder → Redis: Push to transcription queue
-   AI Pipeline ← Redis: Pull from queue
+   Bot Recorder → Processing queue: Push transcription job
+   AI Pipeline ← Processing queue: Pull job
    AI Pipeline → STT Provider: Send audio
    STT Provider → AI Pipeline: Return transcription
-   AI Pipeline → PostgreSQL: Insert transcription segments
-   AI Pipeline → Redis: Update session state
+   AI Pipeline → SQLite: Insert transcription segments
+   AI Pipeline → In-memory cache: Update session state
 
 4. Minutes Generation
-   AI Pipeline → Redis: Push to minutes queue
-   AI Pipeline ← Redis: Pull from queue
+   AI Pipeline → Processing queue: Push minutes job
+   AI Pipeline ← Processing queue: Pull job
    AI Pipeline → LLM Provider: Send transcription + prompt
    LLM Provider → AI Pipeline: Return structured minutes
-   AI Pipeline → PostgreSQL: Insert minutes
+   AI Pipeline → SQLite: Insert minutes
    AI Pipeline → Backend: Webhook notification
 
 5. Minutes Retrieval/Editing
    Professional → Backend: Request minutes
    Backend → Core API: Get minutes
-   Core API → PostgreSQL: Retrieve minutes
+   Core API → SQLite: Retrieve minutes
    Professional → Backend: Edit minutes
    Backend → Core API: Update minutes (increment version)
-   Core API → PostgreSQL: Update minutes, insert history
+   Core API → SQLite: Update minutes, insert history
 ```
 
 ## Migration Strategy
@@ -338,17 +328,14 @@
 ### Initial Schema
 
 ```sql
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 -- Sessions table
 CREATE TABLE sessions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    status VARCHAR(20) NOT NULL CHECK (status IN ('active', 'ended', 'processing', 'completed', 'error')),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    ended_at TIMESTAMP WITH TIME ZONE,
+    id TEXT PRIMARY KEY,  -- UUID as string
+    status TEXT NOT NULL CHECK (status IN ('active', 'ended', 'processing', 'completed', 'error')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),  -- ISO 8601 timestamp
+    ended_at TEXT,
     participant_count INTEGER NOT NULL CHECK (participant_count >= 2),
-    metadata JSONB
+    metadata TEXT  -- JSON as text
 );
 
 CREATE INDEX idx_sessions_status_created ON sessions(status, created_at);
@@ -356,15 +343,15 @@ CREATE INDEX idx_sessions_created ON sessions(created_at);
 
 -- Participants table
 CREATE TABLE participants (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    user_id VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL,
-    token_jti UUID NOT NULL UNIQUE,
-    token_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    token_used BOOLEAN NOT NULL DEFAULT FALSE,
-    connected_at TIMESTAMP WITH TIME ZONE,
-    disconnected_at TIMESTAMP WITH TIME ZONE,
+    id TEXT PRIMARY KEY,  -- UUID as string
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    token_jti TEXT NOT NULL UNIQUE,
+    token_expires_at TEXT NOT NULL,
+    token_used INTEGER NOT NULL DEFAULT 0,  -- SQLite uses INTEGER for boolean
+    connected_at TEXT,
+    disconnected_at TEXT,
     UNIQUE(session_id, role)
 );
 
@@ -373,33 +360,33 @@ CREATE INDEX idx_participants_token_expires ON participants(token_expires_at);
 
 -- Audio streams table
 CREATE TABLE audio_streams (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    participant_id UUID NOT NULL UNIQUE REFERENCES participants(id) ON DELETE CASCADE,
-    codec VARCHAR(20) NOT NULL DEFAULT 'opus',
+    id TEXT PRIMARY KEY,  -- UUID as string
+    participant_id TEXT NOT NULL UNIQUE REFERENCES participants(id) ON DELETE CASCADE,
+    codec TEXT NOT NULL DEFAULT 'opus',
     sample_rate INTEGER NOT NULL DEFAULT 48000,
     channels INTEGER NOT NULL DEFAULT 1,
     chunk_size_seconds REAL NOT NULL CHECK (chunk_size_seconds BETWEEN 10.0 AND 30.0),
-    started_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    ended_at TIMESTAMP WITH TIME ZONE,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
     chunks_received INTEGER NOT NULL DEFAULT 0,
-    status VARCHAR(20) NOT NULL CHECK (status IN ('receiving', 'ended', 'error'))
+    status TEXT NOT NULL CHECK (status IN ('receiving', 'ended', 'error'))
 );
 
 CREATE INDEX idx_audio_streams_status ON audio_streams(status, started_at);
 
 -- Transcriptions table
 CREATE TABLE transcriptions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY,  -- UUID as string
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     segment_index INTEGER NOT NULL,
-    role VARCHAR(50) NOT NULL,
+    role TEXT NOT NULL,
     start_ms INTEGER NOT NULL CHECK (start_ms >= 0),
     end_ms INTEGER NOT NULL CHECK (end_ms > start_ms),
     text TEXT NOT NULL,
     confidence REAL CHECK (confidence BETWEEN 0.0 AND 1.0),
-    provider VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'processing', 'ready', 'error')),
+    provider TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'ready', 'error')),
     UNIQUE(session_id, segment_index)
 );
 
@@ -408,70 +395,87 @@ CREATE INDEX idx_transcriptions_status ON transcriptions(status);
 
 -- Minutes table
 CREATE TABLE minutes (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id UUID NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY,  -- UUID as string
+    session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
     version INTEGER NOT NULL DEFAULT 1,
-    themes JSONB NOT NULL,
-    contents_reported JSONB NOT NULL,
-    professional_interventions JSONB NOT NULL,
-    progress_issues JSONB NOT NULL,
-    next_steps JSONB NOT NULL,
-    citations JSONB NOT NULL,
-    generated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    delivered_at TIMESTAMP WITH TIME ZONE,
-    status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'ready', 'delivered', 'error')),
-    provider VARCHAR(50) NOT NULL
+    themes TEXT NOT NULL,  -- JSON array as text
+    contents_reported TEXT NOT NULL,  -- JSON array as text
+    professional_interventions TEXT NOT NULL,  -- JSON array as text
+    progress_issues TEXT NOT NULL,  -- JSON object as text
+    next_steps TEXT NOT NULL,  -- JSON array as text
+    citations TEXT NOT NULL,  -- JSON array as text
+    generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    delivered_at TEXT,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'delivered', 'error')),
+    provider TEXT NOT NULL
 );
 
 CREATE INDEX idx_minutes_status ON minutes(status, generated_at);
 
 -- Minutes history table
 CREATE TABLE minutes_history (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    minutes_id UUID NOT NULL REFERENCES minutes(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY,  -- UUID as string
+    minutes_id TEXT NOT NULL REFERENCES minutes(id) ON DELETE CASCADE,
     version INTEGER NOT NULL,
-    content JSONB NOT NULL,
-    edited_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    edited_by VARCHAR(255)
+    content TEXT NOT NULL,  -- JSON as text
+    edited_at TEXT NOT NULL DEFAULT (datetime('now')),
+    edited_by TEXT
 );
 
 CREATE INDEX idx_minutes_history ON minutes_history(minutes_id, version);
 
 -- Webhook events table
 CREATE TABLE webhook_events (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    minutes_id UUID NOT NULL REFERENCES minutes(id) ON DELETE CASCADE,
-    webhook_url VARCHAR(500) NOT NULL,
-    payload_hash VARCHAR(64) NOT NULL UNIQUE,
+    id TEXT PRIMARY KEY,  -- UUID as string
+    minutes_id TEXT NOT NULL REFERENCES minutes(id) ON DELETE CASCADE,
+    webhook_url TEXT NOT NULL,
+    payload_hash TEXT NOT NULL UNIQUE,
     attempt_number INTEGER NOT NULL DEFAULT 1,
-    status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'delivered', 'failed')),
-    delivered_at TIMESTAMP WITH TIME ZONE,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'delivered', 'failed')),
+    delivered_at TEXT,
     error_message TEXT,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX idx_webhook_status ON webhook_events(status, created_at);
+
+-- Processing queue table (replaces Redis queues)
+CREATE TABLE processing_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_type TEXT NOT NULL CHECK (job_type IN ('transcription', 'minutes')),
+    session_id TEXT NOT NULL,
+    payload TEXT NOT NULL,  -- JSON as text
+    status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    started_at TEXT,
+    completed_at TEXT,
+    error_message TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_processing_queue_status ON processing_queue(status, created_at);
 ```
 
-### Append-Only Enforcement
+### SQLite Configuration
 
 ```sql
--- Create read-only user for transcriptions
-CREATE ROLE aftertalk_readonly;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO aftertalk_readonly;
+-- Enable foreign key constraints (must be done on each connection)
+PRAGMA foreign_keys = ON;
 
--- Create read-write user for most operations
-CREATE ROLE aftertalk_readwrite;
-GRANT SELECT, INSERT, UPDATE ON sessions, participants, audio_streams, minutes, minutes_history, webhook_events TO aftertalk_readwrite;
-GRANT SELECT, INSERT ON transcriptions TO aftertalk_readwrite;
--- No UPDATE or DELETE on transcriptions!
+-- Enable WAL mode for better concurrent read/write performance
+PRAGMA journal_mode = WAL;
+
+-- Set busy timeout for concurrent access
+PRAGMA busy_timeout = 5000;  -- 5 seconds
 ```
 
 ## Backup and Retention
 
 ### Backup Strategy
-- Daily full backups (retained 30 days)
-- Point-in-time recovery enabled (WAL archiving)
+- SQLite database is a single file: `aftertalk.db`
+- Backup: Copy the file while database is not in active write transaction
+- For online backup: Use SQLite's Online Backup API (go-sqlite3 supports this)
+- Retention: Daily backups retained 30 days
 - Cross-region backup replication (production only)
 
 ### Retention Policies
@@ -485,3 +489,11 @@ GRANT SELECT, INSERT ON transcriptions TO aftertalk_readwrite;
 - Scheduled daily job to delete expired data
 - Soft delete with audit trail
 - GDPR compliance: Right to erasure via session ID deletion
+
+### Advantages of SQLite
+- **Zero dependencies**: No separate database server to install/maintain
+- **Simple backup**: Just copy the `.db` file
+- **Easy deployment**: Single binary + single database file
+- **Development**: No Docker/services needed for local dev
+- **Performance**: In-process communication, zero network latency
+- **Cost**: No database server costs

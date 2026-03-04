@@ -1,0 +1,151 @@
+package transcription
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	"github.com/flowup/aftertalk/internal/core"
+)
+
+type TranscriptionRepository struct {
+	*core.BaseRepository
+}
+
+func NewTranscriptionRepository(db *sql.DB) *TranscriptionRepository {
+	return &TranscriptionRepository{
+		BaseRepository: core.NewBaseRepository(db),
+	}
+}
+
+func (r *TranscriptionRepository) Create(ctx context.Context, transcription *Transcription) error {
+	query := `
+		INSERT INTO transcriptions (id, session_id, segment_index, role, start_ms, end_ms, text, confidence, provider, created_at, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+
+	_, err := r.ExecContext(ctx, query,
+		transcription.ID,
+		transcription.SessionID,
+		transcription.SegmentIndex,
+		transcription.Role,
+		transcription.StartMs,
+		transcription.EndMs,
+		transcription.Text,
+		transcription.Confidence,
+		transcription.Provider,
+		transcription.CreatedAt.Format(time.RFC3339),
+		string(transcription.Status),
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to create transcription: %w", err)
+	}
+
+	return nil
+}
+
+func (r *TranscriptionRepository) GetByID(ctx context.Context, id string) (*Transcription, error) {
+	query := `
+		SELECT id, session_id, segment_index, role, start_ms, end_ms, text, confidence, provider, created_at, status
+		FROM transcriptions
+		WHERE id = ?
+	`
+
+	var t Transcription
+	var createdAt string
+	var confidence sql.NullFloat64
+
+	err := r.QueryRowContext(ctx, query, id).Scan(
+		&t.ID,
+		&t.SessionID,
+		&t.SegmentIndex,
+		&t.Role,
+		&t.StartMs,
+		&t.EndMs,
+		&t.Text,
+		&confidence,
+		&t.Provider,
+		&createdAt,
+		&t.Status,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("transcription not found: %s", id)
+		}
+		return nil, fmt.Errorf("failed to get transcription: %w", err)
+	}
+
+	t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	if confidence.Valid {
+		t.Confidence = confidence.Float64
+	}
+
+	return &t, nil
+}
+
+func (r *TranscriptionRepository) GetBySession(ctx context.Context, sessionID string) ([]*Transcription, error) {
+	query := `
+		SELECT id, session_id, segment_index, role, start_ms, end_ms, text, confidence, provider, created_at, status
+		FROM transcriptions
+		WHERE session_id = ?
+		ORDER BY start_ms ASC
+	`
+
+	rows, err := r.QueryContext(ctx, query, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transcriptions: %w", err)
+	}
+	defer rows.Close()
+
+	var transcriptions []*Transcription
+	for rows.Next() {
+		var t Transcription
+		var createdAt string
+		var confidence sql.NullFloat64
+
+		err := rows.Scan(
+			&t.ID,
+			&t.SessionID,
+			&t.SegmentIndex,
+			&t.Role,
+			&t.StartMs,
+			&t.EndMs,
+			&t.Text,
+			&confidence,
+			&t.Provider,
+			&createdAt,
+			&t.Status,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan transcription: %w", err)
+		}
+
+		t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		if confidence.Valid {
+			t.Confidence = confidence.Float64
+		}
+
+		transcriptions = append(transcriptions, &t)
+	}
+
+	return transcriptions, nil
+}
+
+func (r *TranscriptionRepository) GetBySessionOrdered(ctx context.Context, sessionID string) ([]*Transcription, error) {
+	return r.GetBySession(ctx, sessionID)
+}
+
+func (r *TranscriptionRepository) UpdateStatus(ctx context.Context, id string, status TranscriptionStatus) error {
+	query := `UPDATE transcriptions SET status = ? WHERE id = ?`
+
+	_, err := r.ExecContext(ctx, query, string(status), id)
+	if err != nil {
+		return fmt.Errorf("failed to update transcription status: %w", err)
+	}
+
+	return nil
+}

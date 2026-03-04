@@ -45,8 +45,8 @@
 
 - [ ] T009 Create configuration structs in internal/config/config.go
 - [ ] T010 Implement configuration loader in internal/config/loader.go (env + YAML + defaults)
-- [ ] T011 Create database connection pool in internal/storage/postgres/db.go (pgx)
-- [ ] T012 Create Redis client in internal/storage/redis/client.go (go-redis)
+- [ ] T011 Create SQLite database connection in internal/storage/sqlite/db.go (modernc.org/sqlite)
+- [ ] T012 Create in-memory cache in internal/storage/cache/cache.go (session state, tokens, queues)
 - [ ] T013 Create database migrations in migrations/001_init.up.sql (sessions, participants, transcriptions, minutes tables)
 - [ ] T014 Create database migrations in migrations/001_init.down.sql (rollback)
 - [ ] T015 [P] Implement structured logging in internal/logging/logger.go (zap)

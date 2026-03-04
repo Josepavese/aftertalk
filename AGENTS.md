@@ -4,7 +4,7 @@
 
 **Project**: Aftertalk Core - Go Monolith  
 **Architecture**: Modular monolith with internal packages  
-**Tech Stack**: Go 1.22+, Pion WebRTC, Chi HTTP router, pgx PostgreSQL, Zap logging
+**Tech Stack**: Go 1.25+, Pion WebRTC v4.2.9, Chi HTTP router v5, SQLite (modernc.org/sqlite v1.46.1), Zap logging v1.27.1
 
 ## Implementation Status
 
@@ -31,7 +31,7 @@ aftertalk/
 │   ├── bot/                      # WebRTC Bot Recorder
 │   ├── ai/                       # AI Pipeline (STT + LLM)
 │   ├── core/                     # Business Logic
-│   ├── storage/                  # Database + Redis
+│   ├── storage/                  # SQLite + In-memory Cache
 │   └── config/                   # Configuration
 └── pkg/                        # Public packages
 ```
@@ -39,6 +39,12 @@ aftertalk/
 ## Database Schema
 
 See `specs/data-model.md` for complete schema.
+
+**Database**: SQLite (embedded, single file)
+- All data stored in `aftertalk.db`
+- Zero external dependencies
+- WAL mode for concurrent read/write
+- In-memory cache for session state, tokens, and processing queues
 
 Key entities:
 - Session
@@ -52,6 +58,31 @@ Key entities:
 - REST API: `specs/contracts/api.yaml`
 - WebSocket: `specs/contracts/websocket.yaml`
 - Internal Interfaces: `specs/contracts/internal-interfaces.md`
+
+## Dependencies Policy
+
+**CRITICAL**: Always use the **latest stable versions** of all dependencies.
+
+- ✅ **No legacy versions**: Always update to latest releases
+- ✅ **Security first**: Immediate updates for security patches
+- ✅ **No CGO**: Prefer pure Go implementations (SQLite, WebRTC)
+- ✅ **Minimal dependencies**: Only essential packages
+- ✅ **Active maintenance**: All dependencies must be actively maintained
+
+### Key Dependencies (Latest Versions)
+
+- **pion/webrtc v4.2.9** - WebRTC in pure Go (latest stable)
+- **modernc.org/sqlite v1.46.1** - Pure Go SQLite driver
+- **go-chi/chi v5** - Lightweight HTTP router
+- **uber-go/zap v1.27.1** - Structured logging
+- **golang-jwt/jwt v5.3.1** - JWT implementation
+- **knadh/koanf v2.3.2** - Configuration management
+
+**Update Command**: `go get -u all && go mod tidy`
+
+See `docs/DEPENDENCIES.md` for complete dependency list.
+
+---
 
 ## Development Guidelines
 

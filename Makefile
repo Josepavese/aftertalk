@@ -31,12 +31,14 @@ clean:
 	rm -rf bin/
 	rm -f coverage.out coverage.html
 
-# Database migrations
+# Database migrations (SQLite auto-creates on first run)
 migrate-up:
-	@echo "Run migrations manually: psql \$DATABASE_URL < migrations/001_init.up.sql"
+	@echo "SQLite database auto-creates on first run. No manual migration needed."
+	@echo "Migrations are embedded in the application."
 
 migrate-down:
-	@echo "Rollback migrations manually: psql \$DATABASE_URL < migrations/001_init.down.sql"
+	@echo "To reset database, delete aftertalk.db file"
+	@echo "  rm aftertalk.db"
 
 # Code quality
 lint:
