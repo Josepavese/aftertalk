@@ -15,9 +15,9 @@ Aftertalk è un modulo Go che intercetta audio da sessioni WebRTC, trascrive aut
 ### Prerequisites
 
 - Go 1.22+
-- PostgreSQL 15+
-- Redis 7+ (optional)
-- Docker & Docker Compose
+- Docker & Docker Compose (optional)
+
+**Note**: SQLite is embedded - no external database server needed!
 
 ### Setup
 
@@ -30,15 +30,11 @@ cd aftertalk
 cp .env.example .env
 # Edit .env with your configuration
 
-# Start infrastructure
-docker-compose up -d postgres redis
-
-# Run migrations
-psql $DATABASE_URL < migrations/001_init.up.sql
-
 # Run application
 make run
 ```
+
+**That's it!** No database setup needed - SQLite creates `aftertalk.db` automatically.
 
 ### Development
 
@@ -69,7 +65,7 @@ aftertalk/
 │   ├── bot/             # WebRTC Bot Recorder
 │   ├── ai/              # AI Pipeline (STT + LLM)
 │   ├── core/            # Business Logic
-│   ├── storage/         # Database + Redis
+│   ├── storage/         # SQLite + In-memory Cache
 │   └── config/          # Configuration
 └── pkg/                 # Public packages
 ```
