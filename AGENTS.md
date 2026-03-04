@@ -38,7 +38,7 @@ aftertalk/
 
 ## Database Schema
 
-See `specs/001-aftertalk-core/data-model.md` for complete schema.
+See `specs/data-model.md` for complete schema.
 
 Key entities:
 - Session
@@ -49,9 +49,9 @@ Key entities:
 
 ## API Contracts
 
-- REST API: `specs/001-aftertalk-core/contracts/api.yaml`
-- WebSocket: `specs/001-aftertalk-core/contracts/websocket.yaml`
-- Internal Interfaces: `specs/001-aftertalk-core/contracts/internal-interfaces.md`
+- REST API: `specs/contracts/api.yaml`
+- WebSocket: `specs/contracts/websocket.yaml`
+- Internal Interfaces: `specs/contracts/internal-interfaces.md`
 
 ## Development Guidelines
 

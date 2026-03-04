@@ -1,6 +1,6 @@
 # Tasks: Aftertalk Core
 
-**Input**: Design documents from `/specs/001-aftertalk-core/`
+**Input**: Design documents from `/specs/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), data-model.md, contracts/
 
 **Tests**: Not explicitly requested in feature specification, so test tasks are omitted.

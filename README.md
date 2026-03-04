@@ -84,11 +84,11 @@ aftertalk/
 
 ## Documentation
 
-- [Architecture Plan](specs/001-aftertalk-core/plan.md)
-- [Technical Research](specs/001-aftertalk-core/research.md)
-- [Data Model](specs/001-aftertalk-core/data-model.md)
-- [Quickstart Guide](specs/001-aftertalk-core/quickstart.md)
-- [API Contracts](specs/001-aftertalk-core/contracts/)
+- [Architecture Plan](specs/plan.md)
+- [Technical Research](specs/research.md)
+- [Data Model](specs/data-model.md)
+- [Quickstart Guide](specs/quickstart.md)
+- [API Contracts](specs/contracts/)
 
 ## License
 

@@ -1,7 +1,7 @@
 # Implementation Plan: Aftertalk Core
 
 **Branch**: `001-aftertalk-core` | **Date**: 2026-03-04 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/001-aftertalk-core/spec.md`
+**Input**: Feature specification from `/specs/spec.md`
 
 ## Summary
 
@@ -56,7 +56,7 @@ Aftertalk Core è un modulo AI agnostico per generare automaticamente minute di 
 ### Documentation (this feature)
 
 ```text
-specs/001-aftertalk-core/
+specs/
 ├── plan.md              # This file
 ├── research.md          # Phase 0 output (Go technology decisions)
 ├── data-model.md        # Phase 1 output (database schema)
