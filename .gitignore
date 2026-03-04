@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+.opencode/node_modules/
+.specify/node_modules/
+
+# OS/IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Binaries
+*.exe
+*.bin
+/bin/
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
