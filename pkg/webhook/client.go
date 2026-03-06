@@ -6,10 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
-
-	"github.com/flowup/aftertalk/internal/logging"
 )
 
 type Client struct {
@@ -34,11 +33,11 @@ type MinutesPayload struct {
 
 func (c *Client) Send(ctx context.Context, payload *MinutesPayload) error {
 	if c.url == "" {
-		logging.Warn("Webhook URL not configured, skipping notification")
+		log.Println("[WARN] Webhook URL not configured, skipping notification")
 		return nil
 	}
 
-	logging.Infof("Sending webhook to %s for session %s", c.url, payload.SessionID)
+	log.Printf("[INFO] Sending webhook to %s for session %s", c.url, payload.SessionID)
 
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
@@ -64,6 +63,6 @@ func (c *Client) Send(ctx context.Context, payload *MinutesPayload) error {
 		return fmt.Errorf("webhook returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	logging.Infof("Webhook sent successfully for session %s", payload.SessionID)
+	log.Printf("[INFO] Webhook sent successfully for session %s", payload.SessionID)
 	return nil
 }

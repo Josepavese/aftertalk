@@ -45,5 +45,15 @@ IMPORTANT:
 - Include timestamp in milliseconds for each citation
 - Quote exact words from the transcript for citations
 
-Respond ONLY with valid JSON.`, roles[0]+" and "+roles[1], transcriptionText)
+Respond ONLY with valid JSON.`, formatRoles(roles), transcriptionText)
+}
+
+func formatRoles(roles []string) string {
+	if len(roles) == 0 {
+		return "Unknown roles"
+	}
+	if len(roles) == 1 {
+		return roles[0]
+	}
+	return roles[0] + " and " + roles[1]
 }

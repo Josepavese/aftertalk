@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/flowup/aftertalk/internal/metrics"
@@ -21,7 +23,7 @@ func MetricsMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(ww, r)
 
 		duration := time.Since(start).Seconds()
-		status := string(rune(ww.Status()))
+		status := strconv.Itoa(ww.Status())
 
 		metrics.RequestDuration.WithLabelValues(
 			r.Method,
@@ -37,12 +39,14 @@ func RateLimit(requestsPerMinute int) func(http.Handler) http.Handler {
 		lastCheck time.Time
 	}
 
+	var mu sync.Mutex
 	clients := make(map[string]*client)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := r.RemoteAddr
 
+			mu.Lock()
 			c, exists := clients[ip]
 			if !exists {
 				clients[ip] = &client{
@@ -56,11 +60,13 @@ func RateLimit(requestsPerMinute int) func(http.Handler) http.Handler {
 				} else {
 					c.count++
 					if c.count > requestsPerMinute {
+						mu.Unlock()
 						http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 						return
 					}
 				}
 			}
+			mu.Unlock()
 
 			next.ServeHTTP(w, r)
 		})

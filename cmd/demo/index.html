@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aftertalk WebRTC Test</title>
+    <style>
+        body { font-family: Arial; padding: 20px; max-width: 800px; margin: 0 auto; }
+        #status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .connected { background: #d4edda; }
+        .disconnected { background: #f8d7da; }
+        #log { height: 200px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        audio { width: 100%; margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>Aftertalk WebRTC Test</h1>
+    
+    <div id="status" class="disconnected">Status: Disconnected</div>
+    
+    <div>
+        <input type="text" id="sessionId" placeholder="Session ID" value="test-session">
+        <input type="text" id="name" placeholder="Your name" value="User">
+        <select id="role">
+            <option value="host">Host</option>
+            <option value="speaker">Speaker</option>
+            <option value="listener">Listener</option>
+        </select>
+    </div>
+    
+    <div style="margin: 15px 0;">
+        <button id="btnConnect">Connect</button>
+        <button id="btnDisconnect" disabled>Disconnect</button>
+        <button id="btnStartAudio" disabled>Start Audio</button>
+        <button id="btnStopAudio" disabled>Stop Audio</button>
+    </div>
+    
+    <h3>Local Audio</h3>
+    <audio id="localAudio" controls autoplay muted></audio>
+    
+    <h3>Remote Audio</h3>
+    <audio id="remoteAudio" controls autoplay></audio>
+    
+    <h3>Transcriptions</h3>
+    <div id="transcriptions"></div>
+    
+    <h3>Log</h3>
+    <div id="log"></div>
+
+    <script type="module">
+        // Simple WebRTC demo without SDK for now
+        const signalingUrl = 'ws://localhost:8080/ws/signaling';
+        let ws = null;
+        let pc = null;
+        let localStream = null;
+        
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        const transEl = document.getElementById('transcriptions');
+        
+        function log(msg) {
+            logEl.innerHTML += `<div>${new Date().toLocaleTimeString()} - ${msg}</div>`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function setStatus(connected) {
+            statusEl.textContent = connected ? 'Status: Connected' : 'Status: Disconnected';
+            statusEl.className = connected ? 'connected' : 'disconnected';
+        }
+        
+        document.getElementById('btnConnect').onclick = async () => {
+            const sessionId = document.getElementById('sessionId').value;
+            const name = document.getElementById('name').value;
+            const role = document.getElementById('role').value;
+            
+            try {
+                // Get local audio
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                document.getElementById('localAudio').srcObject = localStream;
+                
+                // Connect to signaling
+                ws = new WebSocket(`${signalingUrl}?sessionId=${sessionId}&name=${name}&role=${role}`);
+                
+                ws.onopen = () => {
+                    log('Connected to signaling server');
+                    setStatus(true);
+                    document.getElementById('btnConnect').disabled = true;
+                    document.getElementById('btnDisconnect').disabled = false;
+                };
+                
+                ws.onmessage = async (event) => {
+                    const msg = JSON.parse(event.data);
+                    log(`Received: ${msg.type}`);
+                    
+                    if (msg.type === 'offer') {
+                        await handleOffer(msg.sdp);
+                    } else if (msg.type === 'answer') {
+                        await handleAnswer(msg.sdp);
+                    } else if (msg.type === 'ice-candidate') {
+                        await handleCandidate(msg.candidate);
+                    } else if (msg.type === 'transcription') {
+                        transEl.innerHTML += `<div><strong>${msg.speaker}:</strong> ${msg.text}</div>`;
+                    }
+                };
+                
+                ws.onclose = () => {
+                    log('Disconnected');
+                    setStatus(false);
+                };
+                
+                ws.onerror = (e) => log('Error: ' + e);
+                
+            } catch (err) {
+                log('Error: ' + err.message);
+            }
+        };
+        
+        document.getElementById('btnDisconnect').onclick = () => {
+            if (ws) ws.close();
+            if (pc) pc.close();
+            if (localStream) localStream.getTracks().forEach(t => t.stop());
+            setStatus(false);
+            document.getElementById('btnConnect').disabled = false;
+            document.getElementById('btnDisconnect').disabled = true;
+        };
+        
+        async function handleOffer(sdp) {
+            pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+            
+            pc.ontrack = (e) => {
+                document.getElementById('remoteAudio').srcObject = e.streams[0];
+            };
+            
+            pc.onicecandidate = (e) => {
+                if (e.candidate) {
+                    ws.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate }));
+                }
+            };
+            
+            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+            
+            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            
+            ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+        }
+        
+        async function handleAnswer(sdp) {
+            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        }
+        
+        async function handleCandidate(candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+    </script>
+</body>
+</html>

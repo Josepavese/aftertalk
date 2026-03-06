@@ -83,7 +83,7 @@ func (tc *TokenCache) UseToken(jti string, sessionID string) bool {
 	if _, exists := tc.GetToken(jti); exists {
 		return false
 	}
-	tc.SetToken(jti, sessionID, 0)
+	tc.SetToken(jti, sessionID, 24*time.Hour)
 	return true
 }
 

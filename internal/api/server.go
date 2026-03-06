@@ -39,6 +39,9 @@ func NewServer(cfg *config.Config, sessionService *session.Service, botServer *B
 		r.Mount("/sessions", sessionHandler.Routes())
 	})
 
+	// Demo test UI
+	r.Handle("/demo/*", http.StripPrefix("/demo/", http.FileServer(http.Dir("./cmd/test-ui"))))
+
 	r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("WebSocket endpoint - Bot integration pending"))

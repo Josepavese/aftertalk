@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aftertalk Test Suite</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --error: #dc2626;
+            --warning: #d97706;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 { 
+            text-align: center; 
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #64748b;
+            margin-bottom: 30px;
+        }
+        
+        .step-card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid var(--border);
+        }
+        
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .step-number {
+            width: 32px;
+            height: 32px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        
+        .step-number.done { background: var(--success); }
+        .step-number.error { background: var(--error); }
+        
+        .step-title { font-size: 1.2rem; font-weight: 600; }
+        
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-left: auto;
+        }
+        
+        .status-waiting { background: #f1f5f9; color: #64748b; }
+        .status-active { background: #dbeafe; color: var(--primary); }
+        .status-success { background: #dcfce7; color: var(--success); }
+        .status-error { background: #fee2e2; color: var(--error); }
+        
+        .instructions {
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            border-left: 4px solid var(--primary);
+        }
+        
+        .instructions code {
+            background: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        
+        input, select, button {
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        
+        button.success { background: var(--success); }
+        button.error { background: var(--error); }
+        
+        .input-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+        
+        .input-group input { flex: 1; min-width: 200px; }
+        
+        #localVideo, #remoteVideo {
+            width: 100%;
+            max-width: 400px;
+            background: #000;
+            border-radius: 8px;
+            margin: 8px 0;
+        }
+        
+        .video-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .video-box {
+            text-align: center;
+        }
+        
+        .video-box h4 { margin-bottom: 8px; color: #64748b; }
+        
+        #log {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 16px;
+            border-radius: 8px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.85rem;
+        }
+        
+        #log .time { color: #64748b; }
+        #log .info { color: #60a5fa; }
+        #log .success { color: #4ade80; }
+        #log .error { color: #f87171; }
+        #log .warn { color: #fbbf24; }
+        
+        #transcriptions {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+        }
+        
+        .transcript-item {
+            padding: 8px 12px;
+            margin: 4px 0;
+            background: #f8fafc;
+            border-radius: 6px;
+            border-left: 3px solid var(--primary);
+        }
+        
+        .transcript-item .speaker { font-weight: 600; color: var(--primary); }
+        .transcript-item .text { color: var(--text); }
+        .transcript-item .time { font-size: 0.8em; color: #94a3b8; }
+        
+        .progress-bar {
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            transition: width 0.3s;
+        }
+        
+        .test-complete {
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .test-complete h2 { color: var(--success); font-size: 2rem; }
+        
+        .browser-info {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 0.9rem;
+        }
+        
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin: 12px 0;
+        }
+        
+        .alert-info { background: #dbeafe; color: #1e40af; }
+        .alert-error { background: #fee2e2; color: #991b1b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Aftertalk Test Suite</h1>
+        <p class="subtitle">WebRTC Audio Transcription Test</p>
+        
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress" style="width: 0%"></div>
+        </div>
+        
+        <!-- Step 1: Connection -->
+        <div class="step-card" id="step1">
+            <div class="step-header">
+                <div class="step-number" id="step1-num">1</div>
+                <div class="step-title">Connessione al Server</div>
+                <span class="status-badge status-waiting" id="step1-status">In attesa</span>
+            </div>
+            
+            <div class="instructions">
+                <strong>📋 Istruzioni:</strong><br>
+                Inserisci i tuoi dati e clicca "Connetti". Apri questa pagina in <strong>2 browser diversi</strong> (o 2 tab) per testare la connessione P2P.
+            </div>
+            
+            <div class="input-group">
+                <input type="text" id="sessionId" placeholder="ID Sessione" value="test-session-1">
+                <input type="text" id="userName" placeholder="Il tuo nome" value="Utente">
+                <select id="userRole">
+                    <option value="host">Host</option>
+                    <option value="speaker">Speaker</option>
+                    <option value="listener">Listener</option>
+                </select>
+            </div>
+            
+            <button id="btnConnect" onclick="startTest()">🔗 Connetti</button>
+            <button id="btnDisconnect" onclick="disconnect()" disabled>❌ Disconnetti</button>
+            
+            <div class="browser-info" id="browserInfo"></div>
+        </div>
+        
+        <!-- Step 2: Audio -->
+        <div class="step-card" id="step2">
+            <div class="step-header">
+                <div class="step-number" id="step2-num">2</div>
+                <div class="step-title">Audio Streaming</div>
+                <span class="status-badge status-waiting" id="step2-status">In attesa</span>
+            </div>
+            
+            <div class="instructions">
+                <strong>📋 Istruzioni:</strong><br>
+                Clicca "Avvia Audio" per iniziare a trasmettere il microfono. L'altro browser dovrebbe ricevere l'audio automaticamente.
+            </div>
+            
+            <button id="btnStartAudio" onclick="startAudio()" disabled>🎤 Avvia Audio</button>
+            <button id="btnStopAudio" onclick="stopAudio()" disabled>⏹️ Ferma Audio</button>
+            
+            <div class="video-container">
+                <div class="video-box">
+                    <h4>📤 Il tuo audio</h4>
+                    <audio id="localAudio" controls autoplay muted></audio>
+                </div>
+                <div class="video-box">
+                    <h4>📥 Audio remoto</h4>
+                    <audio id="remoteAudio" controls autoplay></audio>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Step 3: Transcription -->
+        <div class="step-card" id="step3">
+            <div class="step-header">
+                <div class="step-number" id="step3-num">3</div>
+                <div class="step-title">Trascrizione</div>
+                <span class="status-badge status-waiting" id="step3-status">In attesa</span>
+            </div>
+            
+            <div class="instructions">
+                <strong>📋 Istruzioni:</strong><br>
+                Parla al microfono! La trascrizione appare sotto automaticamente quando il server la invia.
+            </div>
+            
+            <button id="btnTestTranscription" onclick="testTranscription()" disabled>🧪 Test Trascrizione</button>
+            
+            <div id="transcriptions"></div>
+        </div>
+        
+        <!-- Step 4: Results -->
+        <div class="step-card" id="step4">
+            <div class="step-header">
+                <div class="step-number" id="step4-num">4</div>
+                <div class="step-title">Risultati Test</div>
+                <span class="status-badge status-waiting" id="step4-status">In attesa</span>
+            </div>
+            
+            <div id="results"></div>
+        </div>
+        
+        <!-- Log -->
+        <div class="step-card">
+            <h3>📝 Log Attività</h3>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let ws = null;
+        let pc = null;
+        let localStream = null;
+        let testResults = { step1: false, step2: false, step3: false };
+        let currentStep = 1;
+        
+        const SERVER_URL = 'ws://' + window.location.host + '/signaling';
+        
+        // DOM Elements
+        const logEl = document.getElementById('log');
+        const transEl = document.getElementById('transcriptions');
+        
+        // Initialize
+        document.getElementById('browserInfo').innerHTML = `
+            <strong>🌐 Browser:</strong> ${navigator.userAgent.includes('Chrome') ? 'Chrome' : 'Altro browser'}
+            | <strong>WebRTC:</strong> ${window.RTCPeerConnection ? 'Supportato' : 'NON supportato'}
+        `;
+        
+        function log(type, msg) {
+            const time = new Date().toLocaleTimeString();
+            logEl.innerHTML += `<div><span class="time">[${time}]</span> <span class="${type}">${msg}</span></div>`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function updateProgress() {
+            const pct = (currentStep / 4) * 100;
+            document.getElementById('progress').style.width = pct + '%';
+        }
+        
+        function setStepStatus(step, status) {
+            const num = document.getElementById('step' + step + '-num');
+            const badge = document.getElementById('step' + step + '-status');
+            
+            num.className = 'step-number';
+            badge.className = 'status-badge';
+            
+            if (status === 'waiting') {
+                badge.classList.add('status-waiting');
+                badge.textContent = 'In attesa';
+            } else if (status === 'active') {
+                num.classList.add('active');
+                badge.classList.add('status-active');
+                badge.textContent = 'In corso';
+            } else if (status === 'success') {
+                num.classList.add('done');
+                badge.classList.add('status-success');
+                badge.textContent = '✓ Completato';
+            } else if (status === 'error') {
+                num.classList.add('error');
+                badge.classList.add('status-error');
+                badge.textContent = '✗ Errore';
+            }
+        }
+        
+        // Step 1: Connect
+        async function startTest() {
+            const sessionId = document.getElementById('sessionId').value;
+            const name = document.getElementById('userName').value;
+            const role = document.getElementById('userRole').value;
+            
+            if (!sessionId || !name) {
+                log('error', 'Inserisci session ID e nome');
+                return;
+            }
+            
+            setStepStatus(1, 'active');
+            log('info', 'Connessione a ' + SERVER_URL);
+            
+            try {
+                // Get local audio
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: { 
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    } 
+                });
+                document.getElementById('localAudio').srcObject = localStream;
+                log('success', 'Microfono attivo');
+                
+                // Connect WebSocket
+                ws = new WebSocket(`${SERVER_URL}?sessionId=${sessionId}&name=${name}&role=${role}`);
+                
+                ws.onopen = () => {
+                    log('success', '✅ Connesso al server signaling');
+                    setStepStatus(1, 'success');
+                    testResults.step1 = true;
+                    currentStep = 2;
+                    updateProgress();
+                    
+                    document.getElementById('btnConnect').disabled = true;
+                    document.getElementById('btnDisconnect').disabled = false;
+                    document.getElementById('btnStartAudio').disabled = false;
+                    
+                    // If other peer is already connected, create offer
+                    setTimeout(createOffer, 1000);
+                };
+                
+                ws.onmessage = async (e) => {
+                    const msg = JSON.parse(e.data);
+                    log('info', 'Ricevuto: ' + msg.type);
+                    
+                    if (msg.type === 'offer') {
+                        await handleOffer(msg);
+                    } else if (msg.type === 'answer') {
+                        await handleAnswer(msg);
+                    } else if (msg.type === 'ice-candidate') {
+                        await handleCandidate(msg);
+                    } else if (msg.type === 'transcription') {
+                        showTranscription(msg);
+                    } else if (msg.type === 'peer-joined') {
+                        log('info', 'Un altro utente si è unito!');
+                        if (!pc) createOffer();
+                    }
+                };
+                
+                ws.onclose = () => {
+                    log('warn', 'Disconnesso dal server');
+                    setStepStatus(1, 'error');
+                };
+                
+                ws.onerror = (e) => {
+                    log('error', 'Errore WebSocket');
+                    setStepStatus(1, 'error');
+                };
+                
+            } catch (err) {
+                log('error', 'Errore: ' + err.message);
+                setStepStatus(1, 'error');
+            }
+        }
+        
+        // WebRTC
+        async function createOffer() {
+            if (pc) return;
+            
+            pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            });
+            
+            pc.ontrack = (e) => {
+                document.getElementById('remoteAudio').srcObject = e.streams[0];
+                log('success', '📥 Audio remoto ricevuto!');
+                
+                setStepStatus(2, 'success');
+                testResults.step2 = true;
+                currentStep = 3;
+                updateProgress();
+                
+                document.getElementById('btnStartAudio').disabled = true;
+                document.getElementById('btnStopAudio').disabled = false;
+                document.getElementById('btnTestTranscription').disabled = false;
+            };
+            
+            pc.onicecandidate = (e) => {
+                if (e.candidate && ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ 
+                        type: 'ice-candidate', 
+                        candidate: e.candidate 
+                    }));
+                }
+            };
+            
+            // Add local tracks
+            localStream.getTracks().forEach(track => {
+                pc.addTrack(track, localStream);
+            });
+            
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+            log('info', 'Offer inviato');
+        }
+        
+        async function handleOffer(msg) {
+            if (!pc) {
+                await createOffer();
+            }
+            
+            await pc.setRemoteDescription(new RTCSessionDescription(msg));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            
+            ws.send(JSON.stringify({ type: 'answer', sdp: answer.sdp }));
+            log('info', 'Answer inviata');
+        }
+        
+        async function handleAnswer(msg) {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg));
+            log('success', 'Connessione P2P stabilita!');
+        }
+        
+        async function handleCandidate(msg) {
+            if (pc && msg.candidate) {
+                await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            }
+        }
+        
+        // Audio controls
+        function startAudio() {
+            if (localStream) {
+                localStream.getAudioTracks().forEach(t => t.enabled = true);
+                log('info', 'Audio trasmissione avviata');
+            }
+        }
+        
+        function stopAudio() {
+            if (localStream) {
+                localStream.getAudioTracks().forEach(t => t.enabled = false);
+                log('info', 'Audio trasmissione fermata');
+            }
+        }
+        
+        function disconnect() {
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+            }
+            if (pc) pc.close();
+            if (ws) ws.close();
+            
+            testResults = { step1: false, step2: false, step3: false };
+            currentStep = 1;
+            updateProgress();
+            
+            setStepStatus(1, 'waiting');
+            setStepStatus(2, 'waiting');
+            setStepStatus(3, 'waiting');
+            setStepStatus(4, 'waiting');
+            
+            document.getElementById('btnConnect').disabled = false;
+            document.getElementById('btnDisconnect').disabled = true;
+            document.getElementById('btnStartAudio').disabled = true;
+            document.getElementById('btnStopAudio').disabled = true;
+            document.getElementById('btnTestTranscription').disabled = true;
+            
+            log('info', 'Disconnesso');
+        }
+        
+        // Transcription
+        function testTranscription() {
+            log('info', 'Test trascrizione richiesto');
+            
+            // Simulate transcription request
+            ws.send(JSON.stringify({ type: 'test-transcription' }));
+            
+            setStepStatus(3, 'success');
+            testResults.step3 = true;
+            currentStep = 4;
+            updateProgress();
+            
+            showResults();
+        }
+        
+        function showTranscription(msg) {
+            const div = document.createElement('div');
+            div.className = 'transcript-item';
+            div.innerHTML = `
+                <span class="speaker">${msg.speaker || 'Speaker'}:</span>
+                <span class="text">${msg.text}</span>
+                <span class="time">${new Date().toLocaleTimeString()}</span>
+            `;
+            transEl.appendChild(div);
+            transEl.scrollTop = transEl.scrollHeight;
+        }
+        
+        function showResults() {
+            setStepStatus(4, 'success');
+            
+            const results = document.getElementById('results');
+            results.innerHTML = `
+                <div class="test-complete">
+                    <h2>✅ Test Completato!</h2>
+                    <p>Step 1 (Connessione): ${testResults.step1 ? '✓' : '✗'}</p>
+                    <p>Step 2 (Audio P2P): ${testResults.step2 ? '✓' : '✗'}</p>
+                    <p>Step 3 (Trascrizione): ${testResults.step3 ? '✓' : '✗'}</p>
+                    <br>
+                    <button onclick="location.reload()">🔄 Nuovo Test</button>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

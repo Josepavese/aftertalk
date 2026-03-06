@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -10,11 +11,18 @@ import (
 	"github.com/go-chi/render"
 )
 
-type MinutesHandler struct {
-	service *minutes.Service
+type MinutesService interface {
+	GetMinutes(ctx context.Context, sessionID string) (*minutes.Minutes, error)
+	GetMinutesByID(ctx context.Context, id string) (*minutes.Minutes, error)
+	UpdateMinutes(ctx context.Context, id string, updatedMinutes *minutes.Minutes, editedBy string) (*minutes.Minutes, error)
+	GetMinutesHistory(ctx context.Context, minutesID string) ([]*minutes.MinutesHistory, error)
 }
 
-func NewMinutesHandler(service *minutes.Service) *MinutesHandler {
+type MinutesHandler struct {
+	service MinutesService
+}
+
+func NewMinutesHandler(service MinutesService) *MinutesHandler {
 	return &MinutesHandler{service: service}
 }
 
