@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -10,11 +11,19 @@ import (
 	"github.com/go-chi/render"
 )
 
-type SessionHandler struct {
-	service *session.Service
+type SessionService interface {
+	CreateSession(ctx context.Context, req *session.CreateSessionRequest) (*session.CreateSessionResponse, error)
+	GetSession(ctx context.Context, sessionID string) (*session.Session, error)
+	EndSession(ctx context.Context, sessionID string) error
+	ValidateParticipant(ctx context.Context, jti string) (*session.Participant, error)
+	ConnectParticipant(ctx context.Context, participantID string) error
 }
 
-func NewSessionHandler(service *session.Service) *SessionHandler {
+type SessionHandler struct {
+	service SessionService
+}
+
+func NewSessionHandler(service SessionService) *SessionHandler {
 	return &SessionHandler{service: service}
 }
 

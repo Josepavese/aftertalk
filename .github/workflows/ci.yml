@@ -1,0 +1,305 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - 'docs/**'
+      - 'specs/**'
+      - '*.md'
+  pull_request:
+    branches: [ main, develop ]
+    paths-ignore:
+      - 'docs/**'
+      - 'specs/**'
+      - '*.md'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run staticcheck
+        uses: dominikh/staticcheck-action@v3.7.0
+        with:
+          install-go: false
+          go-version: '1.25'
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ['1.25']
+        os: [ubuntu-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run unit tests
+        run: go test -v -race -coverprofile=coverage_unit.out -covermode=atomic ./...
+
+      - name: Run integration tests
+        run: go test -v -race -coverprofile=coverage_integration.out -covermode=atomic ./internal/storage/sqlite/... -run TestDB_
+
+      - name: Run E2E tests
+        run: go test -v -race ./e2e/... -timeout=5m
+
+      - name: Generate coverage report
+        run: |
+          go tool cover -html=coverage_unit.out -o coverage_unit.html
+          go tool cover -html=coverage_integration.out -o coverage_integration.html
+          go tool cover -total coverage_unit.out coverage_integration.out -o coverage_total.txt
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage_unit.out,./coverage_integration.out
+          flags: unittests,integrationtests
+          name: codecov-umbrella
+
+      - name: Upload coverage to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.os }}-go${{ matrix.go-version }}
+          path: |
+            coverage_unit.out
+            coverage_integration.out
+            coverage_unit.html
+            coverage_integration.html
+            coverage_total.txt
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build application
+        run: |
+          go build -v -ldflags="-s -w" -o bin/aftertalk ./cmd/aftertalk
+          ls -lh bin/
+
+      - name: Build Docker image
+        run: |
+          docker build -t aftertalk:ci -f Dockerfile .
+          docker save aftertalk:ci | gzip > aftertalk-ci.tar.gz
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            bin/aftertalk
+            aftertalk-ci.tar.gz
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: ./...
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint, test, security]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: flowup/aftertalk
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  docker-compose-test:
+    name: Docker Compose Test
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+
+    services:
+      app:
+        image: aftertalk:ci
+        ports:
+          - 8080:8080
+        env:
+          DATABASE_PATH: /app/aftertalk_test.db
+          API_KEY: test-api-key-12345
+
+    steps:
+      - name: Wait for application to start
+        run: |
+          for i in {1..30}; do
+            if curl -f http://localhost:8080/v1/health; then
+              echo "Application is ready!"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Application did not start in time"
+          exit 1
+
+      - name: Test health endpoint
+        run: |
+          curl -f http://localhost:8080/v1/health
+          echo ""
+
+      - name: Test ready endpoint
+        run: |
+          curl -f http://localhost:8080/v1/ready
+          echo ""
+
+      - name: Test session creation
+        run: |
+          SESSION_RESPONSE=$(curl -X POST http://localhost:8080/v1/sessions \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: test-api-key-12345" \
+            -d '{
+              "participant_count": 2,
+              "participants": [
+                {"user_id": "user1", "role": "client"},
+                {"user_id": "user2", "role": "professional"}
+              ]
+            }')
+
+          echo "$SESSION_RESPONSE" | jq .
+          SESSION_ID=$(echo "$SESSION_RESPONSE" | jq -r '.session_id')
+          echo "Session ID: $SESSION_ID"
+
+          if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" == "null" ]; then
+            echo "Failed to create session"
+            exit 1
+          fi
+
+          # Test session retrieval
+          curl -f http://localhost:8080/v1/sessions/$SESSION_ID \
+            -H "X-API-Key: test-api-key-12345"
+
+      - name: Test metrics endpoint
+        run: |
+          curl -f http://localhost:8080/metrics
+          echo ""
+
+  notification:
+    name: Build Notification
+    runs-on: ubuntu-latest
+    needs: [lint, test, security, build, docker-compose-test]
+    if: always()
+
+    steps:
+      - name: Build status
+        run: |
+          if [ "${{ needs.build.result }}" == "success" ]; then
+            echo "✅ All tests passed! Build is successful."
+            exit 0
+          else
+            echo "❌ Build failed! Please check the logs."
+            exit 1
+          fi

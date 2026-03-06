@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/flowup/aftertalk/internal/core/transcription"
@@ -9,11 +10,16 @@ import (
 	"github.com/go-chi/render"
 )
 
-type TranscriptionHandler struct {
-	service *transcription.Service
+type TranscriptionService interface {
+	GetTranscriptions(ctx context.Context, sessionID string) ([]*transcription.Transcription, error)
+	GetTranscriptionByID(ctx context.Context, id string) (*transcription.Transcription, error)
 }
 
-func NewTranscriptionHandler(service *transcription.Service) *TranscriptionHandler {
+type TranscriptionHandler struct {
+	service TranscriptionService
+}
+
+func NewTranscriptionHandler(service TranscriptionService) *TranscriptionHandler {
 	return &TranscriptionHandler{service: service}
 }
 

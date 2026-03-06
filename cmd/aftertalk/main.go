@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/flowup/aftertalk/internal/api"
 	"github.com/flowup/aftertalk/internal/config"
@@ -81,16 +80,12 @@ func main() {
 
 	logger.Info("Shutdown signal received, initiating graceful shutdown...")
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer shutdownCancel()
 
 	if err := apiServer.Shutdown(); err != nil {
 		logger.Errorf("HTTP server shutdown error: %v", err)
 	}
 
 	logger.Info("Graceful shutdown completed")
-
-	_ = shutdownCtx
 }
 
 func runMigrations(ctx context.Context, db *sqlite.DB) error {

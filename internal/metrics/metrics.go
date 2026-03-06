@@ -7,6 +7,25 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+func ResetMetrics() {
+	activeConnections = 0
+	queueSize = 0
+	ProcessingQueueSize.Set(0)
+}
+
+func GetActiveConnectionsValue() float64 {
+	return float64(atomic.LoadInt64(&activeConnections))
+}
+
+func SetQueueSize(size int) {
+	atomic.StoreInt64(&queueSize, int64(size))
+	ProcessingQueueSize.Set(float64(size))
+}
+
+func GetQueueSize() float64 {
+	return float64(atomic.LoadInt64(&queueSize))
+}
+
 var (
 	SessionsCreated = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "aftertalk_sessions_created_total",
@@ -65,6 +84,7 @@ var (
 	}, []string{"method", "path", "status"})
 
 	activeConnections int64
+	queueSize         int64
 )
 
 func IncrementActiveConnections() {
@@ -75,8 +95,4 @@ func IncrementActiveConnections() {
 func DecrementActiveConnections() {
 	atomic.AddInt64(&activeConnections, -1)
 	ActiveConnections.Set(float64(atomic.LoadInt64(&activeConnections)))
-}
-
-func SetQueueSize(size int) {
-	ProcessingQueueSize.Set(float64(size))
 }

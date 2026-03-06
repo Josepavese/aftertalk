@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/flowup/aftertalk/internal/logging"
 	"github.com/flowup/aftertalk/internal/storage/cache"
 	"github.com/flowup/aftertalk/pkg/jwt"
 	"github.com/google/uuid"
@@ -73,7 +74,7 @@ func (s *Service) CreateSession(ctx context.Context, req *CreateSessionRequest) 
 		tokenJTI := uuid.New().String()
 		tokenExpiresAt := time.Now().Add(2 * time.Hour)
 
-		token, _, err := s.jwtManager.Generate(sessionID, p.UserID, p.Role)
+		token, tokenJTI, err := s.jwtManager.Generate(sessionID, p.UserID, p.Role)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate token: %w", err)
 		}
@@ -135,8 +136,15 @@ func (s *Service) EndSession(ctx context.Context, sessionID string) error {
 }
 
 func (s *Service) ValidateParticipant(ctx context.Context, jti string) (*Participant, error) {
+	// Check cache first
 	if _, exists := s.tokenCache.GetToken(jti); !exists {
-		return nil, fmt.Errorf("token not found or expired")
+		// Fallback to DB lookup (for server restarts)
+		participant, err := s.repo.GetParticipantByJTI(ctx, jti)
+		if err != nil || participant == nil {
+			return nil, fmt.Errorf("token not found or expired")
+		}
+		// Re-cache the token
+		s.tokenCache.SetToken(jti, participant.SessionID, 2*time.Hour)
 	}
 
 	participant, err := s.repo.GetParticipantByJTI(ctx, jti)
@@ -156,16 +164,23 @@ func (s *Service) ValidateParticipant(ctx context.Context, jti string) (*Partici
 }
 
 func (s *Service) ConnectParticipant(ctx context.Context, participantID string) error {
-	participants, err := s.repo.GetParticipantsBySession(ctx, participantID)
+	// First get the participant by ID to find the session
+	participant, err := s.repo.GetParticipantByJTI(ctx, participantID)
 	if err != nil {
 		return err
 	}
 
-	if len(participants) == 0 {
-		return fmt.Errorf("participant not found")
+	if participant == nil {
+		// Try to get by session ID as fallback
+		participants, err := s.repo.GetParticipantsBySession(ctx, participantID)
+		if err != nil {
+			return err
+		}
+		if len(participants) == 0 {
+			return fmt.Errorf("participant not found")
+		}
+		participant = participants[0]
 	}
-
-	participant := participants[0]
 	participant.Connect()
 
 	if err := s.repo.UpdateParticipant(ctx, participant); err != nil {
@@ -176,6 +191,18 @@ func (s *Service) ConnectParticipant(ctx context.Context, participantID string) 
 		state.ActiveParticipants++
 		s.sessionCache.SetSession(participant.SessionID, state, 2*time.Hour)
 	}
+
+	return nil
+}
+
+func (s *Service) ProcessAudioChunk(sessionID, participantID string, payload []byte) error {
+	logging.Debugf("Processing audio chunk for session=%s participant=%s bytes=%d",
+		sessionID, participantID, len(payload))
+
+	// TODO: Implement actual audio processing
+	// 1. Get or create AudioStream for participant
+	// 2. Add chunk to stream
+	// 3. When chunk buffer is full (10-30s), trigger transcription
 
 	return nil
 }
