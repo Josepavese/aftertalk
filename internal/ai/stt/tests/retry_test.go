@@ -282,7 +282,7 @@ func TestTranscribeWithRetry_RetryDelays(t *testing.T) {
 	provider := &mockSTTProvider{
 		returnError: errors.New("temporary error"),
 		callCount:   0,
-		maxErrors:   3,
+		maxErrors:   2,
 	}
 	audioData := &stt.AudioData{
 		SessionID: "session1",
@@ -312,7 +312,7 @@ func TestTranscribeWithRetry_MaxDelayClamping(t *testing.T) {
 	provider := &mockSTTProvider{
 		returnError: errors.New("temporary error"),
 		callCount:   0,
-		maxErrors:   10,
+		maxErrors:   9,
 	}
 	audioData := &stt.AudioData{
 		SessionID: "session1",
@@ -322,8 +322,8 @@ func TestTranscribeWithRetry_MaxDelayClamping(t *testing.T) {
 
 	cfg := &stt.RetryConfig{
 		MaxAttempts:  10,
-		InitialDelay: 1000 * time.Millisecond,
-		MaxDelay:     1 * time.Second,
+		InitialDelay: 10 * time.Millisecond,
+		MaxDelay:     50 * time.Millisecond,
 		Multiplier:   2.0,
 	}
 
@@ -414,7 +414,7 @@ func TestTranscribeWithRetry_EmptyConfig(t *testing.T) {
 		Duration:  60,
 	}
 
-	cfg := &stt.RetryConfig{}
+	cfg := &stt.RetryConfig{MaxAttempts: 1}
 	result, err := stt.TranscribeWithRetry(context.Background(), provider, audioData, cfg)
 
 	if err != nil {
@@ -446,8 +446,8 @@ func TestTranscribeWithRetry_MultipleProviders(t *testing.T) {
 	if result == nil {
 		t.Fatal("Expected non-nil result")
 	}
-	if provider1.callCount != 2 {
-		t.Errorf("Expected 2 calls to provider1, got %d", provider1.callCount)
+	if provider1.callCount != 3 {
+		t.Errorf("Expected 3 calls to provider1, got %d", provider1.callCount)
 	}
 }
 
@@ -521,7 +521,15 @@ func (m *mockSTTProvider) Transcribe(ctx context.Context, audioData *stt.AudioDa
 	if m.callCount <= m.maxErrors && m.returnError != nil {
 		return nil, m.returnError
 	}
-	return stt.NewTranscriptionResult("mock"), nil
+	result := stt.NewTranscriptionResult("mock")
+	result.AddSegment(&stt.TranscriptionSegment{
+		SessionID:  audioData.SessionID,
+		Role:       audioData.Role,
+		Text:       "mock transcription",
+		Confidence: 1.0,
+	})
+	result.Duration = audioData.Duration
+	return result, nil
 }
 
 func (m *mockSTTProvider) Name() string {

@@ -1,0 +1,125 @@
+package audio
+
+import (
+	"bytes"
+	"encoding/binary"
+	"hash/crc32"
+)
+
+// oggCRCTable is the CRC table used by OGG (IEEE polynomial).
+var oggCRCTable = crc32.MakeTable(0x04c11db7)
+
+// oggCRC computes the OGG CRC32 checksum over the page bytes (with checksum field zeroed).
+func oggCRC(data []byte) uint32 {
+	return crc32.Checksum(data, oggCRCTable)
+}
+
+// WriteOGGOpus wraps individual Opus RTP frame payloads into a valid OGG Opus stream.
+// The output is a self-contained OGG Opus file that ffmpeg/faster-whisper can decode.
+//
+// Parameters:
+//   - frames: individual Opus RTP payloads (each is one Opus packet, typically 20ms)
+//   - sampleRate: input sample rate (typically 48000 for WebRTC Opus)
+//   - channels: number of audio channels (1 = mono)
+func WriteOGGOpus(frames [][]byte, sampleRate uint32, channels uint8) ([]byte, error) {
+	if sampleRate == 0 {
+		sampleRate = 48000
+	}
+	if channels == 0 {
+		channels = 1
+	}
+
+	w := &bytes.Buffer{}
+	serial := uint32(0x4AFFE2A1) // arbitrary stream serial number
+
+	// Page 0: OpusHead identification header (BOS)
+	opusHead := buildOpusHead(channels, sampleRate)
+	writePage(w, opusHead, 0x02, 0, serial, 0)
+
+	// Page 1: OpusTags comment header (minimal)
+	opusTags := buildOpusTags()
+	writePage(w, opusTags, 0x00, 0, serial, 1)
+
+	// Pages 2+: audio data — one page per frame for simplicity
+	// granulePos counts PCM samples; Opus at 48kHz, 20ms/frame = 960 samples/frame
+	var granulePos int64
+	const samplesPerFrame = 960 // 20ms at 48kHz
+
+	for i, frame := range frames {
+		granulePos += samplesPerFrame
+		headerType := byte(0x00)
+		if i == len(frames)-1 {
+			headerType = 0x04 // EOS on last page
+		}
+		writePage(w, frame, headerType, granulePos, serial, uint32(i+2))
+	}
+
+	return w.Bytes(), nil
+}
+
+// buildOpusHead builds the 19-byte OpusHead identification packet (RFC 7845 §5.1).
+func buildOpusHead(channels uint8, inputSampleRate uint32) []byte {
+	h := &bytes.Buffer{}
+	h.WriteString("OpusHead")
+	h.WriteByte(1)                                        // version
+	h.WriteByte(channels)                                 // channel count
+	binary.Write(h, binary.LittleEndian, uint16(3840))    // pre-skip (80ms at 48kHz)
+	binary.Write(h, binary.LittleEndian, inputSampleRate) // input sample rate
+	binary.Write(h, binary.LittleEndian, int16(0))        // output gain
+	h.WriteByte(0)                                        // channel mapping family (mono/stereo)
+	return h.Bytes()
+}
+
+// buildOpusTags builds a minimal OpusTags comment packet (RFC 7845 §5.2).
+func buildOpusTags() []byte {
+	vendor := "aftertalk"
+	t := &bytes.Buffer{}
+	t.WriteString("OpusTags")
+	binary.Write(t, binary.LittleEndian, uint32(len(vendor)))
+	t.WriteString(vendor)
+	binary.Write(t, binary.LittleEndian, uint32(0)) // zero user comments
+	return t.Bytes()
+}
+
+// writePage writes a single OGG page to w (RFC 3533).
+// data must fit in a single page (max 255*255 = 65025 bytes).
+func writePage(w *bytes.Buffer, data []byte, headerType byte, granulePos int64, serial uint32, seqNo uint32) {
+	// Build segment table: each segment is at most 255 bytes.
+	var segTable []byte
+	remaining := len(data)
+	for remaining > 0 {
+		seg := remaining
+		if seg > 255 {
+			seg = 255
+		}
+		segTable = append(segTable, byte(seg))
+		remaining -= seg
+		// A segment of exactly 255 means the packet continues in next segment.
+		// A segment < 255 terminates the packet. If remaining == 0 and last seg == 255,
+		// we must add a zero-length terminating segment.
+	}
+	// If last segment is 255 bytes, add terminator.
+	if len(segTable) > 0 && segTable[len(segTable)-1] == 255 {
+		segTable = append(segTable, 0)
+	}
+
+	page := &bytes.Buffer{}
+	page.WriteString("OggS")                                       // capture pattern
+	page.WriteByte(0)                                              // version
+	page.WriteByte(headerType)                                     // header type
+	binary.Write(page, binary.LittleEndian, granulePos)            // granule position
+	binary.Write(page, binary.LittleEndian, serial)                // stream serial
+	binary.Write(page, binary.LittleEndian, seqNo)                 // page sequence number
+	binary.Write(page, binary.LittleEndian, uint32(0))             // checksum placeholder
+	page.WriteByte(byte(len(segTable)))                            // number of segments
+	page.Write(segTable)                                           // segment table
+	page.Write(data)                                               // page data
+
+	// Compute CRC over the complete page (checksum bytes are zero as written above).
+	pageBytes := page.Bytes()
+	crc := oggCRC(pageBytes)
+	// Write CRC at offset 22 (after "OggS" + version + header_type + 8-byte granule + 4-byte serial + 4-byte seqno = 22)
+	binary.LittleEndian.PutUint32(pageBytes[22:26], crc)
+
+	w.Write(pageBytes)
+}

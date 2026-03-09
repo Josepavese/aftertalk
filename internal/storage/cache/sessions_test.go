@@ -160,7 +160,7 @@ func TestSessionCache_EmptySessionID(t *testing.T) {
 	sc := NewSessionCache()
 
 	_, exists := sc.GetSession("")
-	assert.True(t, exists)
+	assert.False(t, exists)
 }
 
 func TestSessionCache_SessionIDAlreadyExists(t *testing.T) {

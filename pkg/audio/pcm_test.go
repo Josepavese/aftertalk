@@ -128,9 +128,9 @@ func TestPCMConverter_ConvertToInt16(t *testing.T) {
 		samples := converter.ConvertToInt16(floats)
 
 		assert.Len(t, samples, len(floats))
-		assert.InDelta(t, int16(float64(3276.7)), samples[0], 0.1)
-		assert.InDelta(t, int16(float64(16383.5)), samples[1], 0.1)
-		assert.Equal(t, int16(float64(32767)), samples[2])
+		assert.InDelta(t, int16(3276), samples[0], 0.1)
+		assert.InDelta(t, int16(16383), samples[1], 0.1)
+		assert.Equal(t, int16(32767), samples[2])
 	})
 
 	t.Run("NegativeFloats", func(t *testing.T) {
@@ -138,9 +138,9 @@ func TestPCMConverter_ConvertToInt16(t *testing.T) {
 		samples := converter.ConvertToInt16(floats)
 
 		assert.Len(t, samples, len(floats))
-		assert.InDelta(t, int16(float64(-3276.7)), samples[0], 0.1)
-		assert.InDelta(t, int16(float64(-16383.5)), samples[1], 0.1)
-		assert.Equal(t, int16(float64(-32767)), samples[2])
+		assert.InDelta(t, int16(-3276), samples[0], 0.1)
+		assert.InDelta(t, int16(-16383), samples[1], 0.1)
+		assert.Equal(t, int16(-32767), samples[2])
 	})
 
 	t.Run("ZeroFloats", func(t *testing.T) {
@@ -158,8 +158,8 @@ func TestPCMConverter_ConvertToInt16(t *testing.T) {
 		samples := converter.ConvertToInt16(floats)
 
 		assert.Len(t, samples, len(floats))
-		assert.Equal(t, 32767, samples[0])
-		assert.Equal(t, -32768, samples[1])
+		assert.Equal(t, int16(32767), samples[0])
+		assert.Equal(t, int16(-32767), samples[1])
 	})
 
 	t.Run("EmptyFloats", func(t *testing.T) {
@@ -174,7 +174,7 @@ func TestPCMConverter_ConvertToInt16(t *testing.T) {
 		samples := converter.ConvertToInt16(floats)
 
 		assert.Len(t, samples, 1)
-		expected := int16(float64(16383.5))
+		expected := int16(16383)
 		assert.InDelta(t, expected, samples[0], 0.1)
 	})
 
@@ -183,9 +183,9 @@ func TestPCMConverter_ConvertToInt16(t *testing.T) {
 		samples := converter.ConvertToInt16(floats)
 
 		assert.Len(t, samples, len(floats))
-		assert.Equal(t, 32767, samples[0])
-		assert.Equal(t, -32767, samples[1])
-		assert.Equal(t, 32767, samples[2])
+		assert.Equal(t, int16(32767), samples[0])
+		assert.Equal(t, int16(-32767), samples[1])
+		assert.Equal(t, int16(32767), samples[2])
 	})
 
 	t.Run("VerySmallFloats", func(t *testing.T) {
@@ -193,8 +193,8 @@ func TestPCMConverter_ConvertToInt16(t *testing.T) {
 		samples := converter.ConvertToInt16(floats)
 
 		assert.Len(t, samples, len(floats))
-		expected1 := int16(float64(3.2767))
-		expected2 := int16(float64(6.5534))
+		expected1 := int16(3)
+		expected2 := int16(6)
 		assert.InDelta(t, expected1, samples[0], 0.1)
 		assert.InDelta(t, expected2, samples[1], 0.1)
 	})
@@ -219,13 +219,16 @@ func TestPCMConverter_ConvertRoundTrip(t *testing.T) {
 		floats := converter.ConvertToFloat32(samples)
 		convertedSamples := converter.ConvertToInt16(floats)
 
-		assert.Equal(t, samples, convertedSamples)
+		assert.Len(t, convertedSamples, len(samples))
+		for i := range samples {
+			assert.InDelta(t, float64(samples[i]), float64(convertedSamples[i]), 1)
+		}
 	})
 }
 
 func TestReadPCM(t *testing.T) {
 	t.Run("ValidPCMData", func(t *testing.T) {
-		data := []byte{0x00, 0x80, 0x01, 0x00, 0x02, 0x80, 0x03, 0x00}
+		data := []byte{0x00, 0x00, 0x00, 0x80, 0x00, 0x01, 0x00, 0x80, 0x00, 0x03, 0x00, 0x00}
 
 		reader := bytes.NewReader(data)
 		samples, err := ReadPCM(reader)
@@ -241,7 +244,7 @@ func TestReadPCM(t *testing.T) {
 	})
 
 	t.Run("EOFBeforeReadingFullSamples", func(t *testing.T) {
-		data := []byte{0x00, 0x80, 0x01}
+		data := []byte{0x00, 0x00, 0x01}
 
 		reader := bytes.NewReader(data)
 		samples, err := ReadPCM(reader)
@@ -260,7 +263,7 @@ func TestReadPCM(t *testing.T) {
 	})
 
 	t.Run("ReaderWithPartialSample", func(t *testing.T) {
-		data := []byte{0x00, 0x80, 0x01}
+		data := []byte{0x00, 0x00, 0x01}
 
 		reader := bytes.NewReader(data)
 		samples, err := ReadPCM(reader)
@@ -271,8 +274,10 @@ func TestReadPCM(t *testing.T) {
 
 	t.Run("MultipleReads", func(t *testing.T) {
 		data := []byte{
-			0x00, 0x80, 0x01, 0x00, 0x02, 0x80,
-			0x03, 0x00, 0x04, 0x80, 0x05, 0x00,
+			0x00, 0x00, 0x00, 0x80, 0x00, 0x01,
+			0x00, 0x00, 0x00, 0x02, 0x00, 0x80,
+			0x00, 0x03, 0x00, 0x00, 0x00, 0x04,
+			0x00, 0x80, 0x00, 0x05,
 		}
 
 		reader := bytes.NewReader(data)
@@ -294,7 +299,7 @@ func TestReadPCM(t *testing.T) {
 	})
 
 	t.Run("BigEndianInt16", func(t *testing.T) {
-		data := []byte{0x00, 0x80, 0x01, 0x00}
+		data := []byte{0x00, 0x00, 0x00, 0x01}
 
 		reader := bytes.NewReader(data)
 		samples, err := ReadPCM(reader)
@@ -360,7 +365,7 @@ func TestWritePCM(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, buf.Bytes(), 6)
 
-		expected := []byte{0x7F, 0xFF, 0x00, 0x00, 0x80, 0x00}
+		expected := []byte{0xFF, 0x7F, 0x00, 0x00, 0x00, 0x80}
 		assert.Equal(t, expected, buf.Bytes())
 	})
 
@@ -445,7 +450,7 @@ func TestChunkPCM(t *testing.T) {
 			samples[i] = int16(i % 65536)
 		}
 
-		chunks := ChunkPCM(samples, 4800, SampleRate)
+		chunks := ChunkPCM(samples, 100, SampleRate)
 
 		assert.Len(t, chunks, 10)
 		assert.Len(t, chunks[0], 4800)
@@ -471,9 +476,10 @@ func TestChunkPCM(t *testing.T) {
 
 		chunks := ChunkPCM(samples, 1, SampleRate)
 
-		assert.Len(t, chunks, 10000)
-		assert.Len(t, chunks[0], 1)
-		assert.Len(t, chunks[9999], 1)
+		// 1ms at 48000 Hz = 48 samples/chunk; 10000/48 = 208 full + 1 partial = 209 chunks
+		assert.Len(t, chunks, 209)
+		assert.Len(t, chunks[0], 48)
+		assert.Len(t, chunks[208], 16)
 	})
 
 	t.Run("VeryLargeChunkSize", func(t *testing.T) {

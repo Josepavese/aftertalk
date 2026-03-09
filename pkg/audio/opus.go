@@ -57,5 +57,8 @@ func ValidateOpusFrame(frame []byte) error {
 }
 
 func GetOpusFrameDuration(frameSize int, sampleRate int) int {
+	if sampleRate == 0 {
+		return 0
+	}
 	return (frameSize * 1000) / sampleRate
 }
