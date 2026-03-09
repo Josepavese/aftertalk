@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flowup/aftertalk/internal/logging"
+	pionice "github.com/pion/ice/v4"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -37,7 +39,12 @@ func NewPeer(sessionID, participantID, role string, onAudio AudioTrackHandler) (
 		ICETransportPolicy: webrtc.ICETransportPolicyAll,
 	}
 
-	pc, err := webrtc.NewPeerConnection(config)
+	se := webrtc.SettingEngine{}
+	se.SetICEMulticastDNSMode(pionice.MulticastDNSModeQueryAndGather)
+	se.SetIncludeLoopbackCandidate(true)
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
+
+	pc, err := api.NewPeerConnection(config)
 	if err != nil {
 		return nil, err
 	}
@@ -84,14 +91,14 @@ func (p *Peer) setupPeerConnection() error {
 	}
 
 	p.PC.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		log.Infof("ICE Connection State for %s: %s", p.ParticipantID, state.String())
+		logging.Infof("ICE Connection State for %s: %s", p.ParticipantID, state.String())
 		p.mu.Lock()
 		p.Connected = (state == webrtc.ICEConnectionStateConnected || state == webrtc.ICEConnectionStateCompleted)
 		p.mu.Unlock()
 	})
 
 	p.PC.OnTrack(func(tr *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		log.Infof("Received track from %s: %s", p.ParticipantID, tr.Kind())
+		logging.Infof("Received track from %s: %s", p.ParticipantID, tr.Kind())
 		if tr.Kind() == webrtc.RTPCodecTypeAudio {
 			go p.handleAudioTrack(tr)
 		}
@@ -101,11 +108,11 @@ func (p *Peer) setupPeerConnection() error {
 }
 
 func (p *Peer) handleAudioTrack(tr *webrtc.TrackRemote) {
-	defer func() { log.Infof("Track closed for %s", p.ParticipantID) }()
+	defer func() { logging.Infof("Track closed for %s", p.ParticipantID) }()
 	for {
 		pkt, _, err := tr.ReadRTP()
 		if err != nil {
-			log.Errorf("Error reading RTP: %v", err)
+			logging.Errorf("Error reading RTP: %v", err)
 			return
 		}
 		if p.onAudio != nil {
@@ -182,7 +189,7 @@ func (m *Manager) CreatePeer(ctx context.Context, sessionID, participantID, role
 		return nil, err
 	}
 	m.peers[key] = peer
-	log.Infof("Created WebRTC peer for session=%s participant=%s", sessionID, participantID)
+	logging.Infof("Created WebRTC peer for session=%s participant=%s", sessionID, participantID)
 	return peer, nil
 }
 
@@ -200,7 +207,7 @@ func (m *Manager) RemovePeer(sessionID, participantID string) {
 	if peer, exists := m.peers[key]; exists {
 		peer.Close()
 		delete(m.peers, key)
-		log.Infof("Removed WebRTC peer for session=%s participant=%s", sessionID, participantID)
+		logging.Infof("Removed WebRTC peer for session=%s participant=%s", sessionID, participantID)
 	}
 }
 
