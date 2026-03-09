@@ -15,10 +15,16 @@ type DB struct {
 }
 
 func New(ctx context.Context, path string) (*DB, error) {
+	if path == "" {
+		return nil, fmt.Errorf("database path cannot be empty")
+	}
+
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	db.SetMaxOpenConns(1)
 
 	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)

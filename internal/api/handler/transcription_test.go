@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -74,16 +75,19 @@ func TestTranscriptionHandler_GetTranscriptions(t *testing.T) {
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				var transcriptions []*transcription.Transcription
 				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &transcriptions))
-				assert.Equal(t, float64(http.StatusOK), rec.Code)
+				assert.Equal(t, http.StatusOK, rec.Code)
 				assert.Len(t, transcriptions, 2)
 				assert.Equal(t, "Hello everyone", transcriptions[0].Text)
 				assert.Equal(t, "How are you?", transcriptions[1].Text)
 			},
 		},
 		{
-			name:           "Failure - session not found",
-			sessionID:      "non-existent",
-			mockSetup:      func(m *MockTranscriptionService) {},
+			name:      "Failure - session not found",
+			sessionID: "non-existent",
+			mockSetup: func(m *MockTranscriptionService) {
+				m.On("GetTranscriptions", mock.Anything, "non-existent").
+					Return(nil, errors.New("failed to get transcriptions: not found"))
+			},
 			expectedStatus: http.StatusInternalServerError,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				assert.Contains(t, rec.Body.String(), "failed to get transcriptions")
@@ -150,17 +154,20 @@ func TestTranscriptionHandler_GetTranscriptionByID(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				var transcription *transcription.Transcription
-				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &transcription))
-				assert.Equal(t, float64(http.StatusOK), rec.Code)
-				assert.Equal(t, "Meeting started", transcription.Text)
+				var tr transcription.Transcription
+				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tr))
+				assert.Equal(t, http.StatusOK, rec.Code)
+				assert.Equal(t, "Meeting started", tr.Text)
 			},
 		},
 		{
 			name:            "Failure - transcription not found",
 			transcriptionID: "non-existent",
-			mockSetup:       func(m *MockTranscriptionService) {},
-			expectedStatus:  http.StatusNotFound,
+			mockSetup: func(m *MockTranscriptionService) {
+				m.On("GetTranscriptionByID", mock.Anything, "non-existent").
+					Return(nil, errors.New("failed to get transcription: not found"))
+			},
+			expectedStatus: http.StatusNotFound,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				assert.Contains(t, rec.Body.String(), "failed to get transcription")
 			},
@@ -183,6 +190,9 @@ func TestTranscriptionHandler_GetTranscriptionByID(t *testing.T) {
 			handler := NewTranscriptionHandler(mockService)
 
 			req := httptest.NewRequest("GET", "/transcription/"+tt.transcriptionID, nil)
+			if tt.transcriptionID != "" {
+				req = addChiContext(req, "id", tt.transcriptionID)
+			}
 			rec := httptest.NewRecorder()
 
 			handler.GetTranscriptionByID(rec, req)

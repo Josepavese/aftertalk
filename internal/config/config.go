@@ -48,10 +48,11 @@ type APIConfig struct {
 }
 
 type STTConfig struct {
-	Provider string `koanf:"provider"`
-	Google   GoogleSTTConfig
-	AWS      AWSSTTConfig
-	Azure    AzureSTTConfig
+	Provider     string `koanf:"provider"`
+	Google       GoogleSTTConfig
+	AWS          AWSSTTConfig
+	Azure        AzureSTTConfig
+	WhisperLocal WhisperLocalSTTConfig
 }
 
 type GoogleSTTConfig struct {
@@ -67,6 +68,13 @@ type AWSSTTConfig struct {
 type AzureSTTConfig struct {
 	Key    string `koanf:"key"`
 	Region string `koanf:"region"`
+}
+
+type WhisperLocalSTTConfig struct {
+	URL            string `koanf:"url"`
+	Model          string `koanf:"model"`
+	Language       string `koanf:"language"`
+	ResponseFormat string `koanf:"response_format"`
 }
 
 type LLMConfig struct {
@@ -141,6 +149,44 @@ func Default() *Config {
 			Secret:     "change-this-in-production",
 			Issuer:     "aftertalk",
 			Expiration: 2 * time.Hour,
+		},
+		API: APIConfig{
+			Key: "your-api-key-change-this-in-production",
+		},
+		STT: STTConfig{
+			Provider: "google",
+			Google: GoogleSTTConfig{
+				CredentialsPath: "creds.json",
+			},
+			AWS: AWSSTTConfig{
+				AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+				SecretAccessKey: "secret-access-key",
+				Region:          "us-east-1",
+			},
+			Azure: AzureSTTConfig{
+				Key:    "key-123",
+				Region: "eastus",
+			},
+		},
+		LLM: LLMConfig{
+			Provider: "openai",
+			OpenAI: OpenAIConfig{
+				APIKey: "sk-test",
+				Model:  "gpt-4",
+			},
+			Anthropic: AnthropicConfig{
+				APIKey: "sk-test",
+				Model:  "claude-2",
+			},
+			Azure: AzureLLMConfig{
+				APIKey:     "sk-test",
+				Endpoint:   "https://example.com/openai",
+				Deployment: "gpt-4",
+			},
+		},
+		Webhook: WebhookConfig{
+			URL:     "https://example.com/webhook",
+			Timeout: 30 * time.Second,
 		},
 		Processing: ProcessingConfig{
 			MaxConcurrentTranscriptions:     10,

@@ -1,6 +1,9 @@
 package llm
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func GenerateMinutesPrompt(transcriptionText string, roles []string) string {
 	return fmt.Sprintf(`Analyze the following conversation transcript and generate structured meeting minutes in JSON format.
@@ -55,5 +58,5 @@ func formatRoles(roles []string) string {
 	if len(roles) == 1 {
 		return roles[0]
 	}
-	return roles[0] + " and " + roles[1]
+	return strings.Join(roles[:len(roles)-1], ", ") + " and " + roles[len(roles)-1]
 }

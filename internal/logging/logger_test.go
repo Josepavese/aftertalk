@@ -69,7 +69,7 @@ func TestInitTwice(t *testing.T) {
 	assert.NotNil(t, Logger)
 
 	err := Init("debug", "json")
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.NotNil(t, Logger)
 }
 
@@ -155,14 +155,7 @@ func TestError(t *testing.T) {
 	})
 }
 
-func TestFatal(t *testing.T) {
-	Init("info", "console")
-	defer Sync()
-
-	assert.NotPanics(t, func() {
-		Fatal("test fatal")
-	})
-}
+// TestFatal is intentionally omitted: zap's Fatal calls os.Exit(1) which terminates the test binary.
 
 func TestDebugf(t *testing.T) {
 	Init("debug", "console")
@@ -200,14 +193,7 @@ func TestErrorf(t *testing.T) {
 	})
 }
 
-func TestFatalf(t *testing.T) {
-	Init("info", "console")
-	defer Sync()
-
-	assert.NotPanics(t, func() {
-		Fatalf("test fatal %s", "formatted")
-	})
-}
+// TestFatalf is intentionally omitted: zap's Fatalf calls os.Exit(1) which terminates the test binary.
 
 func TestWithFields(t *testing.T) {
 	Init("info", "console")

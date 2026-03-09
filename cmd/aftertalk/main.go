@@ -8,18 +8,66 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/flowup/aftertalk/internal/ai/llm"
+	"github.com/flowup/aftertalk/internal/ai/stt"
 	"github.com/flowup/aftertalk/internal/api"
+	"github.com/flowup/aftertalk/internal/api/handler"
 	"github.com/flowup/aftertalk/internal/config"
+	"github.com/flowup/aftertalk/internal/core/minutes"
 	"github.com/flowup/aftertalk/internal/core/session"
+	"github.com/flowup/aftertalk/internal/core/transcription"
 	"github.com/flowup/aftertalk/internal/logging"
 	"github.com/flowup/aftertalk/internal/storage/cache"
 	"github.com/flowup/aftertalk/internal/storage/sqlite"
 	"github.com/flowup/aftertalk/pkg/jwt"
 )
 
+type TranscriptionAdapter struct {
+	svc *transcription.Service
+}
+
+func (a *TranscriptionAdapter) TranscribeAudio(ctx context.Context, audioData *session.AudioData) error {
+	sttData := &stt.AudioData{
+		SessionID:     audioData.SessionID,
+		ParticipantID: audioData.ParticipantID,
+		Role:          audioData.Role,
+		Data:          audioData.Data,
+		Frames:        audioData.Frames,
+		SampleRate:    audioData.SampleRate,
+		Duration:      audioData.Duration,
+		OffsetMs:      audioData.OffsetMs,
+	}
+	return a.svc.TranscribeAudio(ctx, sttData)
+}
+
+func (a *TranscriptionAdapter) GetTranscriptionsAsText(ctx context.Context, sessionID string) (string, error) {
+	return a.svc.GetTranscriptionsAsText(ctx, sessionID)
+}
+
+type MinutesAdapter struct {
+	svc *minutes.Service
+}
+
+func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, roles []string) (interface{}, error) {
+	return a.svc.GenerateMinutes(ctx, sessionID, transcriptionText, roles)
+}
+
+func (a *MinutesAdapter) GetMinutes(ctx context.Context, sessionID string) (interface{}, error) {
+	return a.svc.GetMinutes(ctx, sessionID)
+}
+
 func main() {
-	cfg, err := config.Load("")
+	configPath := ""
+	for i, arg := range os.Args[1:] {
+		if (arg == "--config" || arg == "-config") && i+1 < len(os.Args[1:]) {
+			configPath = os.Args[i+2]
+			break
+		}
+	}
+
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
 		os.Exit(1)
@@ -57,15 +105,96 @@ func main() {
 
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
+	audioBufferCache := cache.NewAudioBufferCache()
 
 	jwtManager := jwt.NewJWTManager(cfg.JWT.Secret, cfg.JWT.Issuer, cfg.JWT.Expiration)
 
 	sessionRepo := session.NewSessionRepository(db.DB)
-	sessionService := session.NewService(sessionRepo, jwtManager, sessionCache, tokenCache)
+	transcriptionRepo := transcription.NewTranscriptionRepository(db.DB)
+	minutesRepo := minutes.NewMinutesRepository(db.DB)
+
+	sttProvider, err := stt.NewProvider(&stt.STTConfig{
+		Provider: cfg.STT.Provider,
+		Google: stt.GoogleConfig{
+			CredentialsPath: cfg.STT.Google.CredentialsPath,
+		},
+		AWS: stt.AWSConfig{
+			AccessKeyID:     cfg.STT.AWS.AccessKeyID,
+			SecretAccessKey: cfg.STT.AWS.SecretAccessKey,
+			Region:          cfg.STT.AWS.Region,
+		},
+		Azure: stt.AzureConfig{
+			Key:    cfg.STT.Azure.Key,
+			Region: cfg.STT.Azure.Region,
+		},
+		WhisperLocal: stt.WhisperLocalConfig{
+			URL:            cfg.STT.WhisperLocal.URL,
+			Model:          cfg.STT.WhisperLocal.Model,
+			Language:       cfg.STT.WhisperLocal.Language,
+			ResponseFormat: cfg.STT.WhisperLocal.ResponseFormat,
+		},
+	})
+	if err != nil {
+		logger.Fatalf("Failed to initialize STT provider: %v", err)
+	}
+	logger.Infof("STT provider: %s", sttProvider.Name())
+
+	retryConfig := stt.DefaultRetryConfig()
+
+	transcriptionService := transcription.NewService(transcriptionRepo, sttProvider, retryConfig)
+
+	llmProvider, err := llm.NewProvider(&llm.LLMConfig{
+		Provider: cfg.LLM.Provider,
+		OpenAI: llm.OpenAIConfig{
+			APIKey: cfg.LLM.OpenAI.APIKey,
+			Model:  cfg.LLM.OpenAI.Model,
+		},
+		Anthropic: llm.AnthropicConfig{
+			APIKey: cfg.LLM.Anthropic.APIKey,
+			Model:  cfg.LLM.Anthropic.Model,
+		},
+		Azure: llm.AzureLLMConfig{
+			APIKey:     cfg.LLM.Azure.APIKey,
+			Endpoint:   cfg.LLM.Azure.Endpoint,
+			Deployment: cfg.LLM.Azure.Deployment,
+		},
+	})
+	if err != nil {
+		logger.Fatalf("Failed to initialize LLM provider: %v", err)
+	}
+	logger.Infof("LLM provider: %s", llmProvider.Name())
+
+	minutesService := minutes.NewServiceWithDeps(
+		minutesRepo, 
+		llmProvider,
+		&minutes.RetryConfig{
+			MaxRetries:     3,
+			InitialBackoff: 1 * time.Second,
+			MaxBackoff:     10 * time.Second,
+		},
+		&minutes.WebhookConfig{
+			URL:     cfg.Webhook.URL,
+			Timeout: cfg.Webhook.Timeout,
+		},
+	)
+
+	transcriptionAdapter := &TranscriptionAdapter{svc: transcriptionService}
+	minutesAdapter := &MinutesAdapter{svc: minutesService}
+
+	sessionService := session.NewService(
+		sessionRepo,
+		jwtManager,
+		sessionCache,
+		tokenCache,
+		audioBufferCache,
+		transcriptionAdapter,
+		minutesAdapter,
+	)
 
 	botServer := api.NewBotServer(sessionService, jwtManager, tokenCache)
 
-	apiServer := api.NewServer(cfg, sessionService, botServer)
+	minutesHandler := handler.NewMinutesHandler(minutesService)
+	apiServer := api.NewServerWithDeps(cfg, sessionService, botServer, minutesHandler, nil)
 
 	go func() {
 		logger.Infof("HTTP server listening on %s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
@@ -80,6 +209,7 @@ func main() {
 
 	logger.Info("Shutdown signal received, initiating graceful shutdown...")
 
+	sessionService.Close()
 
 	if err := apiServer.Shutdown(); err != nil {
 		logger.Errorf("HTTP server shutdown error: %v", err)

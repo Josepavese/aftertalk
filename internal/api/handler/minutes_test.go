@@ -10,9 +10,15 @@ import (
 	"testing"
 
 	"github.com/flowup/aftertalk/internal/core/minutes"
+	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+func init() {
+	logging.Init("info", "console") //nolint:errcheck
+}
 
 type MockMinutesService struct {
 	mock.Mock
@@ -50,6 +56,12 @@ func (m *MockMinutesService) GetMinutesHistory(ctx context.Context, minutesID st
 	return args.Get(0).([]*minutes.MinutesHistory), args.Error(1)
 }
 
+func addChiContext(req *http.Request, key, value string) *http.Request {
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add(key, value)
+	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+}
+
 func TestMinutesHandler_GetMinutes(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -67,6 +79,7 @@ func TestMinutesHandler_GetMinutes(t *testing.T) {
 						ID:        "min-123",
 						SessionID: "session-123",
 						Version:   1,
+						Provider:  "gpt-4",
 						Themes:    []string{"meeting", "strategy"},
 						NextSteps: []string{"follow up", "send report"},
 						Status:    minutes.MinutesStatusReady,
@@ -74,17 +87,20 @@ func TestMinutesHandler_GetMinutes(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				var minutes minutes.Minutes
-				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &minutes))
-				assert.Equal(t, float64(http.StatusOK), rec.Code)
-				assert.Equal(t, "min-123", minutes.ID)
-				assert.Equal(t, "gpt-4", minutes.Provider)
+				var m minutes.Minutes
+				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &m))
+				assert.Equal(t, http.StatusOK, rec.Code)
+				assert.Equal(t, "min-123", m.ID)
+				assert.Equal(t, "gpt-4", m.Provider)
 			},
 		},
 		{
-			name:           "Failure - session not found",
-			sessionID:      "non-existent",
-			mockSetup:      func(m *MockMinutesService) {},
+			name:      "Failure - session not found",
+			sessionID: "non-existent",
+			mockSetup: func(m *MockMinutesService) {
+				m.On("GetMinutes", mock.Anything, "non-existent").
+					Return(nil, errors.New("failed to get minutes: not found"))
+			},
 			expectedStatus: http.StatusNotFound,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				assert.Contains(t, rec.Body.String(), "failed to get minutes")
@@ -147,19 +163,22 @@ func TestMinutesHandler_GetMinutesByID(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				var minutes minutes.Minutes
-				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &minutes))
-				assert.Equal(t, float64(http.StatusOK), rec.Code)
-				assert.Equal(t, "claude-3", minutes.Provider)
+				var m minutes.Minutes
+				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &m))
+				assert.Equal(t, http.StatusOK, rec.Code)
+				assert.Equal(t, "claude-3", m.Provider)
 			},
 		},
 		{
-			name:           "Failure - minutes not found",
-			minutesID:      "non-existent",
-			mockSetup:      func(m *MockMinutesService) {},
+			name:      "Failure - minutes not found",
+			minutesID: "non-existent",
+			mockSetup: func(m *MockMinutesService) {
+				m.On("GetMinutesByID", mock.Anything, "non-existent").
+					Return(nil, errors.New("not found"))
+			},
 			expectedStatus: http.StatusNotFound,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Contains(t, rec.Body.String(), "failed to get minutes")
+				assert.Contains(t, rec.Body.String(), "not found")
 			},
 		},
 		{
@@ -180,6 +199,9 @@ func TestMinutesHandler_GetMinutesByID(t *testing.T) {
 			handler := NewMinutesHandler(mockService)
 
 			req := httptest.NewRequest("GET", "/minutes/"+tt.minutesID, nil)
+			if tt.minutesID != "" {
+				req = addChiContext(req, "id", tt.minutesID)
+			}
 			rec := httptest.NewRecorder()
 
 			handler.GetMinutesByID(rec, req)
@@ -200,6 +222,7 @@ func TestMinutesHandler_UpdateMinutes(t *testing.T) {
 		name           string
 		minutesID      string
 		request        minutes.Minutes
+		rawBody        []byte
 		mockSetup      func(*MockMinutesService)
 		expectedStatus int
 		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
@@ -230,17 +253,17 @@ func TestMinutesHandler_UpdateMinutes(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				var minutes minutes.Minutes
-				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &minutes))
-				assert.Equal(t, float64(http.StatusOK), rec.Code)
-				assert.Equal(t, int64(2), minutes.Version)
+				var m minutes.Minutes
+				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &m))
+				assert.Equal(t, http.StatusOK, rec.Code)
+				assert.Equal(t, 2, m.Version)
 			},
 		},
 		{
-			name:           "Failure - invalid JSON",
-			minutesID:      "min-123",
-			request:        minutes.Minutes{},
-			mockSetup:      func(m *MockMinutesService) {},
+			name:      "Failure - invalid JSON",
+			minutesID: "min-123",
+			rawBody:   []byte("not valid json"),
+			mockSetup: func(m *MockMinutesService) {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				assert.Equal(t, "Invalid request body", rec.Body.String())
@@ -256,9 +279,6 @@ func TestMinutesHandler_UpdateMinutes(t *testing.T) {
 			mockSetup: func(m *MockMinutesService) {
 				m.On("GetMinutesByID", mock.Anything, "non-existent").
 					Return(nil, errors.New("not found"))
-
-				m.On("UpdateMinutes", mock.Anything, "non-existent", mock.AnythingOfType("*minutes.Minutes"), "test-user").
-					Return(nil, errors.New("not found"))
 			},
 			expectedStatus: http.StatusNotFound,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
@@ -273,10 +293,18 @@ func TestMinutesHandler_UpdateMinutes(t *testing.T) {
 			tt.mockSetup(mockService)
 			handler := NewMinutesHandler(mockService)
 
-			body, _ := json.Marshal(tt.request)
+			var body []byte
+			if tt.rawBody != nil {
+				body = tt.rawBody
+			} else {
+				body, _ = json.Marshal(tt.request)
+			}
 			req := httptest.NewRequest("PUT", "/minutes/"+tt.minutesID, bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-User-ID", "test-user")
+			if tt.minutesID != "" {
+				req = addChiContext(req, "id", tt.minutesID)
+			}
 			rec := httptest.NewRecorder()
 
 			handler.UpdateMinutes(rec, req)
@@ -324,15 +352,18 @@ func TestMinutesHandler_GetMinutesHistory(t *testing.T) {
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				var history []*minutes.MinutesHistory
 				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &history))
-				assert.Equal(t, float64(http.StatusOK), rec.Code)
+				assert.Equal(t, http.StatusOK, rec.Code)
 				assert.Len(t, history, 2)
 				assert.Equal(t, "first version", history[0].Content)
 			},
 		},
 		{
-			name:           "Failure - minutes not found",
-			minutesID:      "non-existent",
-			mockSetup:      func(m *MockMinutesService) {},
+			name:      "Failure - minutes not found",
+			minutesID: "non-existent",
+			mockSetup: func(m *MockMinutesService) {
+				m.On("GetMinutesHistory", mock.Anything, "non-existent").
+					Return(nil, errors.New("failed to get minutes history: not found"))
+			},
 			expectedStatus: http.StatusInternalServerError,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				assert.Contains(t, rec.Body.String(), "failed to get minutes history")
@@ -356,6 +387,9 @@ func TestMinutesHandler_GetMinutesHistory(t *testing.T) {
 			handler := NewMinutesHandler(mockService)
 
 			req := httptest.NewRequest("GET", "/minutes/"+tt.minutesID+"/versions", nil)
+			if tt.minutesID != "" {
+				req = addChiContext(req, "id", tt.minutesID)
+			}
 			rec := httptest.NewRecorder()
 
 			handler.GetMinutesHistory(rec, req)

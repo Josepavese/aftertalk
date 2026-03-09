@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/flowup/aftertalk/internal/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -112,6 +113,7 @@ func TestAPIKey_Middleware(t *testing.T) {
 }
 
 func TestLogging_Middleware(t *testing.T) {
+	logging.Init("info", "console") //nolint
 	handler := Logging(&MockLoggingHandler{})
 
 	req := httptest.NewRequest("GET", "/test/path", nil)
@@ -247,7 +249,7 @@ func TestPrometheusMetrics(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), "help")
+	assert.Contains(t, rec.Body.String(), "# HELP")
 }
 
 func TestMetricsMiddleware(t *testing.T) {

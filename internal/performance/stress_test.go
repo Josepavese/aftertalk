@@ -37,6 +37,10 @@ func setupStressTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to ping DB: %v", err)
 	}
 
+	if err := runMigrations(db.DB); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	return db.DB
 }
 
@@ -47,6 +51,9 @@ func teardownStressTestDB() {
 func TestLongRunningSessions24Hours(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping 24-hour session stress test in short mode")
+	}
+	if os.Getenv("STRESS_TEST") == "" {
+		t.Skip("Skipping 24-hour session stress test: set STRESS_TEST=1 to enable")
 	}
 
 	duration := 24 * time.Hour
@@ -127,7 +134,7 @@ func TestHighFrequencySessionCreation(t *testing.T) {
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
-	service := session.NewService(repo, jwtManager, sessionCache, tokenCache)
+	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil)
 
 	sessionCount := sessionsPerHour * 2
 	sessionPerThread := sessionCount / threads
@@ -265,6 +272,9 @@ func TestLargeTranscriptionDataProcessing(t *testing.T) {
 func TestDatabaseWALStress(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping WAL stress test in short mode")
+	}
+	if os.Getenv("STRESS_TEST") == "" {
+		t.Skip("Skipping WAL stress test: set STRESS_TEST=1 to enable")
 	}
 
 	operationsPerSecond := 5000

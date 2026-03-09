@@ -8,6 +8,7 @@ import (
 type Cache struct {
 	mu    sync.RWMutex
 	items map[string]*item
+	cache sync.Map
 }
 
 type item struct {
@@ -31,6 +32,7 @@ func (c *Cache) Set(key string, value interface{}, ttl time.Duration) {
 		value:     value,
 		expiresAt: time.Now().Add(ttl),
 	}
+	c.cache.Store(key, value)
 }
 
 func (c *Cache) Get(key string) (interface{}, bool) {
@@ -54,6 +56,7 @@ func (c *Cache) Delete(key string) {
 	defer c.mu.Unlock()
 
 	delete(c.items, key)
+	c.cache.Delete(key)
 }
 
 func (c *Cache) Exists(key string) bool {
@@ -96,4 +99,10 @@ func (c *Cache) Size() int {
 	defer c.mu.RUnlock()
 
 	return len(c.items)
+}
+
+func (c *Cache) Items() map[string]*item {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.items
 }

@@ -30,6 +30,10 @@ func NewJWTManager(secret, issuer string, expiration time.Duration) *JWTManager 
 }
 
 func (j *JWTManager) Generate(sessionID, userID, role string) (string, string, error) {
+	if j.expiration <= 0 {
+		return "", "", fmt.Errorf("invalid expiration: must be positive")
+	}
+
 	jti := uuid.New().String()
 
 	now := time.Now()
@@ -61,7 +65,7 @@ func (j *JWTManager) Validate(tokenString string) (*Claims, error) {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return j.secret, nil
-	})
+	}, jwt.WithIssuer(j.issuer), jwt.WithExpirationRequired())
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %w", err)
