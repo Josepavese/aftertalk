@@ -3,27 +3,200 @@ package session
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/flowup/aftertalk/internal/logging"
 	"github.com/flowup/aftertalk/internal/storage/cache"
+	"github.com/flowup/aftertalk/pkg/audio"
 	"github.com/flowup/aftertalk/pkg/jwt"
 	"github.com/google/uuid"
 )
 
-type Service struct {
-	repo         *SessionRepository
-	jwtManager   *jwt.JWTManager
-	sessionCache *cache.SessionCache
-	tokenCache   *cache.TokenCache
+type AudioData struct {
+	SessionID     string
+	ParticipantID string
+	Role          string
+	Data          []byte   // raw PCM bytes (int16 LE) or concatenated Opus payloads
+	Frames        [][]byte // individual Opus RTP payloads; preferred by whisper-local
+	SampleRate    int
+	Duration      int
+	// OffsetMs: milliseconds from session start to the beginning of this audio chunk.
+	// STT providers return segment timestamps relative to the audio file; this offset
+	// must be added to convert them to session-absolute timestamps.
+	OffsetMs int
 }
 
-func NewService(repo *SessionRepository, jwtManager *jwt.JWTManager, sessionCache *cache.SessionCache, tokenCache *cache.TokenCache) *Service {
-	return &Service{
-		repo:         repo,
-		jwtManager:   jwtManager,
-		sessionCache: sessionCache,
-		tokenCache:   tokenCache,
+type TranscriptionServiceInterface interface {
+	TranscribeAudio(ctx context.Context, audioData *AudioData) error
+	GetTranscriptionsAsText(ctx context.Context, sessionID string) (string, error)
+}
+
+type MinutesServiceInterface interface {
+	GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, roles []string) (interface{}, error)
+	GetMinutes(ctx context.Context, sessionID string) (interface{}, error)
+}
+
+// InactivityTimeout is the period of silence after which a session is
+// automatically ended and minutes are generated.
+const InactivityTimeout = 10 * time.Minute
+
+type Service struct {
+	repo          *SessionRepository
+	jwtManager    *jwt.JWTManager
+	sessionCache  *cache.SessionCache
+	tokenCache    *cache.TokenCache
+	audioBuffer   *cache.AudioBufferCache
+	transcription TranscriptionServiceInterface
+	minutes       MinutesServiceInterface
+	transcribeCh  chan *transcribeJob
+	wg            sync.WaitGroup
+	opusDecoder   *audio.OpusDecoder
+	pcmConverter  *audio.PCMConverter
+
+	inactivityMu     sync.Mutex
+	inactivityTimers map[string]*time.Timer // sessionID → timer
+}
+
+type transcribeJob struct {
+	SessionID     string
+	ParticipantID string
+	Role          string
+	AudioData     []byte
+	OpusFrames    [][]byte
+	DurationMs    int
+	// OffsetMs: milliseconds from session start to the beginning of this audio chunk.
+	// Added to STT segment timestamps before storing, so all transcriptions share
+	// the same absolute timeline regardless of when each participant connected.
+	OffsetMs int
+}
+
+func NewService(
+	repo *SessionRepository,
+	jwtManager *jwt.JWTManager,
+	sessionCache *cache.SessionCache,
+	tokenCache *cache.TokenCache,
+	audioBuffer *cache.AudioBufferCache,
+	transcription TranscriptionServiceInterface,
+	minutes MinutesServiceInterface,
+) *Service {
+	s := &Service{
+		repo:             repo,
+		jwtManager:       jwtManager,
+		sessionCache:     sessionCache,
+		tokenCache:       tokenCache,
+		audioBuffer:      audioBuffer,
+		transcription:    transcription,
+		minutes:          minutes,
+		transcribeCh:     make(chan *transcribeJob, 100),
+		opusDecoder:      audio.NewOpusDecoder(48000, 1),
+		pcmConverter:     audio.NewPCMConverter(16000, 1),
+		inactivityTimers: make(map[string]*time.Timer),
+	}
+
+	if transcription != nil {
+		s.wg.Add(1)
+		go s.processTranscriptionQueue()
+	}
+
+	return s
+}
+
+func (s *Service) processTranscriptionQueue() {
+	defer s.wg.Done()
+
+	for job := range s.transcribeCh {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+
+		// When Opus frames are available skip PCM conversion (OGG muxing is done
+		// inside the STT provider). Only convert when no frames are present.
+		var pcmData []byte
+		if len(job.OpusFrames) == 0 {
+			var err error
+			pcmData, err = s.convertToPCM16k(job.AudioData)
+			if err != nil {
+				logging.Errorf("Failed to convert audio to PCM for session=%s participant=%s: %v",
+					job.SessionID, job.ParticipantID, err)
+				cancel()
+				continue
+			}
+		}
+
+		audioData := &AudioData{
+			SessionID:     job.SessionID,
+			ParticipantID: job.ParticipantID,
+			Role:          job.Role,
+			Data:          pcmData,
+			Frames:        job.OpusFrames,
+			SampleRate:    16000,
+			Duration:      job.DurationMs,
+			OffsetMs:      job.OffsetMs,
+		}
+
+		if err := s.transcription.TranscribeAudio(ctx, audioData); err != nil {
+			logging.Errorf("Failed to transcribe audio for session=%s participant=%s: %v",
+				job.SessionID, job.ParticipantID, err)
+		} else {
+			logging.Infof("Transcription completed for session=%s participant=%s",
+				job.SessionID, job.ParticipantID)
+		}
+
+		s.audioBuffer.ClearBuffer(job.SessionID, job.ParticipantID)
+		cancel()
+	}
+}
+
+func (s *Service) convertToPCM16k(opusData []byte) ([]byte, error) {
+	pcmData, err := s.opusDecoder.Decode(opusData)
+	if err != nil {
+		return nil, fmt.Errorf("opus decode failed: %w", err)
+	}
+
+	resampled := s.pcmConverter.ConvertToInt16(s.pcmConverter.ConvertToFloat32(pcmData))
+
+	out := make([]byte, len(resampled)*2)
+	for i, sample := range resampled {
+		out[i*2] = byte(sample)
+		out[i*2+1] = byte(sample >> 8)
+	}
+
+	return out, nil
+}
+
+func (s *Service) Close() {
+	close(s.transcribeCh)
+	s.wg.Wait()
+}
+
+// resetInactivityTimer restarts the inactivity countdown for a session.
+// Called each time an audio chunk arrives. When the timer fires, the session
+// is automatically ended and minutes are generated.
+func (s *Service) resetInactivityTimer(sessionID string) {
+	s.inactivityMu.Lock()
+	defer s.inactivityMu.Unlock()
+
+	if t, ok := s.inactivityTimers[sessionID]; ok {
+		t.Reset(InactivityTimeout)
+		return
+	}
+	s.inactivityTimers[sessionID] = time.AfterFunc(InactivityTimeout, func() {
+		logging.Infof("Inactivity timeout reached, auto-ending session=%s", sessionID)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := s.EndSession(ctx, sessionID); err != nil {
+			logging.Errorf("Auto-end session=%s failed: %v", sessionID, err)
+		}
+	})
+}
+
+// cancelInactivityTimer stops and removes the inactivity timer for a session.
+func (s *Service) cancelInactivityTimer(sessionID string) {
+	s.inactivityMu.Lock()
+	defer s.inactivityMu.Unlock()
+
+	if t, ok := s.inactivityTimers[sessionID]; ok {
+		t.Stop()
+		delete(s.inactivityTimers, sessionID)
 	}
 }
 
@@ -120,9 +293,17 @@ func (s *Service) GetSession(ctx context.Context, sessionID string) (*Session, e
 }
 
 func (s *Service) EndSession(ctx context.Context, sessionID string) error {
+	// Cancel the inactivity timer (handles both manual and auto-triggered ends).
+	s.cancelInactivityTimer(sessionID)
+
 	session, err := s.repo.GetByID(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
+	}
+
+	// Idempotent: don't re-process an already-ended session.
+	if session.Status != StatusActive {
+		return nil
 	}
 
 	session.End()
@@ -132,18 +313,121 @@ func (s *Service) EndSession(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("failed to update session: %w", err)
 	}
 
+	go func() {
+		s.processRemainingAudio(sessionID)
+		s.generateMinutesForSession(sessionID)
+	}()
+
 	return nil
 }
 
+func (s *Service) processRemainingAudio(sessionID string) {
+	if s.audioBuffer == nil {
+		return
+	}
+	buffers := s.audioBuffer.GetAllParticipantBuffers(sessionID)
+
+	for participantID, buffer := range buffers {
+		if len(buffer.Frames) == 0 && len(buffer.Data) == 0 {
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		// When individual Opus frames are available pass them directly to the STT
+		// provider (which handles OGG muxing). Only fall back to PCM conversion
+		// for providers that require raw PCM and have no frames.
+		var pcmData []byte
+		if len(buffer.Frames) == 0 {
+			var err error
+			pcmData, err = s.convertToPCM16k(buffer.Data)
+			if err != nil {
+				logging.Errorf("Failed to convert remaining audio for session=%s participant=%s: %v",
+					sessionID, participantID, err)
+				continue
+			}
+		}
+
+		var offsetMs int
+		if state, ok := s.sessionCache.GetSession(sessionID); ok && !state.StartedAt.IsZero() {
+			offsetMs = int(buffer.StartTime.Sub(state.StartedAt).Milliseconds())
+			if offsetMs < 0 {
+				offsetMs = 0
+			}
+		}
+
+		audioData := &AudioData{
+			SessionID:     sessionID,
+			ParticipantID: participantID,
+			Role:          buffer.ParticipantID,
+			Data:          pcmData,
+			Frames:        buffer.Frames,
+			SampleRate:    16000,
+			Duration:      buffer.DurationMs,
+			OffsetMs:      offsetMs,
+		}
+
+		if err := s.transcription.TranscribeAudio(ctx, audioData); err != nil {
+			logging.Errorf("Failed to transcribe remaining audio for session=%s participant=%s: %v",
+				sessionID, participantID, err)
+		}
+
+		s.audioBuffer.ClearBuffer(sessionID, participantID)
+	}
+}
+
+func (s *Service) generateMinutesForSession(sessionID string) {
+	time.Sleep(2 * time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	transcriptionText, err := s.transcription.GetTranscriptionsAsText(ctx, sessionID)
+	if err != nil {
+		logging.Errorf("Failed to get transcriptions for session=%s: %v", sessionID, err)
+		return
+	}
+
+	if transcriptionText == "" {
+		logging.Warnf("No transcriptions found for session=%s", sessionID)
+	}
+
+	participants, err := s.repo.GetParticipantsBySession(ctx, sessionID)
+	if err != nil {
+		logging.Errorf("Failed to get participants for session=%s: %v", sessionID, err)
+		return
+	}
+
+	roles := make([]string, len(participants))
+	for i, p := range participants {
+		roles[i] = p.Role
+	}
+
+	_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, roles)
+	if err != nil {
+		logging.Errorf("Failed to generate minutes for session=%s: %v", sessionID, err)
+		return
+	}
+
+	session, err := s.repo.GetByID(ctx, sessionID)
+	if err != nil {
+		logging.Errorf("Failed to get session for completion: %v", err)
+		return
+	}
+
+	session.Complete()
+	if err := s.repo.Update(ctx, session); err != nil {
+		logging.Errorf("Failed to mark session as completed: %v", err)
+	}
+}
+
 func (s *Service) ValidateParticipant(ctx context.Context, jti string) (*Participant, error) {
-	// Check cache first
 	if _, exists := s.tokenCache.GetToken(jti); !exists {
-		// Fallback to DB lookup (for server restarts)
 		participant, err := s.repo.GetParticipantByJTI(ctx, jti)
 		if err != nil || participant == nil {
 			return nil, fmt.Errorf("token not found or expired")
 		}
-		// Re-cache the token
 		s.tokenCache.SetToken(jti, participant.SessionID, 2*time.Hour)
 	}
 
@@ -164,14 +448,12 @@ func (s *Service) ValidateParticipant(ctx context.Context, jti string) (*Partici
 }
 
 func (s *Service) ConnectParticipant(ctx context.Context, participantID string) error {
-	// First get the participant by ID to find the session
 	participant, err := s.repo.GetParticipantByJTI(ctx, participantID)
 	if err != nil {
 		return err
 	}
 
 	if participant == nil {
-		// Try to get by session ID as fallback
 		participants, err := s.repo.GetParticipantsBySession(ctx, participantID)
 		if err != nil {
 			return err
@@ -187,6 +469,11 @@ func (s *Service) ConnectParticipant(ctx context.Context, participantID string) 
 		return fmt.Errorf("failed to update participant: %w", err)
 	}
 
+	stream := NewAudioStream(uuid.New().String(), participant.ID, 15.0)
+	if err := s.repo.CreateAudioStream(ctx, stream); err != nil {
+		logging.Errorf("Failed to create audio stream: %v", err)
+	}
+
 	if state, exists := s.sessionCache.GetSession(participant.SessionID); exists {
 		state.ActiveParticipants++
 		s.sessionCache.SetSession(participant.SessionID, state, 2*time.Hour)
@@ -196,13 +483,69 @@ func (s *Service) ConnectParticipant(ctx context.Context, participantID string) 
 }
 
 func (s *Service) ProcessAudioChunk(sessionID, participantID string, payload []byte) error {
+	participant, err := s.repo.GetParticipantByJTI(context.Background(), participantID)
+	if err != nil {
+		return fmt.Errorf("participant not found: %w", err)
+	}
+
+	// WebRTC Opus uses 20ms frames — the RTP payload is compressed Opus,
+	// not raw PCM, so its byte size cannot be used to estimate duration.
+	const chunkDurationMs = 20 // ms per RTP packet (standard WebRTC Opus frame size)
+
 	logging.Debugf("Processing audio chunk for session=%s participant=%s bytes=%d",
 		sessionID, participantID, len(payload))
 
-	// TODO: Implement actual audio processing
-	// 1. Get or create AudioStream for participant
-	// 2. Add chunk to stream
-	// 3. When chunk buffer is full (10-30s), trigger transcription
+	buffer, _ := s.audioBuffer.AppendToBuffer(sessionID, participantID, payload, chunkDurationMs)
+
+	// Reset the inactivity countdown whenever audio arrives.
+	s.resetInactivityTimer(sessionID)
+
+	if audio.ShouldFlushOnSilence(buffer.Frames, buffer.DurationMs) {
+		logging.Infof("Triggering transcription (VAD) for session=%s participant=%s bufferDuration=%dms silentFrame=%v",
+			sessionID, participantID, buffer.DurationMs, audio.IsOpusSilentFrame(payload))
+
+		framesCopy := make([][]byte, len(buffer.Frames))
+		for i, f := range buffer.Frames {
+			framesCopy[i] = make([]byte, len(f))
+			copy(framesCopy[i], f)
+		}
+
+		// Compute session-absolute offset for this chunk.
+		// buffer.StartTime is the wall-clock time the buffer started accumulating.
+		// session.StartedAt (from cache) is the wall-clock time the session was created.
+		// offsetMs = time elapsed from session start to beginning of this audio chunk.
+		var offsetMs int
+		if state, ok := s.sessionCache.GetSession(sessionID); ok && !state.StartedAt.IsZero() {
+			offsetMs = int(buffer.StartTime.Sub(state.StartedAt).Milliseconds())
+			if offsetMs < 0 {
+				offsetMs = 0
+			}
+		}
+
+		job := &transcribeJob{
+			SessionID:     sessionID,
+			ParticipantID: participantID,
+			Role:          participant.Role,
+			AudioData:     make([]byte, len(buffer.Data)),
+			OpusFrames:    framesCopy,
+			DurationMs:    buffer.DurationMs,
+			OffsetMs:      offsetMs,
+		}
+		copy(job.AudioData, buffer.Data)
+
+		select {
+		case s.transcribeCh <- job:
+			s.audioBuffer.ClearBuffer(sessionID, participantID)
+		default:
+			logging.Warnf("Transcription queue full, dropping chunk for session=%s participant=%s", sessionID, participantID)
+		}
+	}
+
+	stream, err := s.repo.GetAudioStreamByParticipant(context.Background(), participantID)
+	if err == nil && stream != nil {
+		stream.AddChunk()
+		s.repo.UpdateAudioStream(context.Background(), stream)
+	}
 
 	return nil
 }

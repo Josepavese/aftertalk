@@ -35,13 +35,19 @@ func (s *Service) TranscribeAudio(ctx context.Context, audioData *stt.AudioData)
 	logging.Infof("Transcription completed: %d segments", len(result.Segments))
 
 	for i, segment := range result.Segments {
+		// Convert chunk-relative timestamps to session-absolute timestamps.
+		// segment.StartMs/EndMs are relative to the beginning of the audio chunk;
+		// audioData.OffsetMs is the time elapsed from session start to the chunk start.
+		absStartMs := audioData.OffsetMs + segment.StartMs
+		absEndMs := audioData.OffsetMs + segment.EndMs
+
 		transcription := NewTranscription(
 			uuid.New().String(),
 			audioData.SessionID,
 			i,
 			segment.Role,
-			segment.StartMs,
-			segment.EndMs,
+			absStartMs,
+			absEndMs,
 			segment.Text,
 		)
 		transcription.SetConfidence(segment.Confidence)
@@ -73,4 +79,31 @@ func (s *Service) GetTranscriptionByID(ctx context.Context, id string) (*Transcr
 	}
 
 	return transcription, nil
+}
+
+func (s *Service) GetTranscriptionsAsText(ctx context.Context, sessionID string) (string, error) {
+	transcriptions, err := s.repo.GetBySessionOrdered(ctx, sessionID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get transcriptions: %w", err)
+	}
+
+	text := ""
+	for _, t := range transcriptions {
+		roleLabel := t.Role
+		if roleLabel == "" {
+			roleLabel = "speaker"
+		}
+		timestamp := formatTimestampMs(t.StartMs)
+		text += fmt.Sprintf("[%s %s]: %s\n", timestamp, roleLabel, t.Text)
+	}
+
+	return text, nil
+}
+
+// formatTimestampMs converts milliseconds to MM:SS format.
+func formatTimestampMs(ms int) string {
+	totalSec := ms / 1000
+	minutes := totalSec / 60
+	seconds := totalSec % 60
+	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }

@@ -37,7 +37,7 @@ func (m *MockSTTProvider) IsAvailable() bool {
 }
 
 func TestTranscribeAudio_Success(t *testing.T) {
-	if err := logging.Init("debug", "text"); err != nil {
+	if err := logging.Init("debug", "console"); err != nil {
 		t.Fatalf("Failed to initialize logger: %v", err)
 	}
 	defer logging.Sync()
@@ -108,7 +108,7 @@ func TestTranscribeAudio_Success(t *testing.T) {
 }
 
 func TestTranscribeAudio_RetryMultipleFailures(t *testing.T) {
-	if err := logging.Init("debug", "text"); err != nil {
+	if err := logging.Init("debug", "console"); err != nil {
 		t.Fatalf("Failed to initialize logger: %v", err)
 	}
 	defer logging.Sync()
