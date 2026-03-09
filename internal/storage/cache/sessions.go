@@ -88,9 +88,10 @@ func (tc *TokenCache) UseToken(jti string, sessionID string) bool {
 }
 
 type ProcessingQueue struct {
-	mu   sync.Mutex
-	jobs chan Job
-	quit chan struct{}
+	mu        sync.Mutex
+	jobs      chan Job
+	quit      chan struct{}
+	closeOnce sync.Once
 }
 
 type Job struct {
@@ -100,6 +101,9 @@ type Job struct {
 }
 
 func NewProcessingQueue(workers int) *ProcessingQueue {
+	if workers < 0 {
+		workers = 0
+	}
 	q := &ProcessingQueue{
 		jobs: make(chan Job, workers*2),
 		quit: make(chan struct{}),
@@ -108,6 +112,11 @@ func NewProcessingQueue(workers int) *ProcessingQueue {
 }
 
 func (q *ProcessingQueue) Enqueue(job Job) error {
+	select {
+	case <-q.quit:
+		return fmt.Errorf("queue is closed")
+	default:
+	}
 	select {
 	case q.jobs <- job:
 		return nil
@@ -118,6 +127,11 @@ func (q *ProcessingQueue) Enqueue(job Job) error {
 
 func (q *ProcessingQueue) Dequeue() (Job, bool) {
 	select {
+	case <-q.quit:
+		return Job{}, false
+	default:
+	}
+	select {
 	case job := <-q.jobs:
 		return job, true
 	case <-q.quit:
@@ -126,10 +140,121 @@ func (q *ProcessingQueue) Dequeue() (Job, bool) {
 }
 
 func (q *ProcessingQueue) Close() {
-	close(q.quit)
-	close(q.jobs)
+	q.closeOnce.Do(func() {
+		close(q.quit)
+	})
 }
 
 func (q *ProcessingQueue) Size() int {
-	return len(q.jobs)
+	select {
+	case <-q.quit:
+		return 0
+	default:
+		return len(q.jobs)
+	}
+}
+
+type AudioBuffer struct {
+	Data          []byte   // concatenated Opus payloads (legacy, kept for compatibility)
+	Frames        [][]byte // individual Opus RTP payloads, one per RTP packet
+	DurationMs    int
+	StartTime     time.Time
+	ParticipantID string
+}
+
+type AudioBufferCache struct {
+	*Cache
+	mu sync.RWMutex
+}
+
+func NewAudioBufferCache() *AudioBufferCache {
+	return &AudioBufferCache{
+		Cache: New(),
+	}
+}
+
+func (abc *AudioBufferCache) GetBuffer(sessionID, participantID string) (*AudioBuffer, bool) {
+	abc.mu.RLock()
+	defer abc.mu.RUnlock()
+
+	key := fmt.Sprintf("session:%s:participant:%s:audio", sessionID, participantID)
+	val, exists := abc.Get(key)
+	if !exists {
+		return nil, false
+	}
+
+	buffer, ok := val.(*AudioBuffer)
+	if !ok {
+		return nil, false
+	}
+
+	return buffer, true
+}
+
+func (abc *AudioBufferCache) SetBuffer(sessionID, participantID string, buffer *AudioBuffer, ttl time.Duration) {
+	abc.mu.Lock()
+	defer abc.mu.Unlock()
+
+	key := fmt.Sprintf("session:%s:participant:%s:audio", sessionID, participantID)
+	abc.Set(key, buffer, ttl)
+}
+
+func (abc *AudioBufferCache) AppendToBuffer(sessionID, participantID string, chunk []byte, chunkDurationMs int) (*AudioBuffer, bool) {
+	abc.mu.Lock()
+	defer abc.mu.Unlock()
+
+	key := fmt.Sprintf("session:%s:participant:%s:audio", sessionID, participantID)
+
+	var buffer *AudioBuffer
+	if existing, exists := abc.Get(key); exists {
+		buffer = existing.(*AudioBuffer)
+	} else {
+		buffer = &AudioBuffer{
+			Data:          make([]byte, 0, len(chunk)*3),
+			StartTime:     time.Now(),
+			ParticipantID: participantID,
+		}
+	}
+
+	buffer.Data = append(buffer.Data, chunk...)
+	frameCopy := make([]byte, len(chunk))
+	copy(frameCopy, chunk)
+	buffer.Frames = append(buffer.Frames, frameCopy)
+	buffer.DurationMs += chunkDurationMs
+
+	abc.Set(key, buffer, 30*time.Minute)
+
+	return buffer, len(buffer.Data) > 0
+}
+
+func (abc *AudioBufferCache) ClearBuffer(sessionID, participantID string) {
+	abc.mu.Lock()
+	defer abc.mu.Unlock()
+
+	key := fmt.Sprintf("session:%s:participant:%s:audio", sessionID, participantID)
+	abc.Delete(key)
+}
+
+func (abc *AudioBufferCache) GetAllParticipantBuffers(sessionID string) map[string]*AudioBuffer {
+	abc.mu.RLock()
+	defer abc.mu.RUnlock()
+
+	result := make(map[string]*AudioBuffer)
+	prefix := fmt.Sprintf("session:%s:participant:", sessionID)
+
+	abc.Cache.cache.Range(func(key, value interface{}) bool {
+		k, ok := key.(string)
+		if !ok {
+			return true
+		}
+
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			if buffer, ok := value.(*AudioBuffer); ok {
+				result[buffer.ParticipantID] = buffer
+			}
+		}
+		return true
+	})
+
+	return result
 }

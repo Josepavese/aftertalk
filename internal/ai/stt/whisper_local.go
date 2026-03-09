@@ -1,0 +1,212 @@
+package stt
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"time"
+
+	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/flowup/aftertalk/pkg/audio"
+)
+
+// WhisperLocalProvider calls a locally-running faster-whisper-server (or any
+// OpenAI-compatible /v1/audio/transcriptions endpoint) that returns word/segment
+// level timestamps. This avoids any cloud dependency and works entirely on CPU.
+//
+// Compatible servers:
+//   - faster-whisper-server: docker run -p 9000:9000 fedirz/faster-whisper-server
+//   - whisper.cpp: ./server --port 9000
+type WhisperLocalProvider struct {
+	cfg    WhisperLocalConfig
+	client *http.Client
+}
+
+func NewWhisperLocalProvider(cfg WhisperLocalConfig) *WhisperLocalProvider {
+	return &WhisperLocalProvider{
+		cfg: cfg,
+		client: &http.Client{
+			Timeout: 5 * time.Minute,
+		},
+	}
+}
+
+func (p *WhisperLocalProvider) Name() string { return "whisper-local" }
+
+func (p *WhisperLocalProvider) IsAvailable() bool {
+	return p.cfg.URL != ""
+}
+
+// whisperVerboseResponse is the OpenAI "verbose_json" transcription response,
+// returned by faster-whisper-server and whisper.cpp when response_format=verbose_json.
+type whisperVerboseResponse struct {
+	Text     string           `json:"text"`
+	Language string           `json:"language"`
+	Duration float64          `json:"duration"`
+	Words    []whisperWord    `json:"words"`
+	Segments []whisperSegment `json:"segments"`
+}
+
+type whisperWord struct {
+	Word        string  `json:"word"`
+	Start       float64 `json:"start"`
+	End         float64 `json:"end"`
+	Probability float64 `json:"probability"`
+}
+
+type whisperSegment struct {
+	ID               int         `json:"id"`
+	Start            float64     `json:"start"`
+	End              float64     `json:"end"`
+	Text             string      `json:"text"`
+	AvgLogprob       float64     `json:"avg_logprob"`
+	NoSpeechProb     float64     `json:"no_speech_prob"`
+	Words            []whisperWord `json:"words"`
+}
+
+func (p *WhisperLocalProvider) Transcribe(ctx context.Context, audioData *AudioData) (*TranscriptionResult, error) {
+	logging.Infof("WhisperLocal: transcribing session=%s participant=%s bytes=%d",
+		audioData.SessionID, audioData.ParticipantID, len(audioData.Data))
+
+	body, contentType, err := p.buildMultipartBody(audioData)
+	if err != nil {
+		return nil, fmt.Errorf("whisper-local: build request: %w", err)
+	}
+
+	url := p.cfg.URL + "/v1/audio/transcriptions"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("whisper-local: new request: %w", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("whisper-local: HTTP request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("whisper-local: server returned %d: %s", resp.StatusCode, string(b))
+	}
+
+	var wr whisperVerboseResponse
+	if err := json.NewDecoder(resp.Body).Decode(&wr); err != nil {
+		return nil, fmt.Errorf("whisper-local: decode response: %w", err)
+	}
+
+	return p.toTranscriptionResult(audioData, &wr), nil
+}
+
+func (p *WhisperLocalProvider) buildMultipartBody(audioData *AudioData) (io.Reader, string, error) {
+	buf := &bytes.Buffer{}
+	w := multipart.NewWriter(buf)
+
+	// Prefer OGG Opus (from individual frames) — faster-whisper/ffmpeg decodes it natively.
+	// Fall back to raw PCM bytes (for future cloud providers that pre-decode).
+	var audioBytes []byte
+	filename := "audio.wav"
+
+	if len(audioData.Frames) > 0 {
+		ogg, err := audio.WriteOGGOpus(audioData.Frames, 48000, 1)
+		if err != nil {
+			return nil, "", fmt.Errorf("ogg mux: %w", err)
+		}
+		audioBytes = ogg
+		filename = "audio.ogg"
+	} else {
+		audioBytes = audioData.Data
+	}
+
+	fw, err := w.CreateFormFile("file", filename)
+	if err != nil {
+		return nil, "", err
+	}
+	if _, err := fw.Write(audioBytes); err != nil {
+		return nil, "", err
+	}
+
+	model := p.cfg.Model
+	if model == "" {
+		model = "Systran/faster-whisper-large-v3"
+	}
+	_ = w.WriteField("model", model)
+
+	responseFormat := p.cfg.ResponseFormat
+	if responseFormat == "" {
+		responseFormat = "verbose_json"
+	}
+	_ = w.WriteField("response_format", responseFormat)
+
+	// timestamp_granularities[]: request both word and segment timestamps
+	_ = w.WriteField("timestamp_granularities[]", "word")
+	_ = w.WriteField("timestamp_granularities[]", "segment")
+
+	if p.cfg.Language != "" {
+		_ = w.WriteField("language", p.cfg.Language)
+	}
+
+	if err := w.Close(); err != nil {
+		return nil, "", err
+	}
+
+	return buf, w.FormDataContentType(), nil
+}
+
+// toTranscriptionResult converts the whisper response to our internal format.
+// Prefers word-level timestamps if available, falls back to segment-level.
+func (p *WhisperLocalProvider) toTranscriptionResult(audioData *AudioData, wr *whisperVerboseResponse) *TranscriptionResult {
+	result := NewTranscriptionResult(p.Name())
+	result.Duration = int(wr.Duration * 1000)
+
+	if len(wr.Segments) > 0 {
+		for _, seg := range wr.Segments {
+			// Skip low-quality segments (likely silence or noise)
+			if seg.NoSpeechProb > 0.8 {
+				continue
+			}
+
+			confidence := logprobToConfidence(seg.AvgLogprob)
+			result.AddSegment(&TranscriptionSegment{
+				SessionID:  audioData.SessionID,
+				Role:       audioData.Role,
+				StartMs:    int(seg.Start * 1000),
+				EndMs:      int(seg.End * 1000),
+				Text:       seg.Text,
+				Confidence: confidence,
+			})
+		}
+		return result
+	}
+
+	// Fallback: no segments — treat whole audio as one segment
+	if wr.Text != "" {
+		result.AddSegment(&TranscriptionSegment{
+			SessionID:  audioData.SessionID,
+			Role:       audioData.Role,
+			StartMs:    0,
+			EndMs:      int(wr.Duration * 1000),
+			Text:       wr.Text,
+			Confidence: 0.8,
+		})
+	}
+
+	return result
+}
+
+// logprobToConfidence converts log-probability (typically -1..0) to confidence (0..1).
+func logprobToConfidence(logprob float64) float64 {
+	if logprob >= 0 {
+		return 1.0
+	}
+	if logprob < -2.0 {
+		return 0.1
+	}
+	// Linear mapping: -2.0 → 0.1, 0.0 → 1.0
+	return 1.0 + (logprob/2.0)*0.9
+}

@@ -5,7 +5,12 @@ import (
 	"testing"
 
 	"github.com/flowup/aftertalk/internal/ai/stt"
+	"github.com/flowup/aftertalk/internal/logging"
 )
+
+func init() {
+	logging.Init("info", "console") //nolint:errcheck
+}
 
 func TestGoogleSTTProvider_Name(t *testing.T) {
 	provider := stt.NewGoogleSTTProvider("creds")
@@ -252,7 +257,7 @@ func TestProvider_NewProviderFactory(t *testing.T) {
 		{"aws provider", "aws", true, false},
 		{"azure provider", "azure", true, false},
 		{"unsupported provider", "unsupported", false, true},
-		{"empty provider", "", false, true},
+		{"empty provider", "", true, false},
 	}
 
 	for _, tt := range tests {

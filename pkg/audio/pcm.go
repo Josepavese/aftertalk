@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 )
 
 const (
@@ -39,7 +40,9 @@ func (c *PCMConverter) ConvertToFloat32(pcmData []int16) []float32 {
 func (c *PCMConverter) ConvertToInt16(floatData []float32) []int16 {
 	ints := make([]int16, len(floatData))
 	for i, sample := range floatData {
-		ints[i] = int16(sample * 32767.0)
+		scaled := float64(sample) * 32767.0
+		scaled = math.Max(-32767, math.Min(32767, scaled))
+		ints[i] = int16(scaled)
 	}
 	return ints
 }
@@ -55,7 +58,7 @@ func ReadPCM(r io.Reader) ([]int16, error) {
 	for {
 		_, err := io.ReadFull(r, buf)
 		if err != nil {
-			if err == io.EOF {
+			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				break
 			}
 			return nil, fmt.Errorf("failed to read PCM data: %w", err)
@@ -83,6 +86,9 @@ func WritePCM(w io.Writer, samples []int16) error {
 
 func ChunkPCM(samples []int16, chunkSizeMs int, sampleRate int) [][]int16 {
 	samplesPerChunk := (sampleRate * chunkSizeMs) / 1000
+	if samplesPerChunk <= 0 {
+		return nil
+	}
 
 	var chunks [][]int16
 	for i := 0; i < len(samples); i += samplesPerChunk {

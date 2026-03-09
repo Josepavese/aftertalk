@@ -4,7 +4,12 @@ import (
 	"testing"
 
 	"github.com/flowup/aftertalk/internal/ai/stt"
+	"github.com/flowup/aftertalk/internal/logging"
 )
+
+func init() {
+	logging.Init("info", "console") //nolint:errcheck
+}
 
 func TestAudioData(t *testing.T) {
 	tests := []struct {
@@ -201,9 +206,9 @@ func TestSTTConfigDefaults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := stt.NewProvider(tt.cfg)
 			if tt.expected == "" {
-				// Empty provider should return an error
-				if err == nil {
-					t.Error("Expected error for empty provider")
+				// Empty provider falls back to stub — no error expected
+				if err != nil {
+					t.Errorf("Expected no error for empty provider (stub fallback), got: %v", err)
 				}
 			} else if tt.expected != "unsupported" {
 				// For valid providers, expect no error
@@ -260,8 +265,8 @@ func TestSTTProviderWithEmptyData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if !tt.provider.IsAvailable() {
-				t.Error("Provider should not be available without valid credentials")
+			if tt.provider.IsAvailable() != tt.expected {
+				t.Errorf("Expected IsAvailable()=%v, got %v", tt.expected, tt.provider.IsAvailable())
 			}
 		})
 	}
