@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/flowup/aftertalk/internal/logging"
 )
@@ -263,8 +264,77 @@ func NewStubLLMProvider() *StubLLMProvider {
 }
 
 func (p *StubLLMProvider) Generate(_ context.Context, prompt string) (string, error) {
-	logging.Warnf("LLM stub: no provider configured, returning empty minutes\n--- PROMPT ---\n%s\n--- END PROMPT ---", prompt)
-	return `{"themes":[],"contents_reported":[],"professional_interventions":[],"progress_issues":{"progress":[],"issues":[]},"next_steps":[],"citations":[]}`, nil
+	logging.Warnf("LLM stub: building minutes from transcript\n--- PROMPT ---\n%s\n--- END PROMPT ---", prompt)
+
+	// Extract transcript lines between "TRANSCRIPT:\n" and "\n\nGenerate"
+	transcript := ""
+	if start := strings.Index(prompt, "TRANSCRIPT:\n"); start != -1 {
+		rest := prompt[start+len("TRANSCRIPT:\n"):]
+		if end := strings.Index(rest, "\n\nGenerate"); end != -1 {
+			transcript = strings.TrimSpace(rest[:end])
+		} else {
+			transcript = strings.TrimSpace(rest)
+		}
+	}
+
+	// Build contents_reported and citations from each transcript line
+	type entry struct {
+		Text      string `json:"text"`
+		Timestamp int    `json:"timestamp"`
+	}
+	type citation struct {
+		TimestampMs int    `json:"timestamp_ms"`
+		Text        string `json:"text"`
+		Role        string `json:"role"`
+	}
+
+	var contents []entry
+	var citations []citation
+
+	for _, line := range strings.Split(transcript, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Format: [MM:SS role]: text
+		role := ""
+		text := line
+		if idx := strings.Index(line, "]: "); idx != -1 {
+			header := line[1:idx] // strip leading [
+			parts := strings.SplitN(header, " ", 2)
+			if len(parts) == 2 {
+				role = parts[1]
+				text = line[idx+3:]
+			}
+		}
+		contents = append(contents, entry{Text: text, Timestamp: 0})
+		citations = append(citations, citation{TimestampMs: 0, Text: text, Role: role})
+	}
+
+	if len(contents) == 0 {
+		contents = []entry{}
+	}
+	if len(citations) == 0 {
+		citations = []citation{}
+	}
+
+	result := map[string]interface{}{
+		"themes":                   []string{"[stub] Conversazione registrata"},
+		"contents_reported":        contents,
+		"professional_interventions": []entry{},
+		"progress_issues": map[string]interface{}{
+			"progress": []string{},
+			"issues":   []string{},
+		},
+		"next_steps": []string{},
+		"citations":  citations,
+	}
+
+	out, err := json.Marshal(result)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 func (p *StubLLMProvider) Name() string      { return "stub" }
