@@ -2,13 +2,21 @@ package webrtc
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"sync"
 
+	"github.com/flowup/aftertalk/internal/logging"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 )
+
+// iceCandidatePayload matches the RTCIceCandidate object sent by browsers.
+type iceCandidatePayload struct {
+	Candidate        string  `json:"candidate"`
+	SDPMid           *string `json:"sdpMid"`
+	SDPMLineIndex    *uint16 `json:"sdpMLineIndex"`
+	UsernameFragment *string `json:"usernameFragment"`
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -18,46 +26,33 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-type Logger interface {
-	Infof(format string, args ...interface{})
-	Warnf(format string, args ...interface{})
-	Errorf(format string, args ...interface{})
-}
-
-type defaultLogger struct{}
-
-func (d defaultLogger) Infof(format string, args ...interface{}) {
-	fmt.Printf("[INFO] "+format+"\n", args...)
-}
-
-func (d defaultLogger) Warnf(format string, args ...interface{}) {
-	fmt.Printf("[WARN] "+format+"\n", args...)
-}
-
-func (d defaultLogger) Errorf(format string, args ...interface{}) {
-	fmt.Printf("[ERROR] "+format+"\n", args...)
-}
-
-var log Logger = defaultLogger{}
-
-func SetLogger(l Logger) {
-	log = l
-}
-
 type SignalingMessage struct {
-	Type         string `json:"type"`
-	SessionID    string `json:"session_id,omitempty"`
-	ParticipantID string `json:"participant_id,omitempty"`
-	Role         string `json:"role,omitempty"`
-	SDP          string `json:"sdp,omitempty"`
-	Candidate    string `json:"candidate,omitempty"`
-	Mid          string `json:"mid,omitempty"`
+	Type          string          `json:"type"`
+	SessionID     string          `json:"session_id,omitempty"`
+	ParticipantID string          `json:"participant_id,omitempty"`
+	Role          string          `json:"role,omitempty"`
+	SDP           string          `json:"sdp,omitempty"`
+	Candidate     json.RawMessage `json:"candidate,omitempty"`
+	Mid           string          `json:"mid,omitempty"`
+}
+
+// connWriter wraps a WebSocket connection with a write mutex.
+// gorilla/websocket allows one concurrent writer; all sends must go through here.
+type connWriter struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (cw *connWriter) writeJSON(v interface{}) error {
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+	return cw.conn.WriteJSON(v)
 }
 
 type SignalingServer struct {
-	manager      *Manager
-	connections  map[string]*websocket.Conn
-	mu           sync.RWMutex
+	manager       *Manager
+	connections   map[string]*websocket.Conn
+	mu            sync.RWMutex
 	validateToken func(token string) (*Claims, error)
 }
 
@@ -78,93 +73,120 @@ func (s *SignalingServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 
 	claims, err := s.validateToken(token)
 	if err != nil {
-		log.Warnf("Invalid token: %v", err)
+		logging.Warnf("Invalid token: %v", err)
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Errorf("WebSocket upgrade failed: %v", err)
+		logging.Errorf("WebSocket upgrade failed: %v", err)
 		return
 	}
 
-	key := claims.SessionID + ":" + claims.UserID
+	// Use JTI as participantID so audio chunks can be looked up via GetParticipantByJTI.
+	// Fall back to UserID if JTI is empty (e.g. tests).
+	participantID := claims.JTI
+	if participantID == "" {
+		participantID = claims.UserID
+	}
+
+	key := claims.SessionID + ":" + participantID
 	s.mu.Lock()
 	s.connections[key] = conn
 	s.mu.Unlock()
 
-	log.Infof("Signaling connected: session=%s user=%s role=%s",
-		claims.SessionID, claims.UserID, claims.Role)
+	logging.Infof("Signaling connected: session=%s user=%s role=%s jti=%s",
+		claims.SessionID, claims.UserID, claims.Role, participantID)
 
-	go s.handleMessages(conn, claims.SessionID, claims.UserID, claims.Role)
+	cw := &connWriter{conn: conn}
+	go s.handleMessages(cw, claims.SessionID, participantID, claims.Role)
 }
 
-func (s *SignalingServer) handleMessages(conn *websocket.Conn, sessionID, participantID, role string) {
+func (s *SignalingServer) handleMessages(cw *connWriter, sessionID, participantID, role string) {
 	defer func() {
-		conn.Close()
+		cw.conn.Close()
 		key := sessionID + ":" + participantID
 		s.mu.Lock()
 		delete(s.connections, key)
 		s.mu.Unlock()
 
 		s.manager.RemovePeer(sessionID, participantID)
-		log.Infof("Signaling disconnected: session=%s participant=%s", sessionID, participantID)
+		logging.Infof("Signaling disconnected: session=%s participant=%s", sessionID, participantID)
 	}()
 
 	for {
-		var msg SignalingMessage
-		err := conn.ReadJSON(&msg)
+		_, raw, err := cw.conn.ReadMessage()
 		if err != nil {
-			log.Errorf("Error reading signaling message: %v", err)
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+				logging.Errorf("Signaling read error: %v", err)
+			}
 			return
 		}
 
-		s.handleMessage(conn, sessionID, participantID, role, &msg)
+		var msg SignalingMessage
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			logging.Warnf("Ignoring unparseable signaling message: %v", err)
+			continue
+		}
+
+		s.handleMessage(cw, sessionID, participantID, role, &msg)
 	}
 }
 
-func (s *SignalingServer) handleMessage(conn *websocket.Conn, sessionID, participantID, role string, msg *SignalingMessage) {
+func (s *SignalingServer) handleMessage(cw *connWriter, sessionID, participantID, role string, msg *SignalingMessage) {
 	switch msg.Type {
 	case "join":
-		s.handleJoin(conn, sessionID, participantID, role)
+		s.handleJoin(cw, sessionID, participantID, role)
 
 	case "offer":
-		s.handleOffer(conn, sessionID, participantID, role, msg.SDP)
+		s.handleOffer(cw, sessionID, participantID, role, msg.SDP)
 
 	case "answer":
-		s.handleAnswer(conn, sessionID, participantID, msg.SDP)
+		s.handleAnswer(sessionID, participantID, msg.SDP)
 
-	case "candidate":
-		s.handleCandidate(conn, sessionID, participantID, msg.Candidate, msg.Mid)
+	case "candidate", "ice-candidate":
+		s.handleCandidate(sessionID, participantID, msg.Candidate, msg.Mid)
 
 	default:
-		log.Warnf("Unknown signaling message type: %s", msg.Type)
+		logging.Warnf("Unknown signaling message type: %s", msg.Type)
 	}
 }
 
-func (s *SignalingServer) handleJoin(conn *websocket.Conn, sessionID, participantID, role string) {
-	log.Infof("Peer joining: session=%s participant=%s role=%s", sessionID, participantID, role)
+func (s *SignalingServer) handleJoin(cw *connWriter, sessionID, participantID, role string) {
+	logging.Infof("Peer joining: session=%s participant=%s role=%s", sessionID, participantID, role)
 
 	peer, err := s.manager.CreatePeer(nil, sessionID, participantID, role)
 	if err != nil {
-		log.Errorf("Failed to create peer: %v", err)
+		logging.Errorf("Failed to create peer: %v", err)
 		return
 	}
+
+	// Trickle ICE: register candidate callback before SetLocalDescription
+	peer.PC.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil {
+			return
+		}
+		candidateJSON, err := json.Marshal(c.ToJSON())
+		if err != nil {
+			return
+		}
+		msg := SignalingMessage{Type: "ice-candidate", Candidate: json.RawMessage(candidateJSON)}
+		if err := cw.writeJSON(msg); err != nil {
+			logging.Warnf("Failed to send ICE candidate: %v", err)
+		}
+	})
 
 	offer, err := peer.PC.CreateOffer(nil)
 	if err != nil {
-		log.Errorf("Failed to create offer: %v", err)
+		logging.Errorf("Failed to create offer: %v", err)
 		return
 	}
 
-	gatherComplete := webrtc.GatheringCompletePromise(peer.PC)
 	if err := peer.PC.SetLocalDescription(offer); err != nil {
-		log.Errorf("Failed to set local description: %v", err)
+		logging.Errorf("Failed to set local description: %v", err)
 		return
 	}
-
-	<-gatherComplete
 
 	response := SignalingMessage{
 		Type:          "offer",
@@ -173,19 +195,34 @@ func (s *SignalingServer) handleJoin(conn *websocket.Conn, sessionID, participan
 		SDP:           peer.PC.LocalDescription().SDP,
 	}
 
-	if err := conn.WriteJSON(response); err != nil {
-		log.Errorf("Failed to send offer: %v", err)
+	if err := cw.writeJSON(response); err != nil {
+		logging.Errorf("Failed to send offer: %v", err)
 	}
 }
 
-func (s *SignalingServer) handleOffer(conn *websocket.Conn, sessionID, participantID, role, sdp string) {
-	log.Infof("Received offer from: session=%s participant=%s", sessionID, participantID)
+func (s *SignalingServer) handleOffer(cw *connWriter, sessionID, participantID, role, sdp string) {
+	logging.Infof("Received offer from: session=%s participant=%s", sessionID, participantID)
 
 	peer, err := s.manager.CreatePeer(nil, sessionID, participantID, role)
 	if err != nil {
-		log.Errorf("Failed to create peer: %v", err)
+		logging.Errorf("Failed to create peer: %v", err)
 		return
 	}
+
+	// Trickle ICE: register candidate callback before SetLocalDescription
+	peer.PC.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil {
+			return
+		}
+		candidateJSON, err := json.Marshal(c.ToJSON())
+		if err != nil {
+			return
+		}
+		msg := SignalingMessage{Type: "ice-candidate", Candidate: json.RawMessage(candidateJSON)}
+		if err := cw.writeJSON(msg); err != nil {
+			logging.Warnf("Failed to send ICE candidate: %v", err)
+		}
+	})
 
 	offer := webrtc.SessionDescription{
 		Type: webrtc.SDPTypeOffer,
@@ -193,24 +230,22 @@ func (s *SignalingServer) handleOffer(conn *websocket.Conn, sessionID, participa
 	}
 
 	if err := peer.PC.SetRemoteDescription(offer); err != nil {
-		log.Errorf("Failed to set remote description: %v", err)
+		logging.Errorf("Failed to set remote description: %v", err)
 		return
 	}
 
 	answer, err := peer.PC.CreateAnswer(nil)
 	if err != nil {
-		log.Errorf("Failed to create answer: %v", err)
+		logging.Errorf("Failed to create answer: %v", err)
 		return
 	}
 
-	gatherComplete := webrtc.GatheringCompletePromise(peer.PC)
 	if err := peer.PC.SetLocalDescription(answer); err != nil {
-		log.Errorf("Failed to set local description: %v", err)
+		logging.Errorf("Failed to set local description: %v", err)
 		return
 	}
 
-	<-gatherComplete
-
+	// Send answer immediately — ICE candidates follow separately via OnICECandidate
 	response := SignalingMessage{
 		Type:          "answer",
 		SessionID:     sessionID,
@@ -218,17 +253,17 @@ func (s *SignalingServer) handleOffer(conn *websocket.Conn, sessionID, participa
 		SDP:           peer.PC.LocalDescription().SDP,
 	}
 
-	if err := conn.WriteJSON(response); err != nil {
-		log.Errorf("Failed to send answer: %v", err)
+	if err := cw.writeJSON(response); err != nil {
+		logging.Errorf("Failed to send answer: %v", err)
 	}
 }
 
-func (s *SignalingServer) handleAnswer(conn *websocket.Conn, sessionID, participantID, sdp string) {
-	log.Infof("Received answer from: session=%s participant=%s", sessionID, participantID)
+func (s *SignalingServer) handleAnswer(sessionID, participantID, sdp string) {
+	logging.Infof("Received answer from: session=%s participant=%s", sessionID, participantID)
 
 	peer, exists := s.manager.GetPeer(sessionID, participantID)
 	if !exists {
-		log.Warnf("Peer not found: %s", participantID)
+		logging.Warnf("Peer not found: %s", participantID)
 		return
 	}
 
@@ -238,24 +273,37 @@ func (s *SignalingServer) handleAnswer(conn *websocket.Conn, sessionID, particip
 	}
 
 	if err := peer.PC.SetRemoteDescription(answer); err != nil {
-		log.Errorf("Failed to set remote description: %v", err)
+		logging.Errorf("Failed to set remote description: %v", err)
 	}
 }
 
-func (s *SignalingServer) handleCandidate(conn *websocket.Conn, sessionID, participantID, candidate, mid string) {
+func (s *SignalingServer) handleCandidate(sessionID, participantID string, candidateRaw json.RawMessage, mid string) {
 	peer, exists := s.manager.GetPeer(sessionID, participantID)
 	if !exists {
-		log.Warnf("Peer not found for ICE candidate: %s", participantID)
+		logging.Warnf("Peer not found for ICE candidate: %s", participantID)
 		return
 	}
 
-	iceCandidate := webrtc.ICECandidateInit{
-		Candidate: candidate,
-		SDPMid:    &mid,
+	// Browser sends candidate as an RTCIceCandidate object; try that first,
+	// then fall back to a plain string.
+	var iceCandidate webrtc.ICECandidateInit
+	var payload iceCandidatePayload
+	if err := json.Unmarshal(candidateRaw, &payload); err == nil && payload.Candidate != "" {
+		iceCandidate = webrtc.ICECandidateInit{
+			Candidate: payload.Candidate,
+			SDPMid:    payload.SDPMid,
+		}
+	} else {
+		var candidateStr string
+		if err := json.Unmarshal(candidateRaw, &candidateStr); err != nil {
+			logging.Warnf("Cannot parse ICE candidate: %v", err)
+			return
+		}
+		iceCandidate = webrtc.ICECandidateInit{Candidate: candidateStr, SDPMid: &mid}
 	}
 
 	if err := peer.PC.AddICECandidate(iceCandidate); err != nil {
-		log.Errorf("Failed to add ICE candidate: %v", err)
+		logging.Errorf("Failed to add ICE candidate: %v", err)
 	}
 }
 
@@ -275,4 +323,5 @@ type Claims struct {
 	SessionID string
 	UserID    string
 	Role      string
+	JTI       string // JWT ID — used as participantID for audio processing
 }
