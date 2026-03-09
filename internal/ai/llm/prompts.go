@@ -33,22 +33,24 @@ Generate a JSON response with the following structure:
   ]
 }
 
-REQUIREMENTS:
-1. themes: 3-5 main themes discussed
-2. contents_reported: key points reported by participants
-3. professional_interventions: important interventions by the professional
-4. progress_issues: separate progress and issues identified
-5. next_steps: actionable next steps
-6. citations: at least 5 timestamped citations with exact quotes
+STRICT RULES — MUST FOLLOW:
+- NEVER invent, fabricate, or assume any content not present in the TRANSCRIPT above.
+- If the transcript is empty or too short, ALL arrays must be empty and ALL strings must be empty — do NOT generate placeholder content.
+- Every citation must be a verbatim quote from the transcript; if there are no quotes, citations must be an empty array.
+- Do NOT make diagnoses or clinical assessments.
+- Maintain neutral, factual tone.
+- Use the same language as the transcript.
 
-IMPORTANT:
-- Do NOT make diagnoses or clinical assessments
-- Report only what was explicitly stated in the conversation
-- Maintain neutral, factual tone
-- Include timestamp in milliseconds for each citation
-- Quote exact words from the transcript for citations
+OUTPUT FORMAT:
+- themes: list of main topics explicitly discussed (empty array if transcript is empty)
+- contents_reported: key points from the transcript with their timestamp in ms
+- professional_interventions: interventions by the professional role only
+- progress_issues.progress: progress items mentioned
+- progress_issues.issues: issues or problems mentioned
+- next_steps: action items explicitly stated
+- citations: verbatim quotes with timestamp_ms and role (empty array if no quotes)
 
-Respond ONLY with valid JSON.`, formatRoles(roles), transcriptionText)
+Respond ONLY with valid JSON, no extra text.`, formatRoles(roles), transcriptionText)
 }
 
 func formatRoles(roles []string) string {

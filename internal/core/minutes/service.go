@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/flowup/aftertalk/internal/ai/llm"
@@ -68,6 +69,14 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 
 	if err := s.repo.Create(ctx, minutes); err != nil {
 		return nil, fmt.Errorf("failed to create minutes: %w", err)
+	}
+
+	// If there is no transcript content, store empty minutes without calling the LLM.
+	if strings.TrimSpace(transcriptionText) == "" {
+		logging.Warnf("Session %s has no transcription text; storing empty minutes", sessionID)
+		minutes.MarkReady()
+		s.repo.Update(ctx, minutes)
+		return minutes, nil
 	}
 
 	var response string
