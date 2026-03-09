@@ -360,7 +360,7 @@ func (s *Service) processRemainingAudio(sessionID string) {
 		audioData := &AudioData{
 			SessionID:     sessionID,
 			ParticipantID: participantID,
-			Role:          buffer.ParticipantID,
+			Role:          buffer.Role,
 			Data:          pcmData,
 			Frames:        buffer.Frames,
 			SampleRate:    16000,
@@ -495,7 +495,7 @@ func (s *Service) ProcessAudioChunk(sessionID, participantID string, payload []b
 	logging.Debugf("Processing audio chunk for session=%s participant=%s bytes=%d",
 		sessionID, participantID, len(payload))
 
-	buffer, _ := s.audioBuffer.AppendToBuffer(sessionID, participantID, payload, chunkDurationMs)
+	buffer, _ := s.audioBuffer.AppendToBuffer(sessionID, participantID, participant.Role, payload, chunkDurationMs)
 
 	// Reset the inactivity countdown whenever audio arrives.
 	s.resetInactivityTimer(sessionID)

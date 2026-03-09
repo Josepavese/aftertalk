@@ -160,6 +160,7 @@ type AudioBuffer struct {
 	DurationMs    int
 	StartTime     time.Time
 	ParticipantID string
+	Role          string
 }
 
 type AudioBufferCache struct {
@@ -199,7 +200,7 @@ func (abc *AudioBufferCache) SetBuffer(sessionID, participantID string, buffer *
 	abc.Set(key, buffer, ttl)
 }
 
-func (abc *AudioBufferCache) AppendToBuffer(sessionID, participantID string, chunk []byte, chunkDurationMs int) (*AudioBuffer, bool) {
+func (abc *AudioBufferCache) AppendToBuffer(sessionID, participantID, role string, chunk []byte, chunkDurationMs int) (*AudioBuffer, bool) {
 	abc.mu.Lock()
 	defer abc.mu.Unlock()
 
@@ -213,6 +214,7 @@ func (abc *AudioBufferCache) AppendToBuffer(sessionID, participantID string, chu
 			Data:          make([]byte, 0, len(chunk)*3),
 			StartTime:     time.Now(),
 			ParticipantID: participantID,
+			Role:          role,
 		}
 	}
 
