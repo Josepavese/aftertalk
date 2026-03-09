@@ -350,6 +350,8 @@ func NewProvider(cfg *LLMConfig) (LLMProvider, error) {
 		return NewAnthropicProvider(cfg.Anthropic.APIKey, cfg.Anthropic.Model), nil
 	case "azure":
 		return NewAzureOpenAIProvider(cfg.Azure.APIKey, cfg.Azure.Endpoint, cfg.Azure.Deployment), nil
+	case "ollama":
+		return NewOllamaProvider(cfg.Ollama)
 	case "", "stub":
 		return NewStubLLMProvider(), nil
 	default:
