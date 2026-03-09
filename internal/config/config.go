@@ -75,6 +75,7 @@ type WhisperLocalSTTConfig struct {
 	Model          string `koanf:"model"`
 	Language       string `koanf:"language"`
 	ResponseFormat string `koanf:"response_format"`
+	Endpoint       string `koanf:"endpoint"`
 }
 
 type LLMConfig struct {
