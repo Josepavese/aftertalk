@@ -119,7 +119,7 @@ func TestSessionCRUD(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotEmpty(t, session.ID)
 		assert.NotZero(t, session.CreatedAt)
-		assert.Equal(t, "active", session.Status)
+		assert.Equal(t, "active", string(session.Status))
 		assert.Equal(t, 3, session.ParticipantCount)
 	})
 
@@ -148,7 +148,7 @@ func TestSessionCRUD(t *testing.T) {
 
 		retrieved, err := sessionRepo.GetByID(context.Background(), created.ID)
 		require.NoError(t, err)
-		assert.Equal(t, "ended", retrieved.Status)
+		assert.Equal(t, "ended", string(retrieved.Status))
 	})
 }
 

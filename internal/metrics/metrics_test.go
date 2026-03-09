@@ -2,9 +2,10 @@ package metrics
 
 import (
 	"sync"
-
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -61,8 +62,9 @@ func TestMixedIncrementsAndDecrements(t *testing.T) {
 	DecrementActiveConnections()
 	DecrementActiveConnections()
 
+	// +1+1-1+1-1-1 = 0
 	activeConnections := GetActiveConnectionsValue()
-	assert.Equal(t, float64(-1), activeConnections)
+	assert.Equal(t, float64(0), activeConnections)
 }
 
 func TestSetQueueSize(t *testing.T) {
@@ -92,7 +94,6 @@ func TestSessionsCreatedCounter(t *testing.T) {
 		SessionsCreated.Inc()
 	}
 
-	// Counter increments successfully
 	assert.NotPanics(t, func() {
 		SessionsCreated.Inc()
 	})
@@ -110,57 +111,45 @@ func TestSessionsEndedCounter(t *testing.T) {
 }
 
 func TestTranscriptionsGeneratedCounter(t *testing.T) {
-	ResetMetrics()
-
+	before := testutil.ToFloat64(TranscriptionsGenerated)
 	TranscriptionsGenerated.Inc()
-
-	assert.Equal(t, float64(1), TranscriptionsGenerated)
+	assert.Equal(t, float64(1), testutil.ToFloat64(TranscriptionsGenerated)-before)
 }
 
 func TestTranscriptionErrorsCounter(t *testing.T) {
-	ResetMetrics()
-
+	before := testutil.ToFloat64(TranscriptionErrors)
 	TranscriptionErrors.Inc()
 	TranscriptionErrors.Inc()
 	TranscriptionErrors.Inc()
-
-	assert.Equal(t, float64(3), TranscriptionErrors)
+	assert.Equal(t, float64(3), testutil.ToFloat64(TranscriptionErrors)-before)
 }
 
 func TestMinutesGeneratedCounter(t *testing.T) {
-	ResetMetrics()
-
+	before := testutil.ToFloat64(MinutesGenerated)
 	MinutesGenerated.Inc()
 	MinutesGenerated.Inc()
-
-	assert.Equal(t, float64(2), MinutesGenerated)
+	assert.Equal(t, float64(2), testutil.ToFloat64(MinutesGenerated)-before)
 }
 
 func TestMinutesErrorsCounter(t *testing.T) {
-	ResetMetrics()
-
+	before := testutil.ToFloat64(MinutesErrors)
 	MinutesErrors.Inc()
-
-	assert.Equal(t, float64(1), MinutesErrors)
+	assert.Equal(t, float64(1), testutil.ToFloat64(MinutesErrors)-before)
 }
 
 func TestWebhookSentCounter(t *testing.T) {
-	ResetMetrics()
-
+	before := testutil.ToFloat64(WebhookSent)
 	WebhookSent.Inc()
 	WebhookSent.Inc()
 	WebhookSent.Inc()
-
-	assert.Equal(t, float64(3), WebhookSent)
+	assert.Equal(t, float64(3), testutil.ToFloat64(WebhookSent)-before)
 }
 
 func TestWebhookErrorsCounter(t *testing.T) {
-	ResetMetrics()
-
+	before := testutil.ToFloat64(WebhookErrors)
 	WebhookErrors.Inc()
 	WebhookErrors.Inc()
-
-	assert.Equal(t, float64(2), WebhookErrors)
+	assert.Equal(t, float64(2), testutil.ToFloat64(WebhookErrors)-before)
 }
 
 func TestRequestDurationHistogram(t *testing.T) {
@@ -183,7 +172,16 @@ func TestRequestDurationMultipleObservations(t *testing.T) {
 }
 
 func TestAllCountersIndependence(t *testing.T) {
-	ResetMetrics()
+	before := map[string]float64{
+		"SessionsCreated":          testutil.ToFloat64(SessionsCreated),
+		"SessionsEnded":            testutil.ToFloat64(SessionsEnded),
+		"TranscriptionsGenerated":  testutil.ToFloat64(TranscriptionsGenerated),
+		"TranscriptionErrors":      testutil.ToFloat64(TranscriptionErrors),
+		"MinutesGenerated":         testutil.ToFloat64(MinutesGenerated),
+		"MinutesErrors":            testutil.ToFloat64(MinutesErrors),
+		"WebhookSent":              testutil.ToFloat64(WebhookSent),
+		"WebhookErrors":            testutil.ToFloat64(WebhookErrors),
+	}
 
 	SessionsCreated.Inc()
 	SessionsEnded.Inc()
@@ -194,34 +192,30 @@ func TestAllCountersIndependence(t *testing.T) {
 	WebhookSent.Inc()
 	WebhookErrors.Inc()
 
-	assert.Equal(t, float64(1), SessionsCreated)
-	assert.Equal(t, float64(1), SessionsEnded)
-	assert.Equal(t, float64(1), TranscriptionsGenerated)
-	assert.Equal(t, float64(1), TranscriptionErrors)
-	assert.Equal(t, float64(1), MinutesGenerated)
-	assert.Equal(t, float64(1), MinutesErrors)
-	assert.Equal(t, float64(1), WebhookSent)
-	assert.Equal(t, float64(1), WebhookErrors)
+	assert.Equal(t, float64(1), testutil.ToFloat64(SessionsCreated)-before["SessionsCreated"])
+	assert.Equal(t, float64(1), testutil.ToFloat64(SessionsEnded)-before["SessionsEnded"])
+	assert.Equal(t, float64(1), testutil.ToFloat64(TranscriptionsGenerated)-before["TranscriptionsGenerated"])
+	assert.Equal(t, float64(1), testutil.ToFloat64(TranscriptionErrors)-before["TranscriptionErrors"])
+	assert.Equal(t, float64(1), testutil.ToFloat64(MinutesGenerated)-before["MinutesGenerated"])
+	assert.Equal(t, float64(1), testutil.ToFloat64(MinutesErrors)-before["MinutesErrors"])
+	assert.Equal(t, float64(1), testutil.ToFloat64(WebhookSent)-before["WebhookSent"])
+	assert.Equal(t, float64(1), testutil.ToFloat64(WebhookErrors)-before["WebhookErrors"])
 }
 
 func TestGetActiveConnectionsValue(t *testing.T) {
 	ResetMetrics()
 
-	// Should return 0 when no connections
 	activeConnections := GetActiveConnectionsValue()
 	assert.Equal(t, float64(0), activeConnections)
 
-	// Increment once
 	IncrementActiveConnections()
 	activeConnections = GetActiveConnectionsValue()
 	assert.Equal(t, float64(1), activeConnections)
 
-	// Increment again
 	IncrementActiveConnections()
 	activeConnections = GetActiveConnectionsValue()
 	assert.Equal(t, float64(2), activeConnections)
 
-	// Decrement
 	DecrementActiveConnections()
 	activeConnections = GetActiveConnectionsValue()
 	assert.Equal(t, float64(1), activeConnections)
@@ -230,16 +224,13 @@ func TestGetActiveConnectionsValue(t *testing.T) {
 func TestGetQueueSize(t *testing.T) {
 	ResetMetrics()
 
-	// Should return 0 when queue is empty
 	queueSize := GetQueueSize()
 	assert.Equal(t, float64(0), queueSize)
 
-	// Set queue size
 	SetQueueSize(10)
 	queueSize = GetQueueSize()
 	assert.Equal(t, float64(10), queueSize)
 
-	// Clear queue
 	SetQueueSize(0)
 	queueSize = GetQueueSize()
 	assert.Equal(t, float64(0), queueSize)
@@ -250,7 +241,6 @@ func TestConcurrentActiveConnections(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	// Concurrent increments
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func() {
@@ -259,7 +249,6 @@ func TestConcurrentActiveConnections(t *testing.T) {
 		}()
 	}
 
-	// Concurrent decrements
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func() {
@@ -279,7 +268,6 @@ func TestConcurrentQueueSizeUpdates(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	// Concurrent queue size updates
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func(n int) {
@@ -290,16 +278,25 @@ func TestConcurrentQueueSizeUpdates(t *testing.T) {
 
 	wg.Wait()
 
+	// Concurrent Set operations are non-deterministic; just verify the result is in range
 	queueSize := GetQueueSize()
-	assert.Equal(t, float64(99), queueSize)
+	assert.True(t, queueSize >= 0 && queueSize < 100)
 }
 
 func TestConcurrentCounterIncrements(t *testing.T) {
-	ResetMetrics()
+	before := map[string]float64{
+		"SessionsCreated":         testutil.ToFloat64(SessionsCreated),
+		"SessionsEnded":           testutil.ToFloat64(SessionsEnded),
+		"TranscriptionsGenerated": testutil.ToFloat64(TranscriptionsGenerated),
+		"TranscriptionErrors":     testutil.ToFloat64(TranscriptionErrors),
+		"MinutesGenerated":        testutil.ToFloat64(MinutesGenerated),
+		"MinutesErrors":           testutil.ToFloat64(MinutesErrors),
+		"WebhookSent":             testutil.ToFloat64(WebhookSent),
+		"WebhookErrors":           testutil.ToFloat64(WebhookErrors),
+	}
 
 	var wg sync.WaitGroup
 
-	// Concurrent increments on all counters
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func() {
@@ -317,31 +314,26 @@ func TestConcurrentCounterIncrements(t *testing.T) {
 
 	wg.Wait()
 
-	assert.Equal(t, float64(100), SessionsCreated)
-	assert.Equal(t, float64(100), SessionsEnded)
-	assert.Equal(t, float64(100), TranscriptionsGenerated)
-	assert.Equal(t, float64(100), TranscriptionErrors)
-	assert.Equal(t, float64(100), MinutesGenerated)
-	assert.Equal(t, float64(100), MinutesErrors)
-	assert.Equal(t, float64(100), WebhookSent)
-	assert.Equal(t, float64(100), WebhookErrors)
+	assert.Equal(t, float64(100), testutil.ToFloat64(SessionsCreated)-before["SessionsCreated"])
+	assert.Equal(t, float64(100), testutil.ToFloat64(SessionsEnded)-before["SessionsEnded"])
+	assert.Equal(t, float64(100), testutil.ToFloat64(TranscriptionsGenerated)-before["TranscriptionsGenerated"])
+	assert.Equal(t, float64(100), testutil.ToFloat64(TranscriptionErrors)-before["TranscriptionErrors"])
+	assert.Equal(t, float64(100), testutil.ToFloat64(MinutesGenerated)-before["MinutesGenerated"])
+	assert.Equal(t, float64(100), testutil.ToFloat64(MinutesErrors)-before["MinutesErrors"])
+	assert.Equal(t, float64(100), testutil.ToFloat64(WebhookSent)-before["WebhookSent"])
+	assert.Equal(t, float64(100), testutil.ToFloat64(WebhookErrors)-before["WebhookErrors"])
 }
 
 func TestResetMetrics(t *testing.T) {
 	ResetMetrics()
 
-	// All metrics should start at 0 or default values
 	assert.Equal(t, float64(0), GetActiveConnectionsValue())
 	assert.Equal(t, float64(0), GetQueueSize())
 
-	SessionsCreated.Inc()
-	SessionsEnded.Inc()
-
-	SessionsCreated.Inc()
-	SessionsEnded.Inc()
-
-	SessionsCreated.Inc()
-	SessionsEnded.Inc()
+	IncrementActiveConnections()
+	IncrementActiveConnections()
+	IncrementActiveConnections()
+	SetQueueSize(3)
 
 	assert.Equal(t, float64(3), GetActiveConnectionsValue())
 	assert.Equal(t, float64(3), GetQueueSize())
@@ -366,15 +358,11 @@ func TestHistogramInvariants(t *testing.T) {
 
 	histogram := RequestDuration.WithLabelValues("GET", "/api/sessions", "200")
 
-	// After first observation, count should be 1
 	histogram.Observe(0.1)
-	// Note: Can't directly verify histogram values without prometheus API access
-	// This test ensures the API doesn't panic
 }
 
 func TestCounterZeroInitial(t *testing.T) {
-	ResetMetrics()
-
+	// Prometheus counters are global and can't be reset — just verify they're accessible and non-negative
 	for _, counter := range []struct {
 		name string
 		val  prometheus.Counter
@@ -389,7 +377,7 @@ func TestCounterZeroInitial(t *testing.T) {
 		{"WebhookErrors", WebhookErrors},
 	} {
 		t.Run(counter.name, func(t *testing.T) {
-			assert.Equal(t, float64(0), counter.val)
+			assert.True(t, testutil.ToFloat64(counter.val) >= 0)
 		})
 	}
 }

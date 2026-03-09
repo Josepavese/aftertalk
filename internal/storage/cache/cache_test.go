@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -59,8 +60,8 @@ func TestCache_SetAndGetWithNegativeTTL(t *testing.T) {
 	c.Set("key1", "value1", -1*time.Hour)
 
 	val, exists := c.Get("key1")
-	assert.True(t, exists)
-	assert.Equal(t, "value1", val)
+	assert.False(t, exists)
+	assert.Nil(t, val)
 }
 
 func TestCache_Delete(t *testing.T) {
@@ -323,13 +324,15 @@ func TestCache_HugeNumberOfKeys(t *testing.T) {
 	c := New()
 
 	for i := 0; i < 10000; i++ {
-		c.Set(string(rune('a'+i%26)), i, 1*time.Hour)
+		key := fmt.Sprintf("key%d", i)
+		c.Set(key, i, 1*time.Hour)
 	}
 
 	assert.Equal(t, 10000, c.Size())
 
 	for i := 0; i < 10000; i++ {
-		val, exists := c.Get(string(rune('a' + i%26)))
+		key := fmt.Sprintf("key%d", i)
+		val, exists := c.Get(key)
 		assert.True(t, exists)
 		assert.Equal(t, i, val)
 	}

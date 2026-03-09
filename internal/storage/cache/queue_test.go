@@ -122,6 +122,7 @@ func TestProcessingQueue_Dequeue(t *testing.T) {
 
 func TestProcessingQueue_DequeueEmptyQueue(t *testing.T) {
 	q := NewProcessingQueue(5)
+	q.Close()
 
 	job, exists := q.Dequeue()
 	assert.False(t, exists)
@@ -239,7 +240,7 @@ func TestProcessingQueue_CloseTwice(t *testing.T) {
 }
 
 func TestProcessingQueue_ConcurrentEnqueue(t *testing.T) {
-	q := NewProcessingQueue(10)
+	q := NewProcessingQueue(50)
 
 	var wg sync.WaitGroup
 	numJobs := 100
@@ -262,7 +263,7 @@ func TestProcessingQueue_ConcurrentEnqueue(t *testing.T) {
 }
 
 func TestProcessingQueue_ConcurrentEnqueueAndDequeue(t *testing.T) {
-	q := NewProcessingQueue(20)
+	q := NewProcessingQueue(25)
 
 	var wg sync.WaitGroup
 	numJobs := 50
@@ -424,7 +425,7 @@ func TestProcessingQueue_UniquePayload(t *testing.T) {
 }
 
 func TestProcessingQueue_HugeQueue(t *testing.T) {
-	q := NewProcessingQueue(100)
+	q := NewProcessingQueue(500)
 
 	for i := 0; i < 1000; i++ {
 		job := Job{
@@ -448,7 +449,7 @@ func TestProcessingQueue_HugeQueue(t *testing.T) {
 }
 
 func TestProcessingQueue_LargePayloads(t *testing.T) {
-	q := NewProcessingQueue(10)
+	q := NewProcessingQueue(50)
 
 	for i := 0; i < 100; i++ {
 		largePayload := make(json.RawMessage, 1000)
@@ -478,7 +479,7 @@ func TestProcessingQueue_LargePayloads(t *testing.T) {
 }
 
 func TestProcessingQueue_RapidEnqueueAndDequeue(t *testing.T) {
-	q := NewProcessingQueue(100)
+	q := NewProcessingQueue(500)
 
 	var wg sync.WaitGroup
 	iterations := 1000

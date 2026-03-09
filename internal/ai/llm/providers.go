@@ -11,16 +11,24 @@ import (
 	"github.com/flowup/aftertalk/internal/logging"
 )
 
+
 type OpenAIProvider struct {
-	apiKey string
-	model  string
+	apiKey  string
+	model   string
+	baseURL string
 }
 
 func NewOpenAIProvider(apiKey, model string) *OpenAIProvider {
 	return &OpenAIProvider{
-		apiKey: apiKey,
-		model:  model,
+		apiKey:  apiKey,
+		model:   model,
+		baseURL: "https://api.openai.com",
 	}
+}
+
+func (p *OpenAIProvider) WithBaseURL(url string) *OpenAIProvider {
+	p.baseURL = url
+	return p
 }
 
 func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, error) {
@@ -36,7 +44,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, e
 	}
 
 	jsonBody, _ := json.Marshal(reqBody)
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -88,15 +96,22 @@ func (p *OpenAIProvider) IsAvailable() bool {
 }
 
 type AnthropicProvider struct {
-	apiKey string
-	model  string
+	apiKey  string
+	model   string
+	baseURL string
 }
 
 func NewAnthropicProvider(apiKey, model string) *AnthropicProvider {
 	return &AnthropicProvider{
-		apiKey: apiKey,
-		model:  model,
+		apiKey:  apiKey,
+		model:   model,
+		baseURL: "https://api.anthropic.com",
 	}
+}
+
+func (p *AnthropicProvider) WithBaseURL(url string) *AnthropicProvider {
+	p.baseURL = url
+	return p
 }
 
 func (p *AnthropicProvider) Generate(ctx context.Context, prompt string) (string, error) {
@@ -111,7 +126,7 @@ func (p *AnthropicProvider) Generate(ctx context.Context, prompt string) (string
 	}
 
 	jsonBody, _ := json.Marshal(reqBody)
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/v1/messages", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -235,9 +250,28 @@ func (p *AzureOpenAIProvider) Name() string {
 }
 
 func (p *AzureOpenAIProvider) IsAvailable() bool {
-	return p.apiKey != "" && p.endpoint != ""
+	return p.apiKey != "" && p.endpoint != "" && p.deployment != ""
 }
 
+// StubLLMProvider is the no-op provider used when no real LLM is configured.
+// It returns a minimal valid JSON minutes structure without calling any external API.
+// Replace this provider with a real implementation when an LLM backend is available.
+type StubLLMProvider struct{}
+
+func NewStubLLMProvider() *StubLLMProvider {
+	return &StubLLMProvider{}
+}
+
+func (p *StubLLMProvider) Generate(_ context.Context, prompt string) (string, error) {
+	logging.Warnf("LLM stub: no provider configured, returning empty minutes\n--- PROMPT ---\n%s\n--- END PROMPT ---", prompt)
+	return `{"themes":[],"contents_reported":[],"professional_interventions":[],"progress_issues":{"progress":[],"issues":[]},"next_steps":[],"citations":[]}`, nil
+}
+
+func (p *StubLLMProvider) Name() string      { return "stub" }
+func (p *StubLLMProvider) IsAvailable() bool { return true }
+
+// NewProvider selects and returns the LLM provider based on cfg.
+// Falls back to StubLLMProvider when provider name is empty or unrecognised.
 func NewProvider(cfg *LLMConfig) (LLMProvider, error) {
 	switch cfg.Provider {
 	case "openai":
@@ -246,6 +280,8 @@ func NewProvider(cfg *LLMConfig) (LLMProvider, error) {
 		return NewAnthropicProvider(cfg.Anthropic.APIKey, cfg.Anthropic.Model), nil
 	case "azure":
 		return NewAzureOpenAIProvider(cfg.Azure.APIKey, cfg.Azure.Endpoint, cfg.Azure.Deployment), nil
+	case "", "stub":
+		return NewStubLLMProvider(), nil
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %s", cfg.Provider)
 	}

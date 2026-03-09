@@ -167,7 +167,7 @@ func BenchmarkSessionCreation1000(b *testing.B) {
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
-	service := session.NewService(repo, jwtManager, sessionCache, tokenCache)
+	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil)
 
 	b.ResetTimer()
 
@@ -195,7 +195,7 @@ func BenchmarkSessionRetrieval(b *testing.B) {
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
-	service := session.NewService(repo, jwtManager, sessionCache, tokenCache)
+	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil)
 
 	b.ResetTimer()
 

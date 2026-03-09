@@ -182,9 +182,9 @@ func TestDB_WALMode(t *testing.T) {
 
 		var foreignKeys int
 		var busyTimeout int
-		var synchronous string
+		var synchronous int
 		var cacheSize int
-		var tempStore string
+		var tempStore int
 
 		err = db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys)
 		assert.NoError(t, err)
@@ -196,7 +196,7 @@ func TestDB_WALMode(t *testing.T) {
 
 		err = db.QueryRow("PRAGMA synchronous").Scan(&synchronous)
 		assert.NoError(t, err)
-		assert.Equal(t, "NORMAL", synchronous)
+		assert.Equal(t, 1, synchronous) // 1 = NORMAL
 
 		err = db.QueryRow("PRAGMA cache_size").Scan(&cacheSize)
 		assert.NoError(t, err)
@@ -204,7 +204,7 @@ func TestDB_WALMode(t *testing.T) {
 
 		err = db.QueryRow("PRAGMA temp_store").Scan(&tempStore)
 		assert.NoError(t, err)
-		assert.Equal(t, "MEMORY", tempStore)
+		assert.Equal(t, 2, tempStore) // 2 = MEMORY
 
 		err = db.Close()
 		require.NoError(t, err)
@@ -227,9 +227,10 @@ func TestDB_RunInTx(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify table was created
-		var tableExists bool
-		err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='test'").Scan(&tableExists)
+		var tableName string
+		err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='test'").Scan(&tableName)
 		assert.NoError(t, err)
+		assert.Equal(t, "test", tableName)
 
 		err = db.Close()
 		require.NoError(t, err)

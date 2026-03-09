@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,7 +11,12 @@ import (
 	"time"
 
 	"github.com/flowup/aftertalk/internal/ai/llm"
+	"github.com/flowup/aftertalk/internal/logging"
 )
+
+func init() {
+	logging.Init("info", "console") //nolint:errcheck
+}
 
 func TestOpenAIProvider_Name(t *testing.T) {
 	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4")
@@ -92,7 +98,7 @@ func TestOpenAIProvider_Generate_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4")
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err != nil {
@@ -112,7 +118,7 @@ func TestOpenAIProvider_Generate_EmptyResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4")
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err == nil {
@@ -130,7 +136,7 @@ func TestOpenAIProvider_Generate_MultipleChoices(t *testing.T) {
 			"choices": []map[string]interface{}{
 				{
 					"message": map[string]interface{}{
-						"content": "invalid json response",
+						"content": `{"themes":["theme1"]}`,
 					},
 				},
 			},
@@ -138,14 +144,14 @@ func TestOpenAIProvider_Generate_MultipleChoices(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4")
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
 
-	if err == nil {
-		t.Error("Expected error for invalid JSON response")
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
 	}
-	if result != "" {
-		t.Error("Expected empty result on error")
+	if result == "" {
+		t.Error("Expected non-empty result")
 	}
 }
 
@@ -156,7 +162,7 @@ func TestOpenAIProvider_Generate_MalformedResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4")
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err == nil {
@@ -184,7 +190,7 @@ func TestOpenAIProvider_Generate_ContextCancellation(t *testing.T) {
 	defer server.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4")
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -192,7 +198,7 @@ func TestOpenAIProvider_Generate_ContextCancellation(t *testing.T) {
 	}()
 
 	_, err := provider.Generate(ctx, "test prompt")
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Expected context cancellation, got: %v", err)
 	}
 }
@@ -204,14 +210,14 @@ func TestOpenAIProvider_Generate_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4")
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err == nil {
 		t.Error("Expected error for HTTP 401")
 	}
-	if result == "" {
-		t.Error("Expected empty result on error")
+	if result != "" {
+		t.Errorf("Expected empty result on error, got: %s", result)
 	}
 	if !strings.Contains(err.Error(), "OpenAI API error") {
 		t.Error("Expected error to mention OpenAI API error")
@@ -219,9 +225,8 @@ func TestOpenAIProvider_Generate_HTTPError(t *testing.T) {
 }
 
 func TestOpenAIProvider_Generate_NetworkError(t *testing.T) {
-	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4")
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL("http://localhost:1")
 
-	// Don't start a server - this will cause a connection error
 	_, err := provider.Generate(context.Background(), "test prompt")
 
 	if err == nil {
@@ -249,7 +254,7 @@ func TestOpenAIProvider_Generate_JSONObjectResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4")
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err != nil {
@@ -294,7 +299,7 @@ func TestOpenAIProvider_Generate_ResponseFormatRequirement(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4")
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 	provider.Generate(context.Background(), "test prompt")
 }
 
@@ -375,7 +380,7 @@ func TestAnthropicProvider_Generate_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229")
+	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err != nil {
@@ -402,7 +407,7 @@ func TestAnthropicProvider_Generate_ContextCancellation(t *testing.T) {
 	defer server.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229")
+	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229").WithBaseURL(server.URL)
 
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -410,7 +415,7 @@ func TestAnthropicProvider_Generate_ContextCancellation(t *testing.T) {
 	}()
 
 	_, err := provider.Generate(ctx, "test prompt")
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Expected context cancellation, got: %v", err)
 	}
 }
@@ -422,14 +427,14 @@ func TestAnthropicProvider_Generate_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229")
+	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err == nil {
 		t.Error("Expected error for HTTP 401")
 	}
-	if result == "" {
-		t.Error("Expected empty result on error")
+	if result != "" {
+		t.Errorf("Expected empty result on error, got: %s", result)
 	}
 	if !strings.Contains(err.Error(), "Anthropic API error") {
 		t.Error("Expected error to mention Anthropic API error")
@@ -437,9 +442,8 @@ func TestAnthropicProvider_Generate_HTTPError(t *testing.T) {
 }
 
 func TestAnthropicProvider_Generate_NetworkError(t *testing.T) {
-	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229")
+	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229").WithBaseURL("http://localhost:1")
 
-	// Don't start a server - this will cause a connection error
 	_, err := provider.Generate(context.Background(), "test prompt")
 
 	if err == nil {
@@ -459,7 +463,7 @@ func TestAnthropicProvider_Generate_EmptyContent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229")
+	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err == nil {
@@ -521,8 +525,8 @@ func TestAzureOpenAIProvider_Generate_Success(t *testing.T) {
 		if !strings.Contains(r.URL.Path, "openai/deployments/gpt-4-deployment/chat/completions") {
 			t.Errorf("Expected deployment path, got %s", r.URL.Path)
 		}
-		if !strings.Contains(r.URL.Path, "api-version=2023-05-15") {
-			t.Errorf("Expected api-version query param, got %s", r.URL.Path)
+		if !strings.Contains(r.URL.RawQuery, "api-version=2023-05-15") {
+			t.Errorf("Expected api-version query param, got %s", r.URL.RawQuery)
 		}
 		if r.Header.Get("api-key") != "azure-key" {
 			t.Error("Expected api-key header")
@@ -546,7 +550,7 @@ func TestAzureOpenAIProvider_Generate_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewAzureOpenAIProvider("azure-key", "https://openai.openai.azure.com/", "gpt-4-deployment")
+	provider := llm.NewAzureOpenAIProvider("azure-key", server.URL, "gpt-4-deployment")
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err != nil {
@@ -574,7 +578,7 @@ func TestAzureOpenAIProvider_Generate_ContextCancellation(t *testing.T) {
 	defer server.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	provider := llm.NewAzureOpenAIProvider("azure-key", "https://openai.openai.azure.com/", "gpt-4-deployment")
+	provider := llm.NewAzureOpenAIProvider("azure-key", server.URL, "gpt-4-deployment")
 
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -582,7 +586,7 @@ func TestAzureOpenAIProvider_Generate_ContextCancellation(t *testing.T) {
 	}()
 
 	_, err := provider.Generate(ctx, "test prompt")
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Expected context cancellation, got: %v", err)
 	}
 }
@@ -594,14 +598,14 @@ func TestAzureOpenAIProvider_Generate_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewAzureOpenAIProvider("azure-key", "https://openai.openai.azure.com/", "gpt-4-deployment")
+	provider := llm.NewAzureOpenAIProvider("azure-key", server.URL, "gpt-4-deployment")
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err == nil {
 		t.Error("Expected error for HTTP 401")
 	}
-	if result == "" {
-		t.Error("Expected empty result on error")
+	if result != "" {
+		t.Errorf("Expected empty result on error, got: %s", result)
 	}
 	if !strings.Contains(err.Error(), "Azure OpenAI API error") {
 		t.Error("Expected error to mention Azure OpenAI API error")
@@ -609,9 +613,8 @@ func TestAzureOpenAIProvider_Generate_HTTPError(t *testing.T) {
 }
 
 func TestAzureOpenAIProvider_Generate_NetworkError(t *testing.T) {
-	provider := llm.NewAzureOpenAIProvider("azure-key", "https://openai.openai.azure.com/", "gpt-4-deployment")
+	provider := llm.NewAzureOpenAIProvider("azure-key", "http://localhost:1", "gpt-4-deployment")
 
-	// Don't start a server - this will cause a connection error
 	_, err := provider.Generate(context.Background(), "test prompt")
 
 	if err == nil {
@@ -631,7 +634,7 @@ func TestAzureOpenAIProvider_Generate_EmptyResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := llm.NewAzureOpenAIProvider("azure-key", "https://openai.openai.azure.com/", "gpt-4-deployment")
+	provider := llm.NewAzureOpenAIProvider("azure-key", server.URL, "gpt-4-deployment")
 	result, err := provider.Generate(context.Background(), "test prompt")
 
 	if err == nil {

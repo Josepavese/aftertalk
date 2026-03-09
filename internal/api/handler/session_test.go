@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -54,6 +55,7 @@ func (m *MockSessionService) ConnectParticipant(ctx context.Context, participant
 func TestSessionHandler_CreateSession(t *testing.T) {
 	tests := []struct {
 		name           string
+		rawBody        []byte
 		request        CreateSessionRequest
 		mockSetup      func(*MockSessionService)
 		expectedStatus int
@@ -88,7 +90,7 @@ func TestSessionHandler_CreateSession(t *testing.T) {
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				var response map[string]interface{}
 				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
-				assert.Equal(t, float64(http.StatusOK), rec.Code)
+				assert.Equal(t, http.StatusOK, rec.Code)
 				assert.Contains(t, response, "session_id")
 				assert.Contains(t, response, "participants")
 			},
@@ -108,11 +110,8 @@ func TestSessionHandler_CreateSession(t *testing.T) {
 			},
 		},
 		{
-			name: "Failure - invalid JSON",
-			request: CreateSessionRequest{
-				ParticipantCount: 2,
-				Participants:     []ParticipantRequest{{UserID: "user1", Role: "participant"}},
-			},
+			name:           "Failure - invalid JSON",
+			rawBody:        []byte("not valid json"),
 			mockSetup:      func(m *MockSessionService) {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
@@ -127,7 +126,12 @@ func TestSessionHandler_CreateSession(t *testing.T) {
 			tt.mockSetup(mockService)
 			handler := NewSessionHandler(mockService)
 
-			body, _ := json.Marshal(tt.request)
+			var body []byte
+			if tt.rawBody != nil {
+				body = tt.rawBody
+			} else {
+				body, _ = json.Marshal(tt.request)
+			}
 			req := httptest.NewRequest("POST", "/session", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
@@ -169,16 +173,19 @@ func TestSessionHandler_GetSession(t *testing.T) {
 				var response session.Session
 				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
 				assert.Equal(t, "valid-session-id", response.ID)
-				assert.Equal(t, float64(http.StatusOK), rec.Code)
+				assert.Equal(t, http.StatusOK, rec.Code)
 			},
 		},
 		{
-			name:           "Failure - session not found",
-			sessionID:      "non-existent",
-			mockSetup:      func(m *MockSessionService) {},
+			name:      "Failure - session not found",
+			sessionID: "non-existent",
+			mockSetup: func(m *MockSessionService) {
+				m.On("GetSession", mock.Anything, "non-existent").
+					Return(nil, errors.New("failed to get session"))
+			},
 			expectedStatus: http.StatusNotFound,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, rec.Body.String(), "failed to get session: failed to get session")
+				assert.Equal(t, "failed to get session: failed to get session", rec.Body.String())
 			},
 		},
 		{
@@ -199,6 +206,9 @@ func TestSessionHandler_GetSession(t *testing.T) {
 			handler := NewSessionHandler(mockService)
 
 			req := httptest.NewRequest("GET", "/session/"+tt.sessionID, nil)
+			if tt.sessionID != "" {
+				req = addChiContext(req, "id", tt.sessionID)
+			}
 			rec := httptest.NewRecorder()
 
 			handler.GetSession(rec, req)

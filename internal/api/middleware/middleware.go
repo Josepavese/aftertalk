@@ -10,7 +10,7 @@ import (
 func APIKey(apiKey string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/ws" || r.URL.Path == "/signaling" || r.URL.Path == "/test/start" || strings.HasPrefix(r.URL.Path, "/demo") {
+			if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/ws" || r.URL.Path == "/signaling" {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -1,6 +1,8 @@
 package logging
 
 import (
+	"fmt"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -10,11 +12,15 @@ var Logger *zap.SugaredLogger
 func Init(level, format string) error {
 	var config zap.Config
 
-	if format == "json" {
+	switch format {
+	case "json":
 		config = zap.NewProductionConfig()
-	} else {
+	case "console":
 		config = zap.NewDevelopmentConfig()
 		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	default:
+		Logger = nil
+		return fmt.Errorf("invalid log format: %s (must be 'json' or 'console')", format)
 	}
 
 	switch level {

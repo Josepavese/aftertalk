@@ -77,9 +77,12 @@ func validate(cfg *Config) error {
 	}
 
 	validSTTProviders := map[string]bool{
-		"google": true,
-		"aws":    true,
-		"azure":  true,
+		"google":        true,
+		"aws":           true,
+		"azure":         true,
+		"whisper-local": true,
+		"stub":          true,
+		"":              true,
 	}
 	if !validSTTProviders[cfg.STT.Provider] {
 		return fmt.Errorf("invalid STT provider: %s", cfg.STT.Provider)
@@ -89,9 +92,27 @@ func validate(cfg *Config) error {
 		"openai":    true,
 		"anthropic": true,
 		"azure":     true,
+		"stub":      true,
+		"":          true,
 	}
 	if !validLLMProviders[cfg.LLM.Provider] {
 		return fmt.Errorf("invalid LLM provider: %s", cfg.LLM.Provider)
+	}
+
+	if cfg.JWT.Expiration <= 0 {
+		return fmt.Errorf("JWT expiration must be positive")
+	}
+
+	if cfg.Webhook.URL == "" {
+		return fmt.Errorf("webhook URL is required")
+	}
+
+	if cfg.Webhook.Timeout <= 0 {
+		return fmt.Errorf("webhook timeout must be positive")
+	}
+
+	if cfg.Processing.MaxConcurrentTranscriptions <= 0 {
+		return fmt.Errorf("max concurrent transcriptions must be positive")
 	}
 
 	return nil

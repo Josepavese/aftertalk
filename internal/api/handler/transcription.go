@@ -31,9 +31,9 @@ func (h *TranscriptionHandler) Routes() chi.Router {
 }
 
 func (h *TranscriptionHandler) GetTranscriptions(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "session_id")
+	sessionID := r.URL.Query().Get("session_id")
 	if sessionID == "" {
-		http.Error(w, "Session ID required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Session ID required")
 		return
 	}
 
@@ -50,7 +50,7 @@ func (h *TranscriptionHandler) GetTranscriptions(w http.ResponseWriter, r *http.
 func (h *TranscriptionHandler) GetTranscriptionByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		http.Error(w, "Transcription ID required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Transcription ID required")
 		return
 	}
 

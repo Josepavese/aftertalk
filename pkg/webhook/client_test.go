@@ -78,7 +78,7 @@ func TestClient_Send_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, 5*time.Second)
+	client := NewClient(server.URL+"/webhook", 5*time.Second)
 	payload := &MinutesPayload{
 		SessionID: "test-session",
 		Minutes:   map[string]string{"summary": "Test summary"},
@@ -134,8 +134,8 @@ func TestClient_Send_RequestCreationError(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for request creation, got nil")
 	}
-	if !strings.Contains(err.Error(), "failed to create request") {
-		t.Errorf("Expected error to mention 'failed to create request', got: %v", err)
+	if !strings.Contains(err.Error(), "failed to send webhook") {
+		t.Errorf("Expected error to mention 'failed to send webhook', got: %v", err)
 	}
 }
 
@@ -471,8 +471,12 @@ func TestClient_Send_503ServiceUnavailable(t *testing.T) {
 
 func TestClient_Send_ZeroTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(10 * time.Second)
-		w.WriteHeader(http.StatusOK)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(10 * time.Second):
+			w.WriteHeader(http.StatusOK)
+		}
 	}))
 	defer server.Close()
 
@@ -490,7 +494,7 @@ func TestClient_Send_ZeroTimeout(t *testing.T) {
 	if err == nil {
 		t.Error("Expected timeout error, got nil")
 	}
-	if !strings.Contains(err.Error(), "timeout") {
-		t.Errorf("Expected timeout error, got: %v", err)
+	if !strings.Contains(err.Error(), "timeout") && !strings.Contains(err.Error(), "deadline exceeded") {
+		t.Errorf("Expected timeout/deadline error, got: %v", err)
 	}
 }

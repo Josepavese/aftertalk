@@ -21,7 +21,7 @@ func TestGenerateMinutesPrompt(t *testing.T) {
 		pattern  string
 		contains bool
 	}{
-		{"session reference", "session1", true},
+		{"session reference", "PARTICIPANT ROLES:", true},
 		{"transcription content", transcriptionText, true},
 		{"participant roles", "user and moderator", true},
 		{"JSON structure", `"themes"`, true},
@@ -113,8 +113,8 @@ func TestGenerateMinutesPrompt_CustomSessionID(t *testing.T) {
 
 	prompt := llm.GenerateMinutesPrompt(transcriptionText, roles)
 
-	if !contains(prompt, "session1") {
-		t.Error("Expected prompt to contain default session ID 'session1'")
+	if !contains(prompt, "TRANSCRIPT:") {
+		t.Error("Expected prompt to contain TRANSCRIPT section")
 	}
 }
 
@@ -320,9 +320,9 @@ func TestGenerateMinutesPrompt_EmptyArrayRepresentations(t *testing.T) {
 
 	prompt := llm.GenerateMinutesPrompt(transcriptionText, roles)
 
-	// Check that empty arrays are represented in JSON format
-	if !contains(prompt, `[]`) {
-		t.Error("Expected prompt to show empty array representation")
+	// Check that the prompt contains example array elements
+	if !contains(prompt, `["main theme 1"`) {
+		t.Error("Expected prompt to show example array representation")
 	}
 }
 

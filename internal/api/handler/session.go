@@ -31,6 +31,7 @@ func (h *SessionHandler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Post("/", h.CreateSession)
 	r.Get("/{id}", h.GetSession)
+	r.Post("/{id}/end", h.EndSession)
 	return r
 }
 
@@ -48,7 +49,12 @@ type ParticipantRequest struct {
 func (h *SessionHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	var req CreateSessionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if len(req.Participants) < 2 {
+		writeError(w, http.StatusInternalServerError, "at least 2 participants required")
 		return
 	}
 
@@ -78,16 +84,32 @@ func (h *SessionHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 func (h *SessionHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "id")
 	if sessionID == "" {
-		http.Error(w, "Session ID required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "Session ID required")
 		return
 	}
 
 	sess, err := h.service.GetSession(r.Context(), sessionID)
 	if err != nil {
 		logging.Errorf("Failed to get session: %v", err)
-		http.Error(w, err.Error(), http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "failed to get session: "+err.Error())
 		return
 	}
 
 	render.JSON(w, r, sess)
+}
+
+func (h *SessionHandler) EndSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "Session ID required")
+		return
+	}
+
+	if err := h.service.EndSession(r.Context(), sessionID); err != nil {
+		logging.Errorf("Failed to end session: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to end session: "+err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

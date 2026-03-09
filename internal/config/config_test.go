@@ -7,6 +7,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// validBase returns a Default() config with valid JWT secret and API key,
+// suitable for tests that only want to test one specific validation field.
+func validBase() *Config {
+	cfg := Default()
+	cfg.JWT.Secret = "valid-test-secret"
+	cfg.API.Key = "valid-test-api-key"
+	return cfg
+}
+
 func TestConfigStructs(t *testing.T) {
 	t.Run("DatabaseConfig", func(t *testing.T) {
 		cfg := DatabaseConfig{
@@ -177,7 +186,7 @@ func TestConfig_InvalidHTTPPort(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := Default()
+			cfg := validBase()
 			cfg.HTTP.Port = tc.port
 			err := validate(cfg)
 			if tc.error {
@@ -203,7 +212,7 @@ func TestConfig_InvalidWebSocketPort(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := Default()
+			cfg := validBase()
 			cfg.WebSocket.Port = tc.port
 			err := validate(cfg)
 			if tc.error {
@@ -224,6 +233,7 @@ func TestConfig_DefaultJWTSecret(t *testing.T) {
 
 func TestConfig_DefaultAPIKey(t *testing.T) {
 	cfg := Default()
+	cfg.JWT.Secret = "valid-test-secret" // bypass JWT check to reach API key check
 	err := validate(cfg)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "API key must be changed from default value")
@@ -235,7 +245,7 @@ func TestConfig_InvalidLogLevel(t *testing.T) {
 
 	for i, level := range testCases {
 		t.Run(level, func(t *testing.T) {
-			cfg := Default()
+			cfg := validBase()
 			cfg.Logging.Level = level
 			err := validate(cfg)
 			assert.Equal(t, expected[i] == "invalid", err != nil)
@@ -249,7 +259,7 @@ func TestConfig_InvalidLogFormat(t *testing.T) {
 
 	for i, format := range testCases {
 		t.Run(format, func(t *testing.T) {
-			cfg := Default()
+			cfg := validBase()
 			cfg.Logging.Format = format
 			err := validate(cfg)
 			assert.Equal(t, expected[i] == "invalid", err != nil)
@@ -258,7 +268,7 @@ func TestConfig_InvalidLogFormat(t *testing.T) {
 }
 
 func TestConfig_InvalidSTTProvider(t *testing.T) {
-	cfg := Default()
+	cfg := validBase()
 	cfg.STT.Provider = "invalid-provider"
 	err := validate(cfg)
 	assert.Error(t, err)
@@ -269,7 +279,7 @@ func TestConfig_ValidSTTProviders(t *testing.T) {
 	providers := []string{"google", "aws", "azure"}
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
-			cfg := Default()
+			cfg := validBase()
 			cfg.STT.Provider = provider
 			err := validate(cfg)
 			assert.NoError(t, err)
@@ -278,7 +288,7 @@ func TestConfig_ValidSTTProviders(t *testing.T) {
 }
 
 func TestConfig_InvalidLLMProvider(t *testing.T) {
-	cfg := Default()
+	cfg := validBase()
 	cfg.LLM.Provider = "invalid-provider"
 	err := validate(cfg)
 	assert.Error(t, err)
@@ -289,7 +299,7 @@ func TestConfig_ValidLLMProviders(t *testing.T) {
 	providers := []string{"openai", "anthropic", "azure"}
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
-			cfg := Default()
+			cfg := validBase()
 			cfg.LLM.Provider = provider
 			err := validate(cfg)
 			assert.NoError(t, err)
@@ -353,7 +363,7 @@ func TestConfig_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("EmptyCredentialsPath", func(t *testing.T) {
-		cfg := Default()
+		cfg := validBase()
 		cfg.STT.Google.CredentialsPath = ""
 		err := validate(cfg)
 		assert.NoError(t, err)
