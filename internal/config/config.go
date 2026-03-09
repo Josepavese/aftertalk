@@ -82,6 +82,12 @@ type LLMConfig struct {
 	OpenAI    OpenAIConfig
 	Anthropic AnthropicConfig
 	Azure     AzureLLMConfig
+	Ollama    OllamaLLMConfig
+}
+
+type OllamaLLMConfig struct {
+	BaseURL string `koanf:"base_url"`
+	Model   string `koanf:"model"`
 }
 
 type OpenAIConfig struct {

@@ -22,6 +22,14 @@ type LLMConfig struct {
 	OpenAI    OpenAIConfig
 	Anthropic AnthropicConfig
 	Azure     AzureLLMConfig
+	Ollama    OllamaConfig
+}
+
+type OllamaConfig struct {
+	// BaseURL is the Ollama server URL (default: http://localhost:11434)
+	BaseURL string
+	// Model is the model name, e.g. "llama3.2:3b", "mistral", "qwen2.5"
+	Model string
 }
 
 type OpenAIConfig struct {

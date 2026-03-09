@@ -158,6 +158,10 @@ func main() {
 			Endpoint:   cfg.LLM.Azure.Endpoint,
 			Deployment: cfg.LLM.Azure.Deployment,
 		},
+		Ollama: llm.OllamaConfig{
+			BaseURL: cfg.LLM.Ollama.BaseURL,
+			Model:   cfg.LLM.Ollama.Model,
+		},
 	})
 	if err != nil {
 		logger.Fatalf("Failed to initialize LLM provider: %v", err)

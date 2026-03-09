@@ -92,6 +92,7 @@ func validate(cfg *Config) error {
 		"openai":    true,
 		"anthropic": true,
 		"azure":     true,
+		"ollama":    true,
 		"stub":      true,
 		"":          true,
 	}
