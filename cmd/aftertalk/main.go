@@ -132,6 +132,7 @@ func main() {
 			Model:          cfg.STT.WhisperLocal.Model,
 			Language:       cfg.STT.WhisperLocal.Language,
 			ResponseFormat: cfg.STT.WhisperLocal.ResponseFormat,
+			Endpoint:       cfg.STT.WhisperLocal.Endpoint,
 		},
 	})
 	if err != nil {

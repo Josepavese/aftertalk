@@ -83,4 +83,7 @@ type WhisperLocalConfig struct {
 	Language string
 	// ResponseFormat: "verbose_json" for word-level timestamps, "json" for segment-level.
 	ResponseFormat string
+	// Endpoint overrides the transcription path. Default: /v1/audio/transcriptions.
+	// Use /inference for whisper.cpp server.
+	Endpoint string
 }

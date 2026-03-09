@@ -77,7 +77,12 @@ func (p *WhisperLocalProvider) Transcribe(ctx context.Context, audioData *AudioD
 		return nil, fmt.Errorf("whisper-local: build request: %w", err)
 	}
 
-	url := p.cfg.URL + "/v1/audio/transcriptions"
+	// whisper.cpp server uses /inference; OpenAI-compatible servers use /v1/audio/transcriptions.
+	endpoint := "/v1/audio/transcriptions"
+	if p.cfg.Endpoint != "" {
+		endpoint = p.cfg.Endpoint
+	}
+	url := p.cfg.URL + endpoint
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("whisper-local: new request: %w", err)
