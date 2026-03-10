@@ -127,6 +127,15 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 		})
 	}
 
+	// /demo/config — returns public demo config for the test UI (no auth required).
+	// SSOT: UI reads API key from here instead of requiring manual copy-paste.
+	r.Get("/demo/config", func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"api_key": cfg.API.Key,
+		})
+	})
+
 	// /test/start — joins or creates a session by room code.
 	// First caller creates the session; second caller joins with the pre-generated token.
 	r.Post("/test/start", func(w http.ResponseWriter, req *http.Request) {
