@@ -131,8 +131,22 @@
         }
         function authHeader() { return {'Authorization': 'Bearer ' + getApiKey()}; }
 
-        // Restore saved key on load
-        window.addEventListener('DOMContentLoaded', () => {
+        // On load: fetch API key from server (SSOT: config.yaml → /demo/config → UI).
+        // Falls back to localStorage if offline or key already overridden.
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const r = await fetch('/demo/config');
+                if (r.ok) {
+                    const { api_key } = await r.json();
+                    if (api_key) {
+                        saveApiKey(api_key);
+                        document.getElementById('apiKeyInput').value = api_key;
+                        document.getElementById('apiKeyStatus').innerHTML = '<span class="ok">✓ dal server</span>';
+                        return;
+                    }
+                }
+            } catch (_) {}
+            // Fallback: localStorage
             const saved = getApiKey();
             if (saved) {
                 document.getElementById('apiKeyInput').value = saved;
