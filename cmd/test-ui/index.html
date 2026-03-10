@@ -238,10 +238,18 @@
             setStep(3, 'active', 'Termino la sessione e genero la minuta...');
             log('info', 'Terminazione sessione...');
 
+            // Release microphone and close WebRTC
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+                localStream = null;
+            }
+            if (pc) { pc.close(); pc = null; }
+            if (ws) { ws.close(); ws = null; }
+
             try {
                 const res = await fetch(`${API}/v1/sessions/${currentSessionId}/end`, {
                     method: 'POST',
-                    headers: {'Authorization': 'Bearer demo-api-key'}
+                    headers: {'Authorization': 'Bearer demo-key-aftertalk-2026'}
                 });
                 if (!res.ok) throw new Error(await res.text());
                 log('success', 'Sessione terminata');
@@ -257,7 +265,7 @@
         async function fetchMinutes() {
             try {
                 const res = await fetch(`${API}/v1/minutes?session_id=${currentSessionId}`, {
-                    headers: {'Authorization': 'Bearer demo-api-key'}
+                    headers: {'Authorization': 'Bearer demo-key-aftertalk-2026'}
                 });
                 if (res.ok) {
                     const data = await res.json();
