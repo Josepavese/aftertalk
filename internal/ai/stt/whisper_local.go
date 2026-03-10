@@ -69,8 +69,8 @@ type whisperSegment struct {
 }
 
 func (p *WhisperLocalProvider) Transcribe(ctx context.Context, audioData *AudioData) (*TranscriptionResult, error) {
-	logging.Infof("WhisperLocal: transcribing session=%s participant=%s bytes=%d",
-		audioData.SessionID, audioData.ParticipantID, len(audioData.Data))
+	logging.Infof("WhisperLocal: transcribing session=%s participant=%s pcm_bytes=%d frames=%d",
+		audioData.SessionID, audioData.ParticipantID, len(audioData.Data), len(audioData.Frames))
 
 	body, contentType, err := p.buildMultipartBody(audioData)
 	if err != nil {
@@ -112,18 +112,17 @@ func (p *WhisperLocalProvider) buildMultipartBody(audioData *AudioData) (io.Read
 	buf := &bytes.Buffer{}
 	w := multipart.NewWriter(buf)
 
-	// Prefer OGG Opus (from individual frames) — faster-whisper/ffmpeg decodes it natively.
-	// Fall back to raw PCM bytes (for future cloud providers that pre-decode).
+	// Decode Opus RTP frames → 16 kHz PCM WAV (whisper.cpp requires WAV).
+	// Fall back to raw PCM bytes when frames are not available.
 	var audioBytes []byte
 	filename := "audio.wav"
 
 	if len(audioData.Frames) > 0 {
-		ogg, err := audio.WriteOGGOpus(audioData.Frames, 48000, 1)
+		wav, err := audio.DecodeFramesToWAV(audioData.Frames, 16000)
 		if err != nil {
-			return nil, "", fmt.Errorf("ogg mux: %w", err)
+			return nil, "", fmt.Errorf("opus→wav: %w", err)
 		}
-		audioBytes = ogg
-		filename = "audio.ogg"
+		audioBytes = wav
 	} else {
 		audioBytes = audioData.Data
 	}
