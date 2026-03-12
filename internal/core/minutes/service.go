@@ -2,12 +2,12 @@ package minutes
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/flowup/aftertalk/internal/ai/llm"
+	"github.com/flowup/aftertalk/internal/config"
 	"github.com/flowup/aftertalk/internal/logging"
 	"github.com/flowup/aftertalk/pkg/webhook"
 	"github.com/google/uuid"
@@ -29,6 +29,7 @@ type Service struct {
 	llmProvider    llm.LLMProvider
 	retryConfig    *RetryConfig
 	webhookClient  *webhook.Client
+	webhookRetrier *webhook.Retrier
 }
 
 func NewService(repo *MinutesRepository, provider llm.LLMProvider) *Service {
@@ -49,7 +50,6 @@ func NewServiceWithDeps(repo *MinutesRepository, provider llm.LLMProvider, retry
 		llmProvider: provider,
 		retryConfig: retryConfig,
 	}
-
 	if webhookConfig != nil && webhookConfig.URL != "" {
 		timeout := webhookConfig.Timeout
 		if timeout == 0 {
@@ -57,26 +57,32 @@ func NewServiceWithDeps(repo *MinutesRepository, provider llm.LLMProvider, retry
 		}
 		s.webhookClient = webhook.NewClient(webhookConfig.URL, timeout)
 	}
-
 	return s
 }
 
-func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, roles []string) (*Minutes, error) {
-	logging.Infof("Generating minutes for session %s", sessionID)
+// WithWebhookRetrier wires a persistent retry worker. When set, webhook
+// deliveries are enqueued in the DB instead of fire-and-forget goroutines.
+func (s *Service) WithWebhookRetrier(r *webhook.Retrier) {
+	s.webhookRetrier = r
+}
 
-	minutes := NewMinutes(uuid.New().String(), sessionID)
-	minutes.Provider = s.llmProvider.Name()
+// GenerateMinutes calls the LLM to produce structured minutes for a session.
+// The prompt and expected JSON schema are derived from the provided template.
+func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig) (*Minutes, error) {
+	logging.Infof("Generating minutes for session %s (template=%s)", sessionID, tmpl.ID)
 
-	if err := s.repo.Create(ctx, minutes); err != nil {
+	m := NewMinutes(uuid.New().String(), sessionID, tmpl.ID)
+	m.Provider = s.llmProvider.Name()
+
+	if err := s.repo.Create(ctx, m); err != nil {
 		return nil, fmt.Errorf("failed to create minutes: %w", err)
 	}
 
-	// If there is no transcript content, store empty minutes without calling the LLM.
 	if strings.TrimSpace(transcriptionText) == "" {
 		logging.Warnf("Session %s has no transcription text; storing empty minutes", sessionID)
-		minutes.MarkReady()
-		s.repo.Update(ctx, minutes)
-		return minutes, nil
+		m.MarkReady()
+		s.repo.Update(ctx, m)
+		return m, nil
 	}
 
 	var response string
@@ -96,146 +102,110 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 			}
 		}
 
-		prompt := llm.GenerateMinutesPrompt(transcriptionText, roles)
+		prompt := llm.GenerateMinutesPrompt(transcriptionText, tmpl)
 		response, err = s.llmProvider.Generate(ctx, prompt)
 		if err == nil {
 			break
 		}
-
 		logging.Errorf("LLM request failed (attempt %d): %v", attempt+1, err)
 	}
 
 	if err != nil {
-		minutes.MarkError()
-		s.repo.Update(ctx, minutes)
+		m.MarkError()
+		s.repo.Update(ctx, m)
 		return nil, fmt.Errorf("failed to generate minutes after %d retries: %w", s.retryConfig.MaxRetries+1, err)
 	}
 
-	minutesResponse, err := llm.ParseMinutesResponse(response)
+	parsed, err := llm.ParseMinutesDynamic(response)
 	if err != nil {
-		minutes.MarkError()
-		s.repo.Update(ctx, minutes)
+		m.MarkError()
+		s.repo.Update(ctx, m)
 		return nil, fmt.Errorf("failed to parse LLM response: %w", err)
 	}
 
-	minutes.Themes = minutesResponse.Themes
-	minutes.ContentsReported = convertContentItems(minutesResponse.ContentsReported)
-	minutes.ProfessionalInterventions = convertContentItems(minutesResponse.ProfessionalInterventions)
-	minutes.ProgressIssues = Progress{
-		Progress: minutesResponse.ProgressIssues.Progress,
-		Issues:   minutesResponse.ProgressIssues.Issues,
-	}
-	minutes.NextSteps = minutesResponse.NextSteps
-	minutes.Citations = convertCitations(minutesResponse.Citations)
-	minutes.MarkReady()
+	m.Sections = parsed.Sections
+	m.Citations = convertCitations(parsed.Citations)
+	m.MarkReady()
 
-	if err := s.repo.Update(ctx, minutes); err != nil {
+	if err := s.repo.Update(ctx, m); err != nil {
 		return nil, fmt.Errorf("failed to update minutes: %w", err)
 	}
 
 	logging.Infof("Minutes generated successfully for session %s", sessionID)
+	go s.deliverWebhook(sessionID, m)
 
-	go s.deliverWebhook(sessionID, minutes)
-
-	return minutes, nil
+	return m, nil
 }
 
-func (s *Service) deliverWebhook(sessionID string, minutes *Minutes) {
+func (s *Service) deliverWebhook(sessionID string, m *Minutes) {
 	if s.webhookClient == nil {
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	payload := &webhook.MinutesPayload{
 		SessionID: sessionID,
-		Minutes:   minutes,
+		Minutes:   m,
 		Timestamp: time.Now(),
 	}
 
-	err := s.webhookClient.Send(ctx, payload)
-	if err != nil {
-		logging.Errorf("Failed to deliver webhook for session %s: %v", sessionID, err)
+	// Prefer persistent retry queue over fire-and-forget.
+	if s.webhookRetrier != nil {
+		ctx := context.Background()
+		if err := s.webhookRetrier.Enqueue(ctx, m.ID, s.webhookClient.URL(), payload); err != nil {
+			logging.Errorf("webhook retrier: enqueue failed for session %s: %v", sessionID, err)
+		}
 		return
 	}
 
-	logging.Infof("Webhook delivered successfully for session %s", sessionID)
-
-	minutes.MarkDelivered()
-	if err := s.repo.Update(context.Background(), minutes); err != nil {
-		logging.Errorf("Failed to update minutes delivery status: %v", err)
+	// Fallback: direct delivery (fire-and-forget, no retry).
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := s.webhookClient.Send(ctx, payload); err != nil {
+		logging.Errorf("Failed to deliver webhook for session %s: %v", sessionID, err)
+		return
 	}
-}
-
-func convertContentItems(items []llm.ContentItem) []ContentItem {
-	result := make([]ContentItem, len(items))
-	for i, item := range items {
-		result[i] = ContentItem{
-			Text:      item.Text,
-			Timestamp: item.Timestamp,
-		}
-	}
-	return result
-}
-
-func convertCitations(citations []llm.Citation) []Citation {
-	result := make([]Citation, len(citations))
-	for i, c := range citations {
-		result[i] = Citation{
-			TimestampMs: c.TimestampMs,
-			Text:        c.Text,
-			Role:        c.Role,
-		}
-	}
-	return result
+	logging.Infof("Webhook delivered for session %s", sessionID)
+	m.MarkDelivered()
+	s.repo.Update(context.Background(), m)
 }
 
 func (s *Service) GetMinutes(ctx context.Context, sessionID string) (*Minutes, error) {
-	minutes, err := s.repo.GetBySession(ctx, sessionID)
+	m, err := s.repo.GetBySession(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get minutes: %w", err)
 	}
-
-	return minutes, nil
+	return m, nil
 }
 
 func (s *Service) GetMinutesByID(ctx context.Context, id string) (*Minutes, error) {
-	minutes, err := s.repo.GetByID(ctx, id)
+	m, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get minutes: %w", err)
 	}
-
-	return minutes, nil
+	return m, nil
 }
 
 func (s *Service) UpdateMinutes(ctx context.Context, id string, updatedMinutes *Minutes, editedBy string) (*Minutes, error) {
-	minutes, err := s.repo.GetByID(ctx, id)
+	m, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get minutes: %w", err)
 	}
 
-	contentJSON, _ := json.Marshal(minutes)
-	history := NewMinutesHistory(uuid.New().String(), minutes.ID, minutes.Version, string(contentJSON))
+	// Snapshot current version for history.
+	snapshot := snapshotJSON(m)
+	history := NewMinutesHistory(uuid.New().String(), m.ID, m.Version, snapshot)
 	history.SetEditedBy(editedBy)
-
 	if err := s.repo.CreateHistory(ctx, history); err != nil {
 		return nil, fmt.Errorf("failed to create history: %w", err)
 	}
 
-	minutes.Themes = updatedMinutes.Themes
-	minutes.ContentsReported = updatedMinutes.ContentsReported
-	minutes.ProfessionalInterventions = updatedMinutes.ProfessionalInterventions
-	minutes.ProgressIssues = updatedMinutes.ProgressIssues
-	minutes.NextSteps = updatedMinutes.NextSteps
-	minutes.Citations = updatedMinutes.Citations
-	minutes.IncrementVersion()
+	m.Sections = updatedMinutes.Sections
+	m.Citations = updatedMinutes.Citations
+	m.IncrementVersion()
 
-	if err := s.repo.Update(ctx, minutes); err != nil {
+	if err := s.repo.Update(ctx, m); err != nil {
 		return nil, fmt.Errorf("failed to update minutes: %w", err)
 	}
-
-	return minutes, nil
+	return m, nil
 }
 
 func (s *Service) GetMinutesHistory(ctx context.Context, minutesID string) ([]*MinutesHistory, error) {
@@ -243,6 +213,20 @@ func (s *Service) GetMinutesHistory(ctx context.Context, minutesID string) ([]*M
 	if err != nil {
 		return nil, fmt.Errorf("failed to get history: %w", err)
 	}
-
 	return history, nil
+}
+
+func (s *Service) DeleteMinutes(ctx context.Context, id string) error {
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return fmt.Errorf("failed to delete minutes: %w", err)
+	}
+	return nil
+}
+
+func convertCitations(citations []llm.Citation) []Citation {
+	result := make([]Citation, len(citations))
+	for i, c := range citations {
+		result[i] = Citation{TimestampMs: c.TimestampMs, Text: c.Text, Role: c.Role}
+	}
+	return result
 }

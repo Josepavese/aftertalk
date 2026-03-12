@@ -21,8 +21,8 @@ func NewSessionRepository(db *sql.DB) *SessionRepository {
 
 func (r *SessionRepository) Create(ctx context.Context, session *Session) error {
 	query := `
-		INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO sessions (id, status, created_at, ended_at, participant_count, template_id, metadata)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 
 	var endedAt interface{}
@@ -36,6 +36,7 @@ func (r *SessionRepository) Create(ctx context.Context, session *Session) error 
 		session.CreatedAt.Format(time.RFC3339),
 		endedAt,
 		session.ParticipantCount,
+		session.TemplateID,
 		session.Metadata,
 	)
 
@@ -48,14 +49,14 @@ func (r *SessionRepository) Create(ctx context.Context, session *Session) error 
 
 func (r *SessionRepository) GetByID(ctx context.Context, id string) (*Session, error) {
 	query := `
-		SELECT id, status, created_at, ended_at, participant_count, metadata
+		SELECT id, status, created_at, ended_at, participant_count, template_id, metadata
 		FROM sessions
 		WHERE id = ?
 	`
 
 	var session Session
 	var status, createdAt, endedAt sql.NullString
-	var metadata sql.NullString
+	var templateID, metadata sql.NullString
 
 	err := r.QueryRowContext(ctx, query, id).Scan(
 		&session.ID,
@@ -63,6 +64,7 @@ func (r *SessionRepository) GetByID(ctx context.Context, id string) (*Session, e
 		&createdAt,
 		&endedAt,
 		&session.ParticipantCount,
+		&templateID,
 		&metadata,
 	)
 
@@ -80,6 +82,9 @@ func (r *SessionRepository) GetByID(ctx context.Context, id string) (*Session, e
 	if endedAt.Valid {
 		t, _ := time.Parse(time.RFC3339, endedAt.String)
 		session.EndedAt = &t
+	}
+	if templateID.Valid {
+		session.TemplateID = templateID.String
 	}
 	if metadata.Valid {
 		session.Metadata = metadata.String
@@ -382,5 +387,76 @@ func (r *SessionRepository) UpdateAudioStream(ctx context.Context, stream *Audio
 		return fmt.Errorf("failed to update audio stream: %w", err)
 	}
 
+	return nil
+}
+
+// List returns sessions filtered by optional status, ordered by created_at desc.
+// limit=0 means no limit (returns all). offset is 0-based.
+func (r *SessionRepository) List(ctx context.Context, status string, limit, offset int) ([]*Session, int, error) {
+	args := []interface{}{}
+	where := ""
+	if status != "" {
+		where = " WHERE status = ?"
+		args = append(args, status)
+	}
+
+	// Total count
+	var total int
+	if err := r.QueryRowContext(ctx, "SELECT COUNT(*) FROM sessions"+where, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count sessions: %w", err)
+	}
+
+	query := "SELECT id, status, created_at, ended_at, participant_count, template_id, metadata FROM sessions" +
+		where + " ORDER BY created_at DESC"
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+	}
+
+	rows, err := r.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []*Session
+	for rows.Next() {
+		var s Session
+		var statusStr, createdAt, endedAt sql.NullString
+		var templateID, metadata sql.NullString
+		if err := rows.Scan(&s.ID, &statusStr, &createdAt, &endedAt, &s.ParticipantCount, &templateID, &metadata); err != nil {
+			return nil, 0, fmt.Errorf("scan session: %w", err)
+		}
+		s.Status = SessionStatus(statusStr.String)
+		if createdAt.Valid {
+			s.CreatedAt, _ = time.Parse(time.RFC3339, createdAt.String)
+		}
+		if endedAt.Valid {
+			t, _ := time.Parse(time.RFC3339, endedAt.String)
+			s.EndedAt = &t
+		}
+		if templateID.Valid {
+			s.TemplateID = templateID.String
+		}
+		if metadata.Valid {
+			s.Metadata = metadata.String
+		}
+		sessions = append(sessions, &s)
+	}
+	return sessions, total, rows.Err()
+}
+
+// Delete removes a session and its related data (participants, audio_streams).
+// Transcriptions and minutes are kept for audit purposes unless explicitly deleted.
+func (r *SessionRepository) Delete(ctx context.Context, id string) error {
+	queries := []string{
+		"DELETE FROM participants WHERE session_id = ?",
+		"DELETE FROM audio_streams WHERE session_id = ?",
+		"DELETE FROM sessions WHERE id = ?",
+	}
+	for _, q := range queries {
+		if _, err := r.ExecContext(ctx, q, id); err != nil {
+			return fmt.Errorf("delete session: %w", err)
+		}
+	}
 	return nil
 }

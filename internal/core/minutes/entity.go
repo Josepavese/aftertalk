@@ -1,6 +1,9 @@
 package minutes
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type MinutesStatus string
 
@@ -11,51 +14,46 @@ const (
 	MinutesStatusError     MinutesStatus = "error"
 )
 
+// Minutes holds the structured output of a session, with flexible sections
+// defined by the session template. Sections is a map from section key
+// (e.g. "themes", "contents_reported") to the raw JSON value for that section.
+// Citations are always present as a typed slice.
 type Minutes struct {
-	ID                        string        `json:"id"`
-	SessionID                 string        `json:"session_id"`
-	Version                   int           `json:"version"`
-	Themes                    []string      `json:"themes"`
-	ContentsReported          []ContentItem `json:"contents_reported"`
-	ProfessionalInterventions []ContentItem `json:"professional_interventions"`
-	ProgressIssues            Progress      `json:"progress_issues"`
-	NextSteps                 []string      `json:"next_steps"`
-	Citations                 []Citation    `json:"citations"`
-	GeneratedAt               time.Time     `json:"generated_at"`
-	DeliveredAt               *time.Time    `json:"delivered_at,omitempty"`
-	Status                    MinutesStatus `json:"status"`
-	Provider                  string        `json:"provider"`
+	ID          string                     `json:"id"`
+	SessionID   string                     `json:"session_id"`
+	TemplateID  string                     `json:"template_id"`
+	Version     int                        `json:"version"`
+	Sections    map[string]json.RawMessage `json:"sections"`
+	Citations   []Citation                 `json:"citations"`
+	GeneratedAt time.Time                  `json:"generated_at"`
+	DeliveredAt *time.Time                 `json:"delivered_at,omitempty"`
+	Status      MinutesStatus              `json:"status"`
+	Provider    string                     `json:"provider"`
 }
 
-type ContentItem struct {
-	Text      string `json:"text"`
-	Timestamp int    `json:"timestamp,omitempty"`
-}
-
-type Progress struct {
-	Progress []string `json:"progress"`
-	Issues   []string `json:"issues"`
-}
-
+// Citation is a verbatim quote from the transcript.
 type Citation struct {
 	TimestampMs int    `json:"timestamp_ms"`
 	Text        string `json:"text"`
 	Role        string `json:"role"`
 }
 
-func NewMinutes(id, sessionID string) *Minutes {
+// contentBlob is the JSON structure stored in the DB content column.
+type contentBlob struct {
+	Sections  map[string]json.RawMessage `json:"sections"`
+	Citations []Citation                 `json:"citations"`
+}
+
+func NewMinutes(id, sessionID, templateID string) *Minutes {
 	return &Minutes{
-		ID:                        id,
-		SessionID:                 sessionID,
-		Version:                   1,
-		Themes:                    make([]string, 0),
-		ContentsReported:          make([]ContentItem, 0),
-		ProfessionalInterventions: make([]ContentItem, 0),
-		ProgressIssues:            Progress{Progress: make([]string, 0), Issues: make([]string, 0)},
-		NextSteps:                 make([]string, 0),
-		Citations:                 make([]Citation, 0),
-		GeneratedAt:               time.Now().UTC(),
-		Status:                    MinutesStatusPending,
+		ID:          id,
+		SessionID:   sessionID,
+		TemplateID:  templateID,
+		Version:     1,
+		Sections:    map[string]json.RawMessage{},
+		Citations:   []Citation{},
+		GeneratedAt: time.Now().UTC(),
+		Status:      MinutesStatusPending,
 	}
 }
 
@@ -75,6 +73,36 @@ func (m *Minutes) MarkDelivered() {
 
 func (m *Minutes) MarkError() {
 	m.Status = MinutesStatusError
+}
+
+// MarshalContent serializes Sections+Citations into a single JSON blob for DB storage.
+func (m *Minutes) MarshalContent() (string, error) {
+	blob := contentBlob{
+		Sections:  m.Sections,
+		Citations: m.Citations,
+	}
+	b, err := json.Marshal(blob)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// UnmarshalContent restores Sections and Citations from the DB JSON blob.
+func (m *Minutes) UnmarshalContent(raw string) error {
+	var blob contentBlob
+	if err := json.Unmarshal([]byte(raw), &blob); err != nil {
+		return err
+	}
+	if blob.Sections == nil {
+		blob.Sections = map[string]json.RawMessage{}
+	}
+	if blob.Citations == nil {
+		blob.Citations = []Citation{}
+	}
+	m.Sections = blob.Sections
+	m.Citations = blob.Citations
+	return nil
 }
 
 type MinutesHistory struct {

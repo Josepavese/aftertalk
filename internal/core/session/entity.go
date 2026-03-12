@@ -18,15 +18,17 @@ type Session struct {
 	CreatedAt        time.Time     `json:"created_at"`
 	EndedAt          *time.Time    `json:"ended_at,omitempty"`
 	ParticipantCount int           `json:"participant_count"`
+	TemplateID       string        `json:"template_id,omitempty"`
 	Metadata         string        `json:"metadata,omitempty"`
 }
 
-func NewSession(id string, participantCount int) *Session {
+func NewSession(id string, participantCount int, templateID string) *Session {
 	return &Session{
 		ID:               id,
 		Status:           StatusActive,
 		CreatedAt:        time.Now().UTC(),
 		ParticipantCount: participantCount,
+		TemplateID:       templateID,
 	}
 }
 

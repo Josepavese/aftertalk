@@ -139,6 +139,17 @@ func (r *TranscriptionRepository) GetBySessionOrdered(ctx context.Context, sessi
 	return r.GetBySession(ctx, sessionID)
 }
 
+// CountBySession returns the number of already-saved segments for a session,
+// used to compute the segment_index offset when a session reconnects.
+func (r *TranscriptionRepository) CountBySession(ctx context.Context, sessionID string) (int, error) {
+	var count int
+	err := r.QueryRowContext(ctx, `SELECT COUNT(*) FROM transcriptions WHERE session_id = ?`, sessionID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count transcriptions: %w", err)
+	}
+	return count, nil
+}
+
 func (r *TranscriptionRepository) UpdateStatus(ctx context.Context, id string, status TranscriptionStatus) error {
 	query := `UPDATE transcriptions SET status = ? WHERE id = ?`
 
