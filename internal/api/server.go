@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/flowup/aftertalk/internal/api/handler"
 	custommiddleware "github.com/flowup/aftertalk/internal/api/middleware"
+	"github.com/flowup/aftertalk/internal/api/response"
 	"github.com/flowup/aftertalk/internal/config"
 	"github.com/flowup/aftertalk/internal/core/session"
 	"github.com/go-chi/chi/v5"
@@ -82,10 +84,10 @@ func (rc *roomCache) getOrCreate(code, role, name string, create func() (map[str
 }
 
 func NewServer(cfg *config.Config, sessionService *session.Service, botServer *BotServer) *Server {
-	return NewServerWithDeps(cfg, sessionService, botServer, nil, nil)
+	return NewServerWithDeps(cfg, sessionService, botServer, nil, nil, nil)
 }
 
-func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botServer *BotServer, minutesHandler *handler.MinutesHandler, transcriptionHandler *handler.TranscriptionHandler) *Server {
+func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botServer *BotServer, minutesHandler *handler.MinutesHandler, transcriptionHandler *handler.TranscriptionHandler, rtcHandler *handler.RTCConfigHandler) *Server {
 	rooms := &roomCache{
 		rooms: make(map[string]*roomEntry),
 	}
@@ -98,12 +100,42 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 	r.Use(custommiddleware.Recovery)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	// CORS for all routes
+	// CORS — configurable via cfg.API.CORS; defaults to wildcard for dev.
+	corsOrigins := cfg.API.CORS.AllowedOrigins
+	if len(corsOrigins) == 0 {
+		corsOrigins = []string{"*"}
+	}
+	corsHeaders := strings.Join(cfg.API.CORS.AllowedHeaders, ", ")
+	if corsHeaders == "" {
+		corsHeaders = "Authorization, Content-Type, X-API-Key, X-Request-ID"
+	}
+	corsMethods := strings.Join(cfg.API.CORS.AllowedMethods, ", ")
+	if corsMethods == "" {
+		corsMethods = "GET, POST, PUT, DELETE, OPTIONS"
+	}
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Headers", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "*")
+			origin := r.Header.Get("Origin")
+			allowed := false
+			for _, o := range corsOrigins {
+				if o == "*" || o == origin {
+					allowed = true
+					break
+				}
+			}
+			if allowed {
+				if len(corsOrigins) == 1 && corsOrigins[0] == "*" {
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+				} else {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Set("Vary", "Origin")
+				}
+				w.Header().Set("Access-Control-Allow-Headers", corsHeaders)
+				w.Header().Set("Access-Control-Allow-Methods", corsMethods)
+				if cfg.API.CORS.AllowCredentials {
+					w.Header().Set("Access-Control-Allow-Credentials", "true")
+				}
+			}
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -112,9 +144,22 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 		})
 	})
 
+	// Rate limiting — applied globally when enabled.
+	if cfg.API.RateLimit.Enabled && cfg.API.RateLimit.RequestsPerMinute > 0 {
+		r.Use(custommiddleware.RateLimit(cfg.API.RateLimit.RequestsPerMinute))
+	}
+
 	sessionHandler := handler.NewSessionHandler(sessionService)
 
 	// --- Public routes (no API key) ---
+
+	// apiKeyMiddleware is defined early so it can be used on both public and protected routes.
+	apiKeyMiddleware := func(next http.Handler) http.Handler {
+		if cfg.API.Key == "" {
+			return next
+		}
+		return custommiddleware.APIKey(cfg.API.Key)(next)
+	}
 
 	// Static file server for test-ui
 	uiPath := findTestUIPath()
@@ -127,36 +172,75 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 		})
 	}
 
-	// /demo/config — returns public demo config for the test UI (no auth required).
-	// SSOT: UI reads API key from here instead of requiring manual copy-paste.
+	// Build a lookup map for templates (templateID → TemplateConfig).
+	templateMap := make(map[string]config.TemplateConfig, len(cfg.Templates))
+	for _, t := range cfg.Templates {
+		templateMap[t.ID] = t
+	}
+	// Default template ID (first in list).
+	defaultTemplateID := ""
+	if len(cfg.Templates) > 0 {
+		defaultTemplateID = cfg.Templates[0].ID
+	}
+
+	// /demo/config — public metadata for the test UI (no auth required).
+	// The API key is included only when cfg.Demo.Enabled=true (local demo mode).
+	// Never set Demo.Enabled=true in production.
 	r.Get("/demo/config", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"api_key": cfg.API.Key,
-		})
+		resp := map[string]interface{}{
+			"templates":           cfg.Templates,
+			"default_template_id": defaultTemplateID,
+		}
+		if cfg.Demo.Enabled {
+			resp["api_key"] = cfg.API.Key
+		}
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 
-	// /test/start — joins or creates a session by room code.
-	// First caller creates the session; second caller joins with the pre-generated token.
-	r.Post("/test/start", func(w http.ResponseWriter, req *http.Request) {
+	// /test/start — requires API key when one is configured.
+	// Joins or creates a session by room code.
+	r.With(apiKeyMiddleware).Post("/test/start", func(w http.ResponseWriter, req *http.Request) {
 		var body struct {
-			Code string `json:"code"`
-			Name string `json:"name"`
-			Role string `json:"role"`
+			Code       string `json:"code"`
+			Name       string `json:"name"`
+			Role       string `json:"role"`
+			TemplateID string `json:"template_id"`
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.Name == "" || body.Role == "" || body.Code == "" {
 			http.Error(w, "invalid request body: code, name and role are required", http.StatusBadRequest)
 			return
 		}
 
-		otherRole := "speaker"
-		if body.Role == "speaker" {
-			otherRole = "host"
+		// Resolve the template; fall back to default if not specified.
+		if body.TemplateID == "" {
+			body.TemplateID = defaultTemplateID
+		}
+		tmpl, hasTmpl := templateMap[body.TemplateID]
+
+		// Derive the "other" role from the template (second role that isn't ours).
+		otherRole := ""
+		if hasTmpl && len(tmpl.Roles) >= 2 {
+			for _, r := range tmpl.Roles {
+				if r.Key != body.Role {
+					otherRole = r.Key
+					break
+				}
+			}
+		}
+		if otherRole == "" {
+			// Fallback for unknown templates.
+			if body.Role == "therapist" || body.Role == "consultant" || body.Role == "host" {
+				otherRole = "patient"
+			} else {
+				otherRole = "therapist"
+			}
 		}
 
 		sessionID, token, err := rooms.getOrCreate(body.Code, body.Role, body.Name, func() (map[string]string, error) {
 			createReq := &session.CreateSessionRequest{
 				ParticipantCount: 2,
+				TemplateID:       body.TemplateID,
 				Participants: []session.ParticipantRequest{
 					{UserID: body.Name, Role: body.Role},
 					{UserID: "guest-" + otherRole, Role: otherRole},
@@ -173,11 +257,7 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 			return tokens, nil
 		})
 		if err == errRoleTaken {
-			otherRoleLabel := "Speaker"
-			if body.Role == "speaker" {
-				otherRoleLabel = "Host"
-			}
-			http.Error(w, fmt.Sprintf("Il ruolo '%s' è già occupato nella stanza '%s'. Scegli '%s'.", body.Role, body.Code, otherRoleLabel), http.StatusConflict)
+			http.Error(w, fmt.Sprintf("Il ruolo '%s' è già occupato nella stanza '%s'. Scegli un altro ruolo.", body.Role, body.Code), http.StatusConflict)
 			return
 		}
 		if err != nil {
@@ -193,19 +273,44 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 	})
 
 	// --- Protected routes (API key required) ---
-	apiKeyMiddleware := func(next http.Handler) http.Handler {
-		if cfg.API.Key == "" {
-			return next
-		}
-		return custommiddleware.APIKey(cfg.API.Key)(next)
-	}
-
 	r.Group(func(r chi.Router) {
 		r.Use(apiKeyMiddleware)
 
 		r.Route("/v1", func(r chi.Router) {
 			r.Get("/health", handler.HealthCheck)
 			r.Get("/ready", handler.ReadyCheck)
+
+			// /v1/config — public metadata (templates, version) without API key exposure.
+			r.Get("/config", func(w http.ResponseWriter, req *http.Request) {
+				response.OK(w, map[string]interface{}{
+					"templates":           cfg.Templates,
+					"default_template_id": defaultTemplateID,
+				})
+			})
+
+			// OpenAPI spec — served from specs/contracts/api.yaml.
+			r.Get("/openapi.yaml", func(w http.ResponseWriter, req *http.Request) {
+				candidates := []string{
+					"./specs/contracts/api.yaml",
+					"../specs/contracts/api.yaml",
+				}
+				if exe, err := os.Executable(); err == nil {
+					dir := filepath.Dir(exe)
+					candidates = append(candidates,
+						filepath.Join(dir, "specs/contracts/api.yaml"),
+						filepath.Join(dir, "../specs/contracts/api.yaml"),
+					)
+				}
+				for _, p := range candidates {
+					if _, err := os.Stat(p); err == nil {
+						w.Header().Set("Content-Type", "application/yaml")
+						http.ServeFile(w, req, p)
+						return
+					}
+				}
+				response.NotFound(w, "openapi spec not found")
+			})
+
 			r.Mount("/sessions", sessionHandler.Routes())
 
 			if minutesHandler != nil {
@@ -214,6 +319,10 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 
 			if transcriptionHandler != nil {
 				r.Mount("/transcriptions", transcriptionHandler.Routes())
+			}
+
+			if rtcHandler != nil {
+				r.Get("/rtc-config", rtcHandler.ServeHTTP)
 			}
 		})
 	})
@@ -269,6 +378,11 @@ func findTestUIPath() string {
 		}
 	}
 	return ""
+}
+
+// Handler returns the underlying http.Handler for use in tests.
+func (s *Server) Handler() http.Handler {
+	return s.router
 }
 
 func (s *Server) ListenAndServe() error {

@@ -73,9 +73,11 @@ func TestTranscriptionHandler_GetTranscriptions(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				var transcriptions []*transcription.Transcription
-				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &transcriptions))
+				var resp map[string]json.RawMessage
+				assert.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 				assert.Equal(t, http.StatusOK, rec.Code)
+				var transcriptions []*transcription.Transcription
+				assert.NoError(t, json.Unmarshal(resp["transcriptions"], &transcriptions))
 				assert.Len(t, transcriptions, 2)
 				assert.Equal(t, "Hello everyone", transcriptions[0].Text)
 				assert.Equal(t, "How are you?", transcriptions[1].Text)
