@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/flowup/aftertalk/internal/core"
+	"github.com/flowup/aftertalk/internal/config"
 	"github.com/flowup/aftertalk/internal/core/session"
 	"github.com/flowup/aftertalk/internal/core/transcription"
 	"github.com/flowup/aftertalk/internal/storage/cache"
@@ -134,7 +135,7 @@ func TestHighFrequencySessionCreation(t *testing.T) {
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
-	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil)
+	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
 
 	sessionCount := sessionsPerHour * 2
 	sessionPerThread := sessionCount / threads
@@ -218,7 +219,7 @@ func TestLargeTranscriptionDataProcessing(t *testing.T) {
 			sessionID := randString(36)
 
 			// Create session
-			session := session.NewSession(sessionID, 2)
+			session := session.NewSession(sessionID, 2, "")
 			if err := sessionRepo.Create(context.Background(), session); err != nil {
 				results <- fmt.Errorf("session %d: %w", i, err)
 				return
