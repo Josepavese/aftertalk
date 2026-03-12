@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/flowup/aftertalk/internal/logging"
@@ -118,11 +119,15 @@ func (p *WhisperLocalProvider) buildMultipartBody(audioData *AudioData) (io.Read
 	filename := "audio.wav"
 
 	if len(audioData.Frames) > 0 {
-		wav, err := audio.DecodeFramesToWAV(audioData.Frames, 16000)
+		wav, err := audio.DecodeFramesToWAVffmpeg(audioData.Frames, 16000)
 		if err != nil {
 			return nil, "", fmt.Errorf("opus→wav: %w", err)
 		}
 		audioBytes = wav
+		// Debug: dump WAV to disk so we can verify audio content
+		dbgPath := fmt.Sprintf("/tmp/aftertalk_debug_%s.wav", audioData.SessionID)
+		_ = os.WriteFile(dbgPath, wav, 0644)
+		logging.Infof("WhisperLocal: wav_bytes=%d frames_decoded=%d debug_wav=%s", len(wav), len(audioData.Frames), dbgPath)
 	} else {
 		audioBytes = audioData.Data
 	}

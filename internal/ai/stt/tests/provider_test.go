@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"os"
 	"testing"
 
 	"github.com/flowup/aftertalk/internal/ai/stt"
@@ -225,6 +226,18 @@ func TestSTTConfigDefaults(t *testing.T) {
 	}
 }
 
+
+// validCredsPath creates a temporary credentials file and returns its path.
+func validCredsPath(t *testing.T) string {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "creds*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	return f.Name()
+}
+
 func TestSTTProviderWithEmptyData(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -248,7 +261,7 @@ func TestSTTProviderWithEmptyData(t *testing.T) {
 		},
 		{
 			name:     "Google STT with valid credentials",
-			provider: stt.NewGoogleSTTProvider("valid-creds"),
+			provider: stt.NewGoogleSTTProvider(validCredsPath(t)),
 			expected: true,
 		},
 		{
