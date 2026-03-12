@@ -48,6 +48,11 @@ func (m *MockMinutesService) UpdateMinutes(ctx context.Context, id string, updat
 	return args.Get(0).(*minutes.Minutes), args.Error(1)
 }
 
+func (m *MockMinutesService) DeleteMinutes(ctx context.Context, id string) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 func (m *MockMinutesService) GetMinutesHistory(ctx context.Context, minutesID string) ([]*minutes.MinutesHistory, error) {
 	args := m.Called(ctx, minutesID)
 	if args.Get(0) == nil {
@@ -80,8 +85,6 @@ func TestMinutesHandler_GetMinutes(t *testing.T) {
 						SessionID: "session-123",
 						Version:   1,
 						Provider:  "gpt-4",
-						Themes:    []string{"meeting", "strategy"},
-						NextSteps: []string{"follow up", "send report"},
 						Status:    minutes.MinutesStatusReady,
 					}, nil)
 			},
@@ -157,7 +160,6 @@ func TestMinutesHandler_GetMinutesByID(t *testing.T) {
 						SessionID: "session-456",
 						Version:   2,
 						Provider:  "claude-3",
-						NextSteps: []string{"call back", "send report"},
 						Status:    minutes.MinutesStatusReady,
 					}, nil)
 			},
@@ -234,7 +236,6 @@ func TestMinutesHandler_UpdateMinutes(t *testing.T) {
 				ID:        "min-123",
 				SessionID: "session-456",
 				Version:   1,
-				NextSteps: []string{"update meeting notes", "follow up on decisions"},
 			},
 			mockSetup: func(m *MockMinutesService) {
 				m.On("GetMinutesByID", mock.Anything, "min-123").
@@ -248,7 +249,6 @@ func TestMinutesHandler_UpdateMinutes(t *testing.T) {
 						ID:        "min-123",
 						SessionID: "session-456",
 						Version:   2,
-						NextSteps: []string{"update meeting notes", "follow up on decisions"},
 					}, nil)
 			},
 			expectedStatus: http.StatusOK,

@@ -52,6 +52,19 @@ func (m *MockSessionService) ConnectParticipant(ctx context.Context, participant
 	return args.Error(0)
 }
 
+func (m *MockSessionService) ListSessions(ctx context.Context, status string, limit, offset int) ([]*session.Session, int, error) {
+	args := m.Called(ctx, status, limit, offset)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]*session.Session), args.Int(1), args.Error(2)
+}
+
+func (m *MockSessionService) DeleteSession(ctx context.Context, sessionID string) error {
+	args := m.Called(ctx, sessionID)
+	return args.Error(0)
+}
+
 func TestSessionHandler_CreateSession(t *testing.T) {
 	tests := []struct {
 		name           string

@@ -2,7 +2,9 @@ package api
 
 import (
 	"net/http"
+
 	"github.com/flowup/aftertalk/internal/bot/webrtc"
+	"github.com/flowup/aftertalk/internal/config"
 	"github.com/flowup/aftertalk/internal/core/session"
 	"github.com/flowup/aftertalk/internal/logging"
 	"github.com/flowup/aftertalk/internal/storage/cache"
@@ -17,12 +19,12 @@ type BotServer struct {
 	SignalingServer *webrtc.SignalingServer
 }
 
-func NewBotServer(sessionService *session.Service, jwtManager *jwt.JWTManager, tokenCache *cache.TokenCache) *BotServer {
+func NewBotServer(sessionService *session.Service, jwtManager *jwt.JWTManager, tokenCache *cache.TokenCache, iceServers []config.ICEServerConfig) *BotServer {
 	webrtcManager := webrtc.NewManager(func(sessionID, participantID, role string, payload []byte) {
 		if err := sessionService.ProcessAudioChunk(sessionID, participantID, payload); err != nil {
 			logging.Errorf("ProcessAudioChunk error session=%s participant=%s: %v", sessionID, participantID, err)
 		}
-	})
+	}, iceServers)
 
 	signalingServer := webrtc.NewSignalingServer(webrtcManager, func(tokenString string) (*webrtc.Claims, error) {
 		claims, err := jwtManager.Validate(tokenString)
@@ -37,13 +39,21 @@ func NewBotServer(sessionService *session.Service, jwtManager *jwt.JWTManager, t
 		}, nil
 	})
 
-	return &BotServer{
+	bot := &BotServer{
 		SessionService:  sessionService,
 		JWTManager:     jwtManager,
 		TokenCache:     tokenCache,
 		WebRTCManager:  webrtcManager,
 		SignalingServer: signalingServer,
 	}
+
+	// When a session is ended, close all WebRTC peers for that session so every
+	// connected participant is disconnected immediately.
+	sessionService.SetOnSessionEnd(func(sessionID string) {
+		webrtcManager.CloseSessionPeers(sessionID)
+	})
+
+	return bot
 }
 
 func (s *BotServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {

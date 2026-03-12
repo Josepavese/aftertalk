@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/flowup/aftertalk/internal/core/transcription"
 	"github.com/flowup/aftertalk/internal/logging"
@@ -37,14 +38,41 @@ func (h *TranscriptionHandler) GetTranscriptions(w http.ResponseWriter, r *http.
 		return
 	}
 
-	transcriptions, err := h.service.GetTranscriptions(r.Context(), sessionID)
+	all, err := h.service.GetTranscriptions(r.Context(), sessionID)
 	if err != nil {
 		logging.Errorf("Failed to get transcriptions: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	render.JSON(w, r, transcriptions)
+	total := len(all)
+	limit := total
+	offset := 0
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+	if offset >= total {
+		all = nil
+	} else {
+		all = all[offset:]
+		if limit < len(all) {
+			all = all[:limit]
+		}
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"transcriptions": all,
+		"total":          total,
+		"limit":          limit,
+		"offset":         offset,
+	})
 }
 
 func (h *TranscriptionHandler) GetTranscriptionByID(w http.ResponseWriter, r *http.Request) {
@@ -54,12 +82,12 @@ func (h *TranscriptionHandler) GetTranscriptionByID(w http.ResponseWriter, r *ht
 		return
 	}
 
-	transcription, err := h.service.GetTranscriptionByID(r.Context(), id)
+	t, err := h.service.GetTranscriptionByID(r.Context(), id)
 	if err != nil {
 		logging.Errorf("Failed to get transcription: %v", err)
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	render.JSON(w, r, transcription)
+	render.JSON(w, r, t)
 }

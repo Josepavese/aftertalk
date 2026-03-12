@@ -17,6 +17,7 @@ type MinutesService interface {
 	GetMinutesByID(ctx context.Context, id string) (*minutes.Minutes, error)
 	UpdateMinutes(ctx context.Context, id string, updatedMinutes *minutes.Minutes, editedBy string) (*minutes.Minutes, error)
 	GetMinutesHistory(ctx context.Context, minutesID string) ([]*minutes.MinutesHistory, error)
+	DeleteMinutes(ctx context.Context, id string) error
 }
 
 type MinutesHandler struct {
@@ -32,6 +33,7 @@ func (h *MinutesHandler) Routes() chi.Router {
 	r.Get("/", h.GetMinutes)
 	r.Get("/{id}", h.GetMinutesByID)
 	r.Put("/{id}", h.UpdateMinutes)
+	r.Delete("/{id}", h.DeleteMinutes)
 	r.Get("/{id}/versions", h.GetMinutesHistory)
 	return r
 }
@@ -109,6 +111,22 @@ func (h *MinutesHandler) UpdateMinutes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.JSON(w, r, updated)
+}
+
+func (h *MinutesHandler) DeleteMinutes(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "Minutes ID required")
+		return
+	}
+
+	if err := h.service.DeleteMinutes(r.Context(), id); err != nil {
+		logging.Errorf("Failed to delete minutes: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to delete minutes: "+err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *MinutesHandler) GetMinutesHistory(w http.ResponseWriter, r *http.Request) {
