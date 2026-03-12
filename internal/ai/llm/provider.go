@@ -11,12 +11,6 @@ type LLMProvider interface {
 	IsAvailable() bool
 }
 
-type MinutesPrompt struct {
-	SessionID         string
-	TranscriptionText string
-	ParticipantRoles  []string
-}
-
 type LLMConfig struct {
 	Provider  string
 	OpenAI    OpenAIConfig
@@ -26,10 +20,8 @@ type LLMConfig struct {
 }
 
 type OllamaConfig struct {
-	// BaseURL is the Ollama server URL (default: http://localhost:11434)
 	BaseURL string
-	// Model is the model name, e.g. "llama3.2:3b", "mistral", "qwen2.5"
-	Model string
+	Model   string
 }
 
 type OpenAIConfig struct {
@@ -48,36 +40,32 @@ type AzureLLMConfig struct {
 	Deployment string
 }
 
-type MinutesResponse struct {
-	Themes                    []string      `json:"themes"`
-	ContentsReported          []ContentItem `json:"contents_reported"`
-	ProfessionalInterventions []ContentItem `json:"professional_interventions"`
-	ProgressIssues            Progress      `json:"progress_issues"`
-	NextSteps                 []string      `json:"next_steps"`
-	Citations                 []Citation    `json:"citations"`
-}
-
-type ContentItem struct {
-	Text      string `json:"text"`
-	Timestamp int    `json:"timestamp,omitempty"`
-}
-
-type Progress struct {
-	Progress []string `json:"progress"`
-	Issues   []string `json:"issues"`
-}
-
+// Citation is a verbatim quote from the transcript with a role label.
 type Citation struct {
 	TimestampMs int    `json:"timestamp_ms"`
 	Text        string `json:"text"`
 	Role        string `json:"role"`
 }
 
-func ParseMinutesResponse(jsonStr string) (*MinutesResponse, error) {
-	var response MinutesResponse
-	err := json.Unmarshal([]byte(jsonStr), &response)
-	if err != nil {
+// DynamicMinutesResponse is the flexible LLM output for any template.
+// Sections is a map from section key → raw JSON value.
+// Citations are always typed and always present.
+type DynamicMinutesResponse struct {
+	Sections  map[string]json.RawMessage `json:"sections"`
+	Citations []Citation                 `json:"citations"`
+}
+
+// ParseMinutesDynamic unmarshals the raw LLM JSON into a DynamicMinutesResponse.
+func ParseMinutesDynamic(jsonStr string) (*DynamicMinutesResponse, error) {
+	var r DynamicMinutesResponse
+	if err := json.Unmarshal([]byte(jsonStr), &r); err != nil {
 		return nil, err
 	}
-	return &response, nil
+	if r.Sections == nil {
+		r.Sections = map[string]json.RawMessage{}
+	}
+	if r.Citations == nil {
+		r.Citations = []Citation{}
+	}
+	return &r, nil
 }
