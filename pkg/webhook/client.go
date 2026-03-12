@@ -17,6 +17,8 @@ type Client struct {
 	timeout    time.Duration
 }
 
+func (c *Client) URL() string { return c.url }
+
 func NewClient(url string, timeout time.Duration) *Client {
 	return &Client{
 		httpClient: &http.Client{Timeout: timeout},

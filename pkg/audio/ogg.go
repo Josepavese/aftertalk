@@ -3,15 +3,34 @@ package audio
 import (
 	"bytes"
 	"encoding/binary"
-	"hash/crc32"
 )
 
-// oggCRCTable is the CRC table used by OGG (IEEE polynomial).
-var oggCRCTable = crc32.MakeTable(0x04c11db7)
+// oggCRCTable is the lookup table for the Ogg-specific CRC32.
+// Ogg uses polynomial 0x04c11db7 with NO input/output bit reflection,
+// which differs from the standard hash/crc32 IEEE implementation.
+var oggCRCTable [256]uint32
 
-// oggCRC computes the OGG CRC32 checksum over the page bytes (with checksum field zeroed).
+func init() {
+	for i := 0; i < 256; i++ {
+		crc := uint32(i) << 24
+		for j := 0; j < 8; j++ {
+			if crc&0x80000000 != 0 {
+				crc = (crc << 1) ^ 0x04c11db7
+			} else {
+				crc <<= 1
+			}
+		}
+		oggCRCTable[i] = crc
+	}
+}
+
+// oggCRC computes the Ogg page checksum (checksum field must be zeroed first).
 func oggCRC(data []byte) uint32 {
-	return crc32.Checksum(data, oggCRCTable)
+	var crc uint32
+	for _, b := range data {
+		crc = (crc << 8) ^ oggCRCTable[((crc>>24)^uint32(b))&0xFF]
+	}
+	return crc
 }
 
 // WriteOGGOpus wraps individual Opus RTP frame payloads into a valid OGG Opus stream.
