@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flowup/aftertalk/internal/config"
 	"github.com/flowup/aftertalk/internal/logging"
 	pionice "github.com/pion/ice/v4"
 	"github.com/pion/webrtc/v4"
@@ -31,11 +32,17 @@ type Peer struct {
 	mu            sync.RWMutex
 }
 
-func NewPeer(sessionID, participantID, role string, onAudio AudioTrackHandler) (*Peer, error) {
-	config := webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{URLs: []string{"stun:stun.l.google.com:19302"}},
-		},
+func NewPeer(sessionID, participantID, role string, onAudio AudioTrackHandler, iceServers []config.ICEServerConfig) (*Peer, error) {
+	webrtcICEServers := make([]webrtc.ICEServer, 0, len(iceServers))
+	for _, s := range iceServers {
+		webrtcICEServers = append(webrtcICEServers, webrtc.ICEServer{
+			URLs:       s.URLs,
+			Username:   s.Username,
+			Credential: s.Credential,
+		})
+	}
+	cfg := webrtc.Configuration{
+		ICEServers:         webrtcICEServers,
 		ICETransportPolicy: webrtc.ICETransportPolicyAll,
 	}
 
@@ -44,7 +51,7 @@ func NewPeer(sessionID, participantID, role string, onAudio AudioTrackHandler) (
 	se.SetIncludeLoopbackCandidate(true)
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(se))
 
-	pc, err := api.NewPeerConnection(config)
+	pc, err := api.NewPeerConnection(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -168,13 +175,18 @@ func (p *Peer) Close() error {
 }
 
 type Manager struct {
-	peers   map[string]*Peer
-	mu      sync.RWMutex
-	onAudio AudioTrackHandler
+	peers      map[string]*Peer
+	mu         sync.RWMutex
+	onAudio    AudioTrackHandler
+	iceServers []config.ICEServerConfig
 }
 
-func NewManager(onAudio AudioTrackHandler) *Manager {
-	return &Manager{peers: make(map[string]*Peer), onAudio: onAudio}
+func NewManager(onAudio AudioTrackHandler, iceServers []config.ICEServerConfig) *Manager {
+	return &Manager{
+		peers:      make(map[string]*Peer),
+		onAudio:    onAudio,
+		iceServers: iceServers,
+	}
 }
 
 func (m *Manager) CreatePeer(ctx context.Context, sessionID, participantID, role string) (*Peer, error) {
@@ -184,7 +196,7 @@ func (m *Manager) CreatePeer(ctx context.Context, sessionID, participantID, role
 	if _, exists := m.peers[key]; exists {
 		return nil, ErrPeerAlreadyExists
 	}
-	peer, err := NewPeer(sessionID, participantID, role, m.onAudio)
+	peer, err := NewPeer(sessionID, participantID, role, m.onAudio, m.iceServers)
 	if err != nil {
 		return nil, err
 	}
