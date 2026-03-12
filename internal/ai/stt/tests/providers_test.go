@@ -2,6 +2,11 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/flowup/aftertalk/internal/ai/stt"
@@ -12,433 +17,226 @@ func init() {
 	logging.Init("info", "console") //nolint:errcheck
 }
 
-func TestGoogleSTTProvider_Name(t *testing.T) {
-	provider := stt.NewGoogleSTTProvider("creds")
-	name := provider.Name()
+// ── Google ────────────────────────────────────────────────────────────────────
 
-	if name != "google" {
-		t.Errorf("Name mismatch: got %s, want %s", name, "google")
+func TestGoogleSTTProvider_Name(t *testing.T) {
+	if stt.NewGoogleSTTProvider("creds.json").Name() != "google" {
+		t.Error("expected name 'google'")
 	}
 }
 
 func TestGoogleSTTProvider_IsAvailable(t *testing.T) {
-	tests := []struct {
-		name     string
-		creds    string
-		expected bool
-	}{
-		{"with credentials", "/valid/creds.json", true},
-		{"without credentials", "", false},
+	tmp := t.TempDir()
+	credPath := filepath.Join(tmp, "creds.json")
+	os.WriteFile(credPath, []byte(`{}`), 0600) //nolint:errcheck
+
+	if !stt.NewGoogleSTTProvider(credPath).IsAvailable() {
+		t.Error("should be available when credentials file exists")
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			provider := stt.NewGoogleSTTProvider(tt.creds)
-			available := provider.IsAvailable()
-
-			if available != tt.expected {
-				t.Errorf("Availability mismatch: got %v, want %v", available, tt.expected)
-			}
-		})
+	if stt.NewGoogleSTTProvider("/nonexistent/path.json").IsAvailable() {
+		t.Error("should not be available when credentials file is missing")
+	}
+	if stt.NewGoogleSTTProvider("").IsAvailable() {
+		t.Error("should not be available with empty path")
 	}
 }
 
 func TestGoogleSTTProvider_Transcribe(t *testing.T) {
-	provider := stt.NewGoogleSTTProvider("valid-creds")
-	audioData := &stt.AudioData{
-		SessionID:     "session1",
-		ParticipantID: "p1",
-		Role:          "user",
-		Data:          []byte("test audio data"),
-		SampleRate:    16000,
-		Duration:      60,
-	}
-
-	result, err := provider.Transcribe(context.Background(), audioData)
-
-	if err != nil {
-		t.Errorf("Transcribe should not fail, got error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("Expected non-nil result")
-	}
-	if result.Provider != "google" {
-		t.Errorf("Provider mismatch: got %s, want %s", result.Provider, "google")
-	}
-	if len(result.Segments) != 1 {
-		t.Errorf("Expected 1 segment, got %d", len(result.Segments))
-	}
-	if result.Segments[0].Role != "user" {
-		t.Errorf("Role mismatch: got %s, want %s", result.Segments[0].Role, "user")
-	}
-	if result.Segments[0].StartMs != 0 {
-		t.Errorf("StartMs mismatch: got %d, want 0", result.Segments[0].StartMs)
-	}
-	if result.Segments[0].EndMs != 60 {
-		t.Errorf("EndMs mismatch: got %d, want 60", result.Segments[0].EndMs)
-	}
-	if result.Segments[0].Confidence != 0.95 {
-		t.Errorf("Confidence mismatch: got %f, want 0.95", result.Segments[0].Confidence)
-	}
-	if result.Duration != 60 {
-		t.Errorf("Duration mismatch: got %d, want 60", result.Duration)
-	}
-}
-
-func TestGoogleSTTProvider_TranscribeMultipleSegments(t *testing.T) {
-	provider := stt.NewGoogleSTTProvider("valid-creds")
-	audioData := &stt.AudioData{
-		SessionID:     "session1",
-		ParticipantID: "p1",
-		Role:          "user",
-		Data:          []byte("test"),
-		SampleRate:    16000,
-		Duration:      120,
-	}
-
-	result, err := provider.Transcribe(context.Background(), audioData)
-	if err != nil {
-		t.Errorf("Transcribe failed: %v", err)
-	}
-
-	result.AddSegment(&stt.TranscriptionSegment{
-		ID:         "seg2",
-		SessionID:  "session1",
-		Role:       "user",
-		StartMs:    60,
-		EndMs:      120,
-		Text:       "second segment",
-		Confidence: 0.90,
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{"access_token": "fake"})
 	})
+	mux.HandleFunc("/speech:recognize", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{{
+				"alternatives": []map[string]interface{}{{
+					"transcript": "ciao come stai", "confidence": 0.97,
+				}},
+			}},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
 
-	if len(result.Segments) != 2 {
-		t.Errorf("Expected 2 segments, got %d", len(result.Segments))
+	tmp := t.TempDir()
+	credPath := filepath.Join(tmp, "sa.json")
+	sa := map[string]string{
+		"type": "service_account", "client_email": "test@proj.iam.gserviceaccount.com",
+		"private_key": fakeRSAPrivateKeyPEM, "token_uri": srv.URL + "/token",
 	}
-	if result.Segments[1].Text != "second segment" {
-		t.Errorf("Second segment text mismatch")
+	b, _ := json.Marshal(sa)
+	os.WriteFile(credPath, b, 0600) //nolint:errcheck
+
+	p := stt.NewGoogleSTTProvider(credPath)
+	p.SetSpeechEndpoint(srv.URL + "/speech:recognize")
+
+	result, err := p.Transcribe(context.Background(), &stt.AudioData{
+		SessionID: "s1", Role: "therapist", Duration: 3000,
+	})
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if len(result.Segments) != 1 || result.Segments[0].Text != "ciao come stai" {
+		t.Errorf("unexpected result: %+v", result)
 	}
 }
+
+// ── AWS ───────────────────────────────────────────────────────────────────────
 
 func TestAWSSTTProvider_Name(t *testing.T) {
-	provider := stt.NewAWSSTTProvider("key1", "key2", "us-east-1")
-	name := provider.Name()
-
-	if name != "aws" {
-		t.Errorf("Name mismatch: got %s, want %s", name, "aws")
+	if stt.NewAWSSTTProvider("k", "s", "eu-west-1").Name() != "aws" {
+		t.Error("expected name 'aws'")
 	}
 }
 
 func TestAWSSTTProvider_IsAvailable(t *testing.T) {
-	tests := []struct {
-		name      string
-		accessKey string
-		secretKey string
-		region    string
-		expected  bool
-	}{
-		{"with all credentials", "AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "us-east-1", true},
-		{"without access key", "", "secret", "us-east-1", false},
-		{"without secret key", "access", "", "us-east-1", false},
-		{"without region", "access", "secret", "", false},
-		{"with all credentials but empty region", "access", "secret", "", false},
+	cases := []struct{ access, secret, region string; want bool }{
+		{"AKID", "secret", "eu-west-1", true},
+		{"", "secret", "eu-west-1", false},
+		{"AKID", "", "eu-west-1", false},
+		{"AKID", "secret", "", false},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			provider := stt.NewAWSSTTProvider(tt.accessKey, tt.secretKey, tt.region)
-			available := provider.IsAvailable()
-
-			if available != tt.expected {
-				t.Errorf("Availability mismatch: got %v, want %v", available, tt.expected)
-			}
-		})
-	}
-}
-
-func TestAWSSTTProvider_Transcribe(t *testing.T) {
-	provider := stt.NewAWSSTTProvider("AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "us-east-1")
-	audioData := &stt.AudioData{
-		SessionID:     "session1",
-		ParticipantID: "p1",
-		Role:          "moderator",
-		Data:          []byte("audio data"),
-		SampleRate:    8000,
-		Duration:      30,
-	}
-
-	result, err := provider.Transcribe(context.Background(), audioData)
-
-	if err != nil {
-		t.Errorf("Transcribe should not fail, got error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("Expected non-nil result")
-	}
-	if result.Provider != "aws" {
-		t.Errorf("Provider mismatch: got %s, want %s", result.Provider, "aws")
-	}
-	if result.Segments[0].Role != "moderator" {
-		t.Errorf("Role mismatch: got %s, want %s", result.Segments[0].Role, "moderator")
-	}
-	if result.Segments[0].Confidence != 0.90 {
-		t.Errorf("Confidence mismatch: got %f, want 0.90", result.Segments[0].Confidence)
-	}
-}
-
-func TestAzureSTTProvider_Name(t *testing.T) {
-	provider := stt.NewAzureSTTProvider("key123", "eastus")
-	name := provider.Name()
-
-	if name != "azure" {
-		t.Errorf("Name mismatch: got %s, want %s", name, "azure")
-	}
-}
-
-func TestAzureSTTProvider_IsAvailable(t *testing.T) {
-	tests := []struct {
-		name     string
-		key      string
-		region   string
-		expected bool
-	}{
-		{"with key and region", "abc123def456", "eastus", true},
-		{"without key", "", "eastus", false},
-		{"without region", "abc123", "", false},
-		{"both empty", "", "", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			provider := stt.NewAzureSTTProvider(tt.key, tt.region)
-			available := provider.IsAvailable()
-
-			if available != tt.expected {
-				t.Errorf("Availability mismatch: got %v, want %v", available, tt.expected)
-			}
-		})
-	}
-}
-
-func TestAzureSTTProvider_Transcribe(t *testing.T) {
-	provider := stt.NewAzureSTTProvider("abc123def456", "eastus")
-	audioData := &stt.AudioData{
-		SessionID:     "session1",
-		ParticipantID: "p1",
-		Role:          "user",
-		Data:          []byte("test data"),
-		SampleRate:    16000,
-		Duration:      45,
-	}
-
-	result, err := provider.Transcribe(context.Background(), audioData)
-
-	if err != nil {
-		t.Errorf("Transcribe should not fail, got error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("Expected non-nil result")
-	}
-	if result.Provider != "azure" {
-		t.Errorf("Provider mismatch: got %s, want %s", result.Provider, "azure")
-	}
-	if result.Segments[0].Confidence != 0.92 {
-		t.Errorf("Confidence mismatch: got %f, want 0.92", result.Segments[0].Confidence)
-	}
-}
-
-func TestProvider_NewProviderFactory(t *testing.T) {
-	tests := []struct {
-		name        string
-		provider    string
-		hasProvider bool
-		err         bool
-	}{
-		{"google provider", "google", true, false},
-		{"aws provider", "aws", true, false},
-		{"azure provider", "azure", true, false},
-		{"unsupported provider", "unsupported", false, true},
-		{"empty provider", "", true, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &stt.STTConfig{
-				Provider: tt.provider,
-				Google: stt.GoogleConfig{
-					CredentialsPath: "creds.json",
-				},
-			}
-
-			provider, err := stt.NewProvider(cfg)
-
-			if tt.err {
-				if err == nil {
-					t.Error("Expected error for unsupported provider")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("Expected provider %s, got error: %v", tt.provider, err)
-				return
-			}
-
-			if tt.hasProvider {
-				if provider == nil {
-					t.Error("Expected provider to be created")
-				}
-			} else {
-				if provider != nil {
-					t.Error("Expected nil provider for unsupported type")
-				}
-			}
-		})
-	}
-}
-
-func TestGoogleSTTProvider_WithValidCreds(t *testing.T) {
-	provider := stt.NewGoogleSTTProvider("/path/to/credentials.json")
-
-	if !provider.IsAvailable() {
-		t.Error("Provider should be available with valid credentials")
-	}
-
-	ctx := context.Background()
-	audioData := &stt.AudioData{
-		SessionID:     "test-session",
-		ParticipantID: "test-participant",
-		Role:          "user",
-		Data:          make([]byte, 1024),
-		SampleRate:    16000,
-		Duration:      100,
-	}
-
-	result, err := provider.Transcribe(ctx, audioData)
-
-	if err != nil {
-		t.Errorf("Transcribe failed: %v", err)
-	}
-
-	if result == nil {
-		t.Fatal("Expected non-nil result")
-	}
-
-	if len(result.Segments) == 0 {
-		t.Error("Expected at least one segment")
-	}
-
-	segment := result.Segments[0]
-	if segment.Confidence != 0.95 {
-		t.Errorf("Expected confidence 0.95, got %f", segment.Confidence)
-	}
-}
-
-func TestAWSSTTProvider_WithValidCreds(t *testing.T) {
-	provider := stt.NewAWSSTTProvider(
-		"AKIAIOSFODNN7EXAMPLE",
-		"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-		"us-west-2",
-	)
-
-	if !provider.IsAvailable() {
-		t.Error("Provider should be available with valid credentials")
-	}
-
-	ctx := context.Background()
-	audioData := &stt.AudioData{
-		SessionID:     "test-session",
-		ParticipantID: "test-participant",
-		Role:          "moderator",
-		Data:          make([]byte, 2048),
-		SampleRate:    8000,
-		Duration:      50,
-	}
-
-	result, err := provider.Transcribe(ctx, audioData)
-
-	if err != nil {
-		t.Errorf("Transcribe failed: %v", err)
-	}
-
-	if result == nil {
-		t.Fatal("Expected non-nil result")
-	}
-
-	if len(result.Segments) == 0 {
-		t.Error("Expected at least one segment")
-	}
-
-	segment := result.Segments[0]
-	if segment.Confidence != 0.90 {
-		t.Errorf("Expected confidence 0.90, got %f", segment.Confidence)
-	}
-}
-
-func TestAzureSTTProvider_WithValidCreds(t *testing.T) {
-	provider := stt.NewAzureSTTProvider("valid-key", "eastus")
-
-	if !provider.IsAvailable() {
-		t.Error("Provider should be available with valid credentials")
-	}
-
-	ctx := context.Background()
-	audioData := &stt.AudioData{
-		SessionID:     "test-session",
-		ParticipantID: "test-participant",
-		Role:          "user",
-		Data:          make([]byte, 512),
-		SampleRate:    16000,
-		Duration:      25,
-	}
-
-	result, err := provider.Transcribe(ctx, audioData)
-
-	if err != nil {
-		t.Errorf("Transcribe failed: %v", err)
-	}
-
-	if result == nil {
-		t.Fatal("Expected non-nil result")
-	}
-
-	if len(result.Segments) == 0 {
-		t.Error("Expected at least one segment")
-	}
-
-	segment := result.Segments[0]
-	if segment.Confidence != 0.92 {
-		t.Errorf("Expected confidence 0.92, got %f", segment.Confidence)
+	for _, c := range cases {
+		if stt.NewAWSSTTProvider(c.access, c.secret, c.region).IsAvailable() != c.want {
+			t.Errorf("IsAvailable(%q,%q,%q): want %v", c.access, c.secret, c.region, c.want)
+		}
 	}
 }
 
 func TestAWSSTTProvider_EmptyCredentials(t *testing.T) {
-	provider := stt.NewAWSSTTProvider("", "", "")
-
-	if provider.IsAvailable() {
-		t.Error("Provider should not be available with empty credentials")
-	}
-
-	ctx := context.Background()
-	audioData := &stt.AudioData{
-		SessionID: "test-session",
-		Data:      []byte("audio"),
-		Duration:  30,
-	}
-
-	result, err := provider.Transcribe(ctx, audioData)
-
+	_, err := stt.NewAWSSTTProvider("", "", "").Transcribe(
+		context.Background(), &stt.AudioData{SessionID: "s", Duration: 30})
 	if err == nil {
-		t.Error("Expected error when provider is not available")
+		t.Error("expected error with empty credentials")
 	}
-	if result != nil {
-		t.Error("Expected nil result when provider is not available")
+}
+
+func TestAWSSTTProvider_Transcribe(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": map[string]interface{}{
+				"transcripts": []map[string]string{{"transcript": "test transcription"}},
+				"items": []map[string]interface{}{{
+					"type": "pronunciation", "start_time": "0.0", "end_time": "2.5",
+					"alternatives": []map[string]string{{"content": "test", "confidence": "0.9"}},
+				}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	p := stt.NewAWSSTTProvider("AKID", "secret", "eu-west-1")
+	p.SetEndpoint(srv.URL)
+
+	result, err := p.Transcribe(context.Background(), &stt.AudioData{
+		SessionID: "s1", Role: "moderator", Duration: 3000,
+	})
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if len(result.Segments) != 1 || result.Segments[0].Text != "test transcription" {
+		t.Errorf("unexpected result: %+v", result)
+	}
+}
+
+// ── Azure ─────────────────────────────────────────────────────────────────────
+
+func TestAzureSTTProvider_Name(t *testing.T) {
+	if stt.NewAzureSTTProvider("key", "eastus").Name() != "azure" {
+		t.Error("expected name 'azure'")
+	}
+}
+
+func TestAzureSTTProvider_IsAvailable(t *testing.T) {
+	cases := []struct{ key, region string; want bool }{
+		{"key123", "eastus", true},
+		{"", "eastus", false},
+		{"key123", "", false},
+	}
+	for _, c := range cases {
+		if stt.NewAzureSTTProvider(c.key, c.region).IsAvailable() != c.want {
+			t.Errorf("IsAvailable(%q,%q): want %v", c.key, c.region, c.want)
+		}
 	}
 }
 
 func TestAzureSTTProvider_EmptyCredentials(t *testing.T) {
-	provider := stt.NewAzureSTTProvider("", "")
-
-	if provider.IsAvailable() {
-		t.Error("Provider should not be available with empty credentials")
+	if stt.NewAzureSTTProvider("", "").IsAvailable() {
+		t.Error("should not be available with empty credentials")
 	}
 }
+
+func TestAzureSTTProvider_Transcribe(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"RecognitionStatus": "Success",
+			"DisplayText":       "sessione terapeutica",
+			"Duration":          30_000_000, "Offset": 0,
+			"NBest": []map[string]interface{}{
+				{"Confidence": 0.95, "Display": "sessione terapeutica", "Words": []interface{}{}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	p := stt.NewAzureSTTProvider("key123", "eastus")
+	p.SetEndpoint(srv.URL)
+
+	result, err := p.Transcribe(context.Background(), &stt.AudioData{
+		SessionID: "s1", Role: "therapist", Duration: 3000,
+	})
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if len(result.Segments) != 1 || result.Segments[0].Text != "sessione terapeutica" {
+		t.Errorf("unexpected result: %+v", result)
+	}
+}
+
+// ── Factory ───────────────────────────────────────────────────────────────────
+
+func TestSTTNewProviderFactory(t *testing.T) {
+	cases := []struct{ provider string; wantErr bool }{
+		{"stub", false}, {"", false}, {"unsupported", true},
+	}
+	for _, c := range cases {
+		p, err := stt.NewProvider(&stt.STTConfig{Provider: c.provider})
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("provider=%q: expected error", c.provider)
+			}
+		} else if err != nil || p == nil {
+			t.Errorf("provider=%q: unexpected error or nil provider: %v", c.provider, err)
+		}
+	}
+}
+
+// fakeRSAPrivateKeyPEM is a test-only RSA key — NOT used for real authentication.
+const fakeRSAPrivateKeyPEM = `-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCc5OC7RLJP+1Mw
+R5pwv2gWwv6W/OHX453T5FKflpbCqrauzyJ7Yk9yMXXU8i/PzM6kBEFDMtg5I8me
+l5XfC14fd0oCVLvOB06ApvCyijAaazyqCcGa9KQr9dh37rQ490OJiaPm7N+ojrkU
+1MzW/e9f449vW4xQt6rCHTUOmC/YNrf5fMyUNKqydCNVOeX4SvXkcCQwW2jspfJA
+z+u8noX78BUbreLKFPYoiWXFg/rPXV1bHKuRXdBlr9MqoUcO5e/Jw/mfnh8ajrZt
+of4U3h3nMurU41iHb3XHzGfZhyhKzdWvJM6gQtqI9NH5uSPoUz2674lbdruLWwC7
+ddoDqAKdAgMBAAECggEABNB1IOnzusaQf+vCjnEhJYmoPEPYPkKqxiS8cE8zoxeP
+8X9DpJuYqn1gCz+/PdYgBSJoSkKWJfK2Lhqiq6xyn+6OI9IrzR+mRgZZXnElFrpx
+qxoPicy1+O9bTBrUBud3eBH0KJLeLhLrFPuOqY4zOTMHZLhfbt6j677vsNn0peLD
+p0+yl5APfmwnxd9hzSkpdUXf+OlfvqnN9Ldki2+7k7ow0y1lcFpvBhURR24tkdCk
+t2cZGLCNHutepswqmC27yjsn/kyWSZswZfJNnlU9KcOt03rztkVHYOvyQ4wH4lqd
+TUlRx4/PHMxI1ZEZOYNiTiVReujs3D5ZdrTij7uuoQKBgQDL62usj46oHGZjy9et
+YUnVN/TsjuSFOc62KcxnarrIbE1EP6PpmY50Dyk6LSH0k3ZtTmeoL122sCowCiW9
+uV7xRXzbmy1mj/YainS6orTjL2q6/ip1Yizh8Tb7qIPfHOjcRZJgfI5s7bTDMU3Z
+4pDufnmzN9VngyVuaF98ItW5xQKBgQDE9tqGlrSkczfcDFsBp47cYrt49nTled4o
+SsfHrukV2T6wGLubBQFN98HDZozspcnYfkg8UBiQ7dp5OVRHOLc+riqS0hU+sNpL
+i0AowmDL1tz9JzQ3Y8P1c6FdfTpaD6kv6MrxZpbvoS7KskcJBY3ilPtLWnHf6cIF
+ROmmfNwq+QKBgA9L1YPYMOdDWhraS49h4Nvxmpm0DkhAEdVwRTjstJ4cIZ+g9nar
+YhgqmvkWMZnbBeMlInlnNCxkAoYf/LzCjvCiOb9vYHR1EAzlnePyGIeCIwtrzVuI
+xb0dDvbJqTqvPHhpb5V1QmnBWvHZXPGfISgCrLZY1dUx7Tje82qoYkfRAoGABT9W
+XxOQyHjRWilyGz8tjS2MNRLL1nlCs+waGnXMe+qHwwVFqkGd4Ufif6QxyPQ5xmzG
+2+R+Yw4TLfubBTK7nw3g0HyMWFk5151kHjHfhk65IH105KzhwZ5NBEKb1V5pcX9Q
+ONI03zl6F6hcQB9HwmuZrk5AjmiZ5K4LU4YsD3ECgYBP2tetAhEyATixQqGoKKO9
+GkCBG3gC0iXWVnT/4zAOhJOMtvuVQXlDhenEaD7e2iE7LSQ6IlBiiu5wDJtqL2HA
+pkn/lcwvtDFJyRrzD7Dy4qDzI9JJbhFAXm6H2diiC/1rTWYYo6Nw5MfsGOeVWAn/
++uwhtfZzAuQnOUfs9QAEzQ==
+-----END PRIVATE KEY-----`
