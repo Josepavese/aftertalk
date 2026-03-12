@@ -34,6 +34,12 @@ func (s *Service) TranscribeAudio(ctx context.Context, audioData *stt.AudioData)
 
 	logging.Infof("Transcription completed: %d segments", len(result.Segments))
 
+	// Offset segment_index by existing count so reconnections accumulate, not overwrite.
+	existingCount, err := s.repo.CountBySession(ctx, audioData.SessionID)
+	if err != nil {
+		return fmt.Errorf("failed to count existing segments: %w", err)
+	}
+
 	for i, segment := range result.Segments {
 		// Convert chunk-relative timestamps to session-absolute timestamps.
 		// segment.StartMs/EndMs are relative to the beginning of the audio chunk;
@@ -44,7 +50,7 @@ func (s *Service) TranscribeAudio(ctx context.Context, audioData *stt.AudioData)
 		transcription := NewTranscription(
 			uuid.New().String(),
 			audioData.SessionID,
-			i,
+			existingCount+i,
 			segment.Role,
 			absStartMs,
 			absEndMs,
@@ -93,17 +99,9 @@ func (s *Service) GetTranscriptionsAsText(ctx context.Context, sessionID string)
 		if roleLabel == "" {
 			roleLabel = "speaker"
 		}
-		timestamp := formatTimestampMs(t.StartMs)
-		text += fmt.Sprintf("[%s %s]: %s\n", timestamp, roleLabel, t.Text)
+		// Include ms explicitly so the LLM can copy them verbatim into citations/timestamps.
+		text += fmt.Sprintf("[%dms %s]: %s\n", t.StartMs, roleLabel, t.Text)
 	}
 
 	return text, nil
-}
-
-// formatTimestampMs converts milliseconds to MM:SS format.
-func formatTimestampMs(ms int) string {
-	totalSec := ms / 1000
-	minutes := totalSec / 60
-	seconds := totalSec % 60
-	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }

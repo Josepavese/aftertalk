@@ -29,7 +29,7 @@ func TestSessionStatusConstants(t *testing.T) {
 func TestNewSession(t *testing.T) {
 	id := "test-session-id"
 
-	session := NewSession(id, 2)
+	session := NewSession(id, 2, "")
 
 	if session.ID != id {
 		t.Errorf("expected ID %s, got %s", id, session.ID)
@@ -58,7 +58,7 @@ func TestNewSession(t *testing.T) {
 
 func TestSessionEnd(t *testing.T) {
 	now := time.Now().UTC()
-	session := NewSession("test-id", 2)
+	session := NewSession("test-id", 2, "")
 
 	session.End()
 
@@ -80,7 +80,7 @@ func TestSessionEnd(t *testing.T) {
 }
 
 func TestSessionStartProcessing(t *testing.T) {
-	session := NewSession("test-id", 2)
+	session := NewSession("test-id", 2, "")
 
 	session.StartProcessing()
 
@@ -90,7 +90,7 @@ func TestSessionStartProcessing(t *testing.T) {
 }
 
 func TestSessionComplete(t *testing.T) {
-	session := NewSession("test-id", 2)
+	session := NewSession("test-id", 2, "")
 
 	session.Complete()
 
@@ -100,7 +100,7 @@ func TestSessionComplete(t *testing.T) {
 }
 
 func TestSessionFail(t *testing.T) {
-	session := NewSession("test-id", 2)
+	session := NewSession("test-id", 2, "")
 
 	session.Fail()
 
@@ -110,7 +110,7 @@ func TestSessionFail(t *testing.T) {
 }
 
 func TestSessionUpdateStatus(t *testing.T) {
-	session := NewSession("test-id", 2)
+	session := NewSession("test-id", 2, "")
 
 	session.End()
 	session.StartProcessing()

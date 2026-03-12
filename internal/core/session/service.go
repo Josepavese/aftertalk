@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flowup/aftertalk/internal/config"
 	"github.com/flowup/aftertalk/internal/logging"
 	"github.com/flowup/aftertalk/internal/storage/cache"
 	"github.com/flowup/aftertalk/pkg/audio"
@@ -33,13 +34,17 @@ type TranscriptionServiceInterface interface {
 }
 
 type MinutesServiceInterface interface {
-	GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, roles []string) (interface{}, error)
+	GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig) (interface{}, error)
 	GetMinutes(ctx context.Context, sessionID string) (interface{}, error)
 }
 
 // InactivityTimeout is the period of silence after which a session is
 // automatically ended and minutes are generated.
 const InactivityTimeout = 10 * time.Minute
+
+// OnSessionEndFunc is called synchronously before minutes generation to allow
+// callers (e.g. WebRTC manager) to close all peers for the session.
+type OnSessionEndFunc func(sessionID string)
 
 type Service struct {
 	repo          *SessionRepository
@@ -50,12 +55,21 @@ type Service struct {
 	transcription TranscriptionServiceInterface
 	minutes       MinutesServiceInterface
 	transcribeCh  chan *transcribeJob
+	chunkSizeMs   int
 	wg            sync.WaitGroup
 	opusDecoder   *audio.OpusDecoder
 	pcmConverter  *audio.PCMConverter
+	templates     map[string]config.TemplateConfig // templateID → template
 
 	inactivityMu     sync.Mutex
 	inactivityTimers map[string]*time.Timer // sessionID → timer
+
+	onSessionEnd OnSessionEndFunc // optional hook called when a session ends
+}
+
+// SetOnSessionEnd registers a callback invoked when any session is ended.
+func (s *Service) SetOnSessionEnd(fn OnSessionEndFunc) {
+	s.onSessionEnd = fn
 }
 
 type transcribeJob struct {
@@ -79,7 +93,13 @@ func NewService(
 	audioBuffer *cache.AudioBufferCache,
 	transcription TranscriptionServiceInterface,
 	minutes MinutesServiceInterface,
+	processingCfg config.ProcessingConfig,
+	templates []config.TemplateConfig,
 ) *Service {
+	tmplMap := make(map[string]config.TemplateConfig, len(templates))
+	for _, t := range templates {
+		tmplMap[t.ID] = t
+	}
 	s := &Service{
 		repo:             repo,
 		jwtManager:       jwtManager,
@@ -88,10 +108,12 @@ func NewService(
 		audioBuffer:      audioBuffer,
 		transcription:    transcription,
 		minutes:          minutes,
-		transcribeCh:     make(chan *transcribeJob, 100),
+		transcribeCh:     make(chan *transcribeJob, processingCfg.TranscriptionQueueSize),
+		chunkSizeMs:      processingCfg.ChunkSizeMs,
 		opusDecoder:      audio.NewOpusDecoder(48000, 1),
 		pcmConverter:     audio.NewPCMConverter(16000, 1),
 		inactivityTimers: make(map[string]*time.Timer),
+		templates:        tmplMap,
 	}
 
 	if transcription != nil {
@@ -203,6 +225,7 @@ func (s *Service) cancelInactivityTimer(sessionID string) {
 type CreateSessionRequest struct {
 	ParticipantCount int                  `json:"participant_count"`
 	Participants     []ParticipantRequest `json:"participants"`
+	TemplateID       string               `json:"template_id,omitempty"`
 	Metadata         string               `json:"metadata,omitempty"`
 }
 
@@ -234,7 +257,7 @@ func (s *Service) CreateSession(ctx context.Context, req *CreateSessionRequest) 
 	}
 
 	sessionID := uuid.New().String()
-	session := NewSession(sessionID, req.ParticipantCount)
+	session := NewSession(sessionID, req.ParticipantCount, req.TemplateID)
 	session.Metadata = req.Metadata
 
 	if err := s.repo.Create(ctx, session); err != nil {
@@ -292,6 +315,26 @@ func (s *Service) GetSession(ctx context.Context, sessionID string) (*Session, e
 	return session, nil
 }
 
+// ListSessions returns a paginated list of sessions.
+// status="" returns all statuses. limit=0 returns all.
+func (s *Service) ListSessions(ctx context.Context, status string, limit, offset int) ([]*Session, int, error) {
+	return s.repo.List(ctx, status, limit, offset)
+}
+
+// DeleteSession removes a session and its participants/streams from the DB.
+// Returns an error if the session is still active.
+func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
+	sess, err := s.repo.GetByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("session not found: %w", err)
+	}
+	if sess.Status == StatusActive {
+		return fmt.Errorf("cannot delete an active session; end it first")
+	}
+	s.cancelInactivityTimer(sessionID)
+	return s.repo.Delete(ctx, sessionID)
+}
+
 func (s *Service) EndSession(ctx context.Context, sessionID string) error {
 	// Cancel the inactivity timer (handles both manual and auto-triggered ends).
 	s.cancelInactivityTimer(sessionID)
@@ -311,6 +354,12 @@ func (s *Service) EndSession(ctx context.Context, sessionID string) error {
 
 	if err := s.repo.Update(ctx, session); err != nil {
 		return fmt.Errorf("failed to update session: %w", err)
+	}
+
+	// Close all WebRTC peers for this session so every connected participant
+	// is disconnected immediately and their audio buffers are fully flushed.
+	if s.onSessionEnd != nil {
+		s.onSessionEnd(sessionID)
 	}
 
 	go func() {
@@ -393,26 +442,29 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 		logging.Warnf("No transcriptions found for session=%s", sessionID)
 	}
 
-	participants, err := s.repo.GetParticipantsBySession(ctx, sessionID)
-	if err != nil {
-		logging.Errorf("Failed to get participants for session=%s: %v", sessionID, err)
-		return
-	}
-
-	roles := make([]string, len(participants))
-	for i, p := range participants {
-		roles[i] = p.Role
-	}
-
-	_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, roles)
-	if err != nil {
-		logging.Errorf("Failed to generate minutes for session=%s: %v", sessionID, err)
-		return
-	}
-
 	session, err := s.repo.GetByID(ctx, sessionID)
 	if err != nil {
-		logging.Errorf("Failed to get session for completion: %v", err)
+		logging.Errorf("Failed to get session for minutes=%s: %v", sessionID, err)
+		return
+	}
+
+	tmpl, ok := s.templates[session.TemplateID]
+	if !ok {
+		// Fallback: use first available template or an empty one.
+		for _, t := range s.templates {
+			tmpl = t
+			ok = true
+			break
+		}
+		if !ok {
+			tmpl = config.TemplateConfig{ID: "default", Name: "Default"}
+		}
+		logging.Warnf("Template %q not found for session=%s, using %q", session.TemplateID, sessionID, tmpl.ID)
+	}
+
+	_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl)
+	if err != nil {
+		logging.Errorf("Failed to generate minutes for session=%s: %v", sessionID, err)
 		return
 	}
 
@@ -469,7 +521,8 @@ func (s *Service) ConnectParticipant(ctx context.Context, participantID string) 
 		return fmt.Errorf("failed to update participant: %w", err)
 	}
 
-	stream := NewAudioStream(uuid.New().String(), participant.ID, 15.0)
+	chunkSizeSecs := float64(s.chunkSizeMs) / 1000.0
+	stream := NewAudioStream(uuid.New().String(), participant.ID, chunkSizeSecs)
 	if err := s.repo.CreateAudioStream(ctx, stream); err != nil {
 		logging.Errorf("Failed to create audio stream: %v", err)
 	}
