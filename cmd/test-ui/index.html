@@ -11,6 +11,11 @@
         .container { max-width: 700px; margin: 0 auto; padding: 20px; }
         h1 { text-align: center; color: var(--primary); margin-bottom: 20px; }
         .step-card { background: var(--card); border-radius: 12px; padding: 20px; margin-bottom: 15px; border: 1px solid var(--border); }
+        .min-card { font-size: 14px; line-height: 1.6; }
+        .min-sec { margin-bottom: 12px; }
+        .min-sec ul { margin: 4px 0 0 18px; padding: 0; }
+        .min-sec li { margin-bottom: 4px; }
+        .min-ts { display: inline-block; background: #e8f4fd; color: #2563eb; border-radius: 4px; padding: 0 5px; font-size: 11px; font-family: monospace; margin-right: 6px; }
         .step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
         .step-number { width:28px; height:28px; background: var(--primary); color:white; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px; flex-shrink:0; }
         .step-number.done { background: var(--success); }
@@ -30,9 +35,6 @@
         .input-group { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
         .input-group input,.input-group select { flex:1; min-width:150px; }
         .invite-box { background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:12px; margin-top:12px; }
-        .invite-box p { font-size:13px; color:#1e40af; margin-bottom:6px; }
-        .invite-url { font-size:12px; font-family:monospace; word-break:break-all; background:white; padding:6px; border-radius:4px; border:1px solid #bfdbfe; }
-        .copy-btn { margin-top:6px; padding:6px 12px; font-size:12px; background:#1d4ed8; }
         #log { background:#1e293b; color:#e2e8f0; padding:12px; border-radius:6px; height:150px; overflow-y:auto; font:12px monospace; }
         .audio-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:10px; }
         .audio-box { text-align:center; font-size:13px; color:#64748b; }
@@ -40,6 +42,7 @@
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
         .info-row { display:flex; gap:8px; font-size:12px; color:#64748b; flex-wrap:wrap; margin-top:8px; }
         .info-pill { background:#f1f5f9; padding:3px 8px; border-radius:10px; }
+        .tmpl-badge { display:inline-block; background:#ede9fe; color:#6d28d9; font-size:11px; padding:2px 8px; border-radius:10px; margin-left:6px; }
     </style>
 </head>
 <body>
@@ -60,17 +63,19 @@
                 <div style="font-size:16px;font-weight:600;">Avvio sessione</div>
                 <span class="status-badge status-waiting" id="step1-status">In attesa</span>
             </div>
-            <div class="instructions" id="step1-desc">
-                Inserisci il tuo nome e ruolo, poi clicca <strong>Avvia</strong>.<br>
-                Il server creerà una sessione e ti darà un link per il secondo partecipante.
-            </div>
             <div class="instructions">
-                Entrambi i partecipanti inseriscono lo <strong>stesso codice stanza</strong>, un nome e il proprio ruolo, poi cliccano <strong>Entra</strong>.
+                Scegli il <strong>template</strong>, inserisci codice stanza, nome e ruolo, poi clicca <strong>Entra</strong>.<br>
+                Entrambi i partecipanti usano lo stesso codice stanza con ruoli diversi.
+            </div>
+            <div class="input-group">
+                <select id="templateSelect" onchange="onTemplateChange()">
+                    <option value="">Caricamento template...</option>
+                </select>
             </div>
             <div class="input-group">
                 <input type="text" id="roomCode" placeholder="Codice stanza" value="stanza-1">
                 <input type="text" id="userName" placeholder="Il tuo nome" value="Mario">
-                <select id="userRole"><option value="host">Host</option><option value="speaker">Speaker</option></select>
+                <select id="userRole"></select>
             </div>
             <button id="btnStart" onclick="startSession()">🚀 Entra</button>
         </div>
@@ -104,9 +109,16 @@
                 <span class="status-badge status-waiting" id="step3-status">In attesa</span>
             </div>
             <div id="step3-desc" class="instructions">Quando la conversazione è terminata, clicca <strong>Termina</strong>.</div>
-            <button id="btnEnd" onclick="endSession()" disabled>⏹ Termina sessione</button>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button id="btnMute" onclick="toggleMute()" disabled style="background:#f59e0b;min-width:130px">🎙️ Muta mic</button>
+                <button id="btnEnd" onclick="endSession()" disabled>⏹ Termina sessione</button>
+            </div>
             <div id="minutesBox" style="display:none;margin-top:12px">
-                <pre id="minutesContent" style="background:#f8fafc;padding:12px;border-radius:6px;font-size:13px;white-space:pre-wrap;border:1px solid var(--border)"></pre>
+                <div id="minutesRendered" style="margin-bottom:12px"></div>
+                <details style="margin-top:8px">
+                    <summary style="cursor:pointer;font-size:12px;color:#888">JSON grezzo</summary>
+                    <pre id="minutesContent" style="background:#f8fafc;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;border:1px solid var(--border);margin-top:6px"></pre>
+                </details>
             </div>
         </div>
 
@@ -121,6 +133,7 @@
         const API = `${location.protocol}//${location.host}`;
         let ws = null, pc = null, localStream = null;
         let currentSessionId = null, currentToken = null;
+        let templates = [], currentTemplate = null;
 
         // ── API Key (localStorage) ──────────────────────────────────────
         function getApiKey() { return localStorage.getItem('aftertalk_api_key') || ''; }
@@ -131,28 +144,51 @@
         }
         function authHeader() { return {'Authorization': 'Bearer ' + getApiKey()}; }
 
-        // On load: fetch API key from server (SSOT: config.yaml → /demo/config → UI).
-        // Falls back to localStorage if offline or key already overridden.
+        // ── Load config + templates from server ──────────────────────────
         window.addEventListener('DOMContentLoaded', async () => {
             try {
                 const r = await fetch('/demo/config');
                 if (r.ok) {
-                    const { api_key } = await r.json();
-                    if (api_key) {
-                        saveApiKey(api_key);
-                        document.getElementById('apiKeyInput').value = api_key;
+                    const cfg = await r.json();
+                    if (cfg.api_key) {
+                        saveApiKey(cfg.api_key);
+                        document.getElementById('apiKeyInput').value = cfg.api_key;
                         document.getElementById('apiKeyStatus').innerHTML = '<span class="ok">✓ dal server</span>';
+                    }
+                    if (cfg.templates && cfg.templates.length) {
+                        templates = cfg.templates;
+                        const sel = document.getElementById('templateSelect');
+                        sel.innerHTML = templates.map(t =>
+                            `<option value="${t.id}">${t.name}</option>`
+                        ).join('');
+                        // Select default
+                        if (cfg.default_template_id) sel.value = cfg.default_template_id;
+                        onTemplateChange();
                         return;
                     }
                 }
             } catch (_) {}
-            // Fallback: localStorage
+            // Fallback: localStorage key only
             const saved = getApiKey();
             if (saved) {
                 document.getElementById('apiKeyInput').value = saved;
                 document.getElementById('apiKeyStatus').innerHTML = '<span class="ok">✓</span>';
             }
+            // Fallback roles if templates failed to load
+            populateRoles([{key:'host',label:'Host'},{key:'speaker',label:'Speaker'}]);
         });
+
+        function onTemplateChange() {
+            const sel = document.getElementById('templateSelect');
+            const tmpl = templates.find(t => t.id === sel.value);
+            currentTemplate = tmpl || null;
+            populateRoles(tmpl ? tmpl.roles : [{key:'host',label:'Host'},{key:'speaker',label:'Speaker'}]);
+        }
+
+        function populateRoles(roles) {
+            const sel = document.getElementById('userRole');
+            sel.innerHTML = roles.map(r => `<option value="${r.key}">${r.label}</option>`).join('');
+        }
 
         function log(type, msg) {
             const time = new Date().toLocaleTimeString();
@@ -175,17 +211,18 @@
             const code = document.getElementById('roomCode').value.trim();
             const name = document.getElementById('userName').value.trim();
             const role = document.getElementById('userRole').value;
+            const templateId = document.getElementById('templateSelect').value;
             if (!code || !name) return alert('Inserisci codice stanza e nome');
 
             document.getElementById('btnStart').disabled = true;
             setStep(1, 'active');
 
             try {
-                log('info', `Entro nella stanza "${code}" come ${role}...`);
+                log('info', `Entro nella stanza "${code}" come ${role} [${templateId}]...`);
                 const res = await fetch(`${API}/test/start`, {
                     method: 'POST',
                     headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify({code, name, role})
+                    body: JSON.stringify({code, name, role, template_id: templateId})
                 });
                 if (!res.ok) throw new Error(await res.text());
                 const data = await res.json();
@@ -193,8 +230,9 @@
                 currentSessionId = data.session_id;
                 currentToken = data.token;
 
+                const tmplName = currentTemplate ? currentTemplate.name : templateId;
                 log('success', `Sessione: ${data.session_id.slice(0,8)}...`);
-                setStep(1, 'success', `Stanza <strong>${code}</strong> — ruolo: <strong>${role}</strong>`);
+                setStep(1, 'success', `Stanza <strong>${code}</strong> — ruolo: <strong>${role}</strong><span class="tmpl-badge">${tmplName}</span>`);
 
                 await connectWebRTC(name, role);
             } catch(e) {
@@ -221,7 +259,23 @@
                 return;
             }
 
-            pc = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+            // Fetch ICE servers from SSOT endpoint (includes TURN creds if enabled).
+            let iceServers = [{urls:'stun:stun.l.google.com:19302'}];
+            try {
+                const rtcRes = await fetch(`${API}/v1/rtc-config`, {
+                    headers: getApiKey() ? {'X-API-Key': getApiKey()} : {}
+                });
+                if (rtcRes.ok) {
+                    const rtcCfg = await rtcRes.json();
+                    if (rtcCfg.ice_servers && rtcCfg.ice_servers.length > 0) {
+                        iceServers = rtcCfg.ice_servers;
+                        log('info', `ICE: ${iceServers.length} server(s) da /v1/rtc-config`);
+                    }
+                }
+            } catch(e) {
+                log('warn', 'rtc-config non disponibile, uso STUN pubblico: '+e.message);
+            }
+            pc = new RTCPeerConnection({iceServers});
 
             pc.oniceconnectionstatechange = () => {
                 const state = pc.iceConnectionState;
@@ -230,7 +284,15 @@
                 if (state === 'connected' || state === 'completed') {
                     setStep(2, 'success', '✓ Connesso al server. <span class="recording-dot"></span>Audio inviato al server per la trascrizione.');
                     document.getElementById('btnEnd').disabled = false;
+                    document.getElementById('btnMute').disabled = false;
                     setStep(3, 'active');
+                } else if (state === 'closed') {
+                    log('warn', 'Sessione terminata dal server — minuta in generazione...');
+                    setStep(2, 'waiting', 'Sessione terminata dal server');
+                    document.getElementById('btnEnd').disabled = true;
+                    document.getElementById('btnMute').disabled = true;
+                    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+                    if (currentSessionId) setTimeout(() => fetchMinutes(), 3000);
                 } else if (state === 'failed' || state === 'disconnected') {
                     setStep(2, 'waiting', '✗ Connessione persa: ' + state);
                 }
@@ -275,17 +337,31 @@
             ws.onclose = () => log('warn', 'WebSocket disconnesso');
         }
 
+        function toggleMute() {
+            if (!localStream) return;
+            const btn = document.getElementById('btnMute');
+            const track = localStream.getAudioTracks()[0];
+            if (!track) return;
+            track.enabled = !track.enabled;
+            if (track.enabled) {
+                btn.textContent = '🎙️ Muta mic';
+                btn.style.background = '#f59e0b';
+                log('info', 'Microfono attivo');
+            } else {
+                btn.textContent = '🔇 Riattiva mic';
+                btn.style.background = '#6b7280';
+                log('warn', 'Microfono mutato');
+            }
+        }
+
         async function endSession() {
             if (!currentSessionId) return;
             document.getElementById('btnEnd').disabled = true;
+            document.getElementById('btnMute').disabled = true;
             setStep(3, 'active', 'Termino la sessione e genero la minuta...');
             log('info', 'Terminazione sessione...');
 
-            // Release microphone and close WebRTC
-            if (localStream) {
-                localStream.getTracks().forEach(t => t.stop());
-                localStream = null;
-            }
+            if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
             if (pc) { pc.close(); pc = null; }
             if (ws) { ws.close(); ws = null; }
 
@@ -296,13 +372,122 @@
                 });
                 if (!res.ok) throw new Error(await res.text());
                 log('success', 'Sessione terminata');
-
-                // Poll for minutes
                 setTimeout(() => fetchMinutes(), 3000);
             } catch(e) {
                 log('error', 'End session: '+e.message);
                 document.getElementById('btnEnd').disabled = false;
             }
+        }
+
+        function msToTime(ms) {
+            const s = Math.floor(ms / 1000), m = Math.floor(s / 60);
+            return `${String(m).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`;
+        }
+
+        // ── Dynamic minutes renderer ─────────────────────────────────────
+        // The minutes object has:
+        //   { sections: { key: value, ... }, citations: [...], template_id, ... }
+        // We render sections in template order, using template section labels.
+        // Falls back to the key name if template is unavailable.
+        function renderMinutes(d) {
+            const tmpl = templates.find(t => t.id === d.template_id) || currentTemplate;
+            const sections = d.sections || {};
+            const sectionDefs = tmpl ? tmpl.sections : [];
+
+            // Build a label lookup; for keys not in the template, use the key itself.
+            const labelOf = (key) => {
+                const def = sectionDefs.find(s => s.key === key);
+                return def ? def.label : key.replace(/_/g,' ');
+            };
+            const typeOf = (key) => {
+                const def = sectionDefs.find(s => s.key === key);
+                return def ? def.type : 'unknown';
+            };
+
+            // Determine render order: template sections first, then any extra keys.
+            const orderedKeys = [
+                ...sectionDefs.map(s => s.key),
+                ...Object.keys(sections).filter(k => !sectionDefs.find(s => s.key === k))
+            ];
+
+            const sectionIcons = {
+                themes: '🏷️',
+                contents_reported: '📋',
+                client_needs: '📋',
+                professional_interventions: '🩺',
+                professional_advice: '💡',
+                progress_issues: '📈',
+                next_steps: '➡️',
+            };
+
+            let html = `<div class="min-card">`;
+            if (tmpl) {
+                html += `<div style="font-size:12px;color:#6d28d9;margin-bottom:8px">📄 Template: <strong>${tmpl.name}</strong></div>`;
+            }
+
+            for (const key of orderedKeys) {
+                const val = sections[key];
+                if (val === undefined || val === null) continue;
+                const label = labelOf(key);
+                const type = typeOf(key);
+                const icon = sectionIcons[key] || '•';
+
+                if (type === 'string_list' || Array.isArray(val)) {
+                    // Could be string_list or unknown array
+                    const arr = Array.isArray(val) ? val : [];
+                    if (arr.length === 0) continue;
+                    if (typeof arr[0] === 'string') {
+                        // string_list
+                        html += `<div class="min-sec"><strong>${icon} ${label}</strong><ul>`;
+                        arr.forEach(x => { html += `<li>${x}</li>`; });
+                        html += `</ul></div>`;
+                    } else {
+                        // content_items: [{text, timestamp}]
+                        html += `<div class="min-sec"><strong>${icon} ${label}</strong><ul>`;
+                        arr.forEach(x => {
+                            const ts = x.timestamp != null ? `<span class="min-ts">${msToTime(x.timestamp)}</span>` : '';
+                            html += `<li>${ts}${x.text || JSON.stringify(x)}</li>`;
+                        });
+                        html += `</ul></div>`;
+                    }
+                } else if (type === 'progress' || (val && typeof val === 'object' && (val.progress || val.issues))) {
+                    const progress = val.progress || [];
+                    const issues = val.issues || [];
+                    if (!progress.length && !issues.length) continue;
+                    html += `<div class="min-sec"><strong>${icon} ${label}</strong>`;
+                    if (progress.length) html += `<ul>${progress.map(x=>`<li>✅ ${x}</li>`).join('')}</ul>`;
+                    if (issues.length)   html += `<ul>${issues.map(x=>`<li>⚠️ ${x}</li>`).join('')}</ul>`;
+                    html += `</div>`;
+                } else {
+                    // Fallback: dump as JSON
+                    html += `<div class="min-sec"><strong>${icon} ${label}</strong><pre style="font-size:11px">${JSON.stringify(val,null,2)}</pre></div>`;
+                }
+            }
+
+            // Citations are always rendered
+            const citations = d.citations || [];
+            if (citations.length) {
+                // Map role keys to labels using template
+                const roleLabel = (roleKey) => {
+                    if (!tmpl) return roleKey;
+                    const r = tmpl.roles.find(r => r.key === roleKey);
+                    return r ? r.label : roleKey;
+                };
+                html += `<div class="min-sec"><strong>💬 Citazioni</strong><ul>`;
+                citations.forEach(c => {
+                    html += `<li><span class="min-ts">${msToTime(c.timestamp_ms||0)}</span><em>"${c.text}"</em> <span style="color:#888">[${roleLabel(c.role||'')}]</span></li>`;
+                });
+                html += `</ul></div>`;
+            }
+
+            const hasContent = orderedKeys.some(k => sections[k] != null) || citations.length > 0;
+            if (!hasContent) {
+                html += `<p style="color:#888;font-style:italic">Nessun contenuto rilevante estratto dalla trascrizione.</p>`;
+            }
+
+            html += `<div style="font-size:11px;color:#aaa;margin-top:8px">Generato: ${d.generated_at||''} · Provider: ${d.provider||''}</div>`;
+            html += `</div>`;
+            return html;
         }
 
         async function fetchMinutes() {
@@ -312,13 +497,23 @@
                 });
                 if (res.ok) {
                     const data = await res.json();
-                    document.getElementById('minutesContent').textContent = JSON.stringify(data, null, 2);
-                    document.getElementById('minutesBox').style.display = 'block';
-                    setStep(3, 'success', '✓ Minuta generata!');
-                    log('success', 'Minuta ricevuta');
-                } else {
+                    if (data.status === 'ready' || data.status === 'delivered') {
+                        document.getElementById('minutesRendered').innerHTML = renderMinutes(data);
+                        document.getElementById('minutesContent').textContent = JSON.stringify(data, null, 2);
+                        document.getElementById('minutesBox').style.display = 'block';
+                        setStep(3, 'success', '✓ Minuta generata!');
+                        log('success', 'Minuta ricevuta');
+                    } else if (data.status === 'error') {
+                        log('error', 'Generazione minuta fallita');
+                    } else {
+                        log('warn', 'Minuta in elaborazione (status=' + data.status + '), riprovo...');
+                        setTimeout(() => fetchMinutes(), 5000);
+                    }
+                } else if (res.status === 404) {
                     log('warn', 'Minuta non ancora pronta, riprovo...');
                     setTimeout(() => fetchMinutes(), 5000);
+                } else {
+                    log('error', 'Fetch minutes HTTP ' + res.status);
                 }
             } catch(e) {
                 log('error', 'Fetch minutes: '+e.message);

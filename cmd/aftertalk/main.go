@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,44 +22,27 @@ import (
 	"github.com/flowup/aftertalk/internal/logging"
 	"github.com/flowup/aftertalk/internal/storage/cache"
 	"github.com/flowup/aftertalk/internal/storage/sqlite"
+	"github.com/flowup/aftertalk/internal/bot/webrtc"
 	"github.com/flowup/aftertalk/pkg/jwt"
+	"github.com/flowup/aftertalk/pkg/webhook"
 )
 
-type TranscriptionAdapter struct {
-	svc *transcription.Service
-}
-
-func (a *TranscriptionAdapter) TranscribeAudio(ctx context.Context, audioData *session.AudioData) error {
-	sttData := &stt.AudioData{
-		SessionID:     audioData.SessionID,
-		ParticipantID: audioData.ParticipantID,
-		Role:          audioData.Role,
-		Data:          audioData.Data,
-		Frames:        audioData.Frames,
-		SampleRate:    audioData.SampleRate,
-		Duration:      audioData.Duration,
-		OffsetMs:      audioData.OffsetMs,
-	}
-	return a.svc.TranscribeAudio(ctx, sttData)
-}
-
-func (a *TranscriptionAdapter) GetTranscriptionsAsText(ctx context.Context, sessionID string) (string, error) {
-	return a.svc.GetTranscriptionsAsText(ctx, sessionID)
-}
-
-type MinutesAdapter struct {
-	svc *minutes.Service
-}
-
-func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, roles []string) (interface{}, error) {
-	return a.svc.GenerateMinutes(ctx, sessionID, transcriptionText, roles)
-}
-
-func (a *MinutesAdapter) GetMinutes(ctx context.Context, sessionID string) (interface{}, error) {
-	return a.svc.GetMinutes(ctx, sessionID)
-}
 
 func main() {
+	// Handle --dump-defaults before loading config so the binary can emit a
+	// starter config.yaml without any external dependencies (DB, providers…).
+	for _, arg := range os.Args[1:] {
+		if arg == "--dump-defaults" || arg == "-dump-defaults" {
+			out, err := config.DumpYAML()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Print(out)
+			return
+		}
+	}
+
 	configPath := ""
 	for i, arg := range os.Args[1:] {
 		if (arg == "--config" || arg == "-config") && i+1 < len(os.Args[1:]) {
@@ -101,6 +85,7 @@ func main() {
 	if err := runMigrations(ctx, db); err != nil {
 		logger.Fatalf("Failed to run migrations: %v", err)
 	}
+	migrateWebhookEvents(ctx, db) // idempotent: adds payload + next_retry_at columns
 	logger.Info("Migrations completed")
 
 	sessionCache := cache.NewSessionCache()
@@ -140,6 +125,13 @@ func main() {
 	}
 	logger.Infof("STT provider: %s", sttProvider.Name())
 
+	// Health-check whisper-local at startup so the operator knows immediately
+	// if the Python server is not reachable, rather than discovering it on the
+	// first transcription attempt.
+	if cfg.STT.Provider == "whisper-local" {
+		go checkWhisperHealth(cfg.STT.WhisperLocal.URL)
+	}
+
 	retryConfig := stt.DefaultRetryConfig()
 
 	transcriptionService := transcription.NewService(transcriptionRepo, sttProvider, retryConfig)
@@ -170,12 +162,12 @@ func main() {
 	logger.Infof("LLM provider: %s", llmProvider.Name())
 
 	minutesService := minutes.NewServiceWithDeps(
-		minutesRepo, 
+		minutesRepo,
 		llmProvider,
 		&minutes.RetryConfig{
-			MaxRetries:     3,
-			InitialBackoff: 1 * time.Second,
-			MaxBackoff:     10 * time.Second,
+			MaxRetries:     cfg.Processing.LLMMaxRetries,
+			InitialBackoff: cfg.Processing.LLMInitialBackoff,
+			MaxBackoff:     cfg.Processing.LLMMaxBackoff,
 		},
 		&minutes.WebhookConfig{
 			URL:     cfg.Webhook.URL,
@@ -183,8 +175,21 @@ func main() {
 		},
 	)
 
-	transcriptionAdapter := &TranscriptionAdapter{svc: transcriptionService}
-	minutesAdapter := &MinutesAdapter{svc: minutesService}
+	// Wire persistent webhook retry if a URL is configured.
+	if cfg.Webhook.URL != "" {
+		timeout := cfg.Webhook.Timeout
+		if timeout == 0 {
+			timeout = 30 * time.Second
+		}
+		webhookClient := webhook.NewClient(cfg.Webhook.URL, timeout)
+		retrier := webhook.NewRetrier(db.DB, webhookClient)
+		minutesService.WithWebhookRetrier(retrier)
+		go retrier.Run(ctx)
+		logger.Infof("Webhook retry worker started (url=%s)", cfg.Webhook.URL)
+	}
+
+	transcriptionAdapter := &api.TranscriptionAdapter{Svc: transcriptionService}
+	minutesAdapter := &api.MinutesAdapter{Svc: minutesService}
 
 	sessionService := session.NewService(
 		sessionRepo,
@@ -194,12 +199,36 @@ func main() {
 		audioBufferCache,
 		transcriptionAdapter,
 		minutesAdapter,
+		cfg.Processing,
+		cfg.Templates,
 	)
 
-	botServer := api.NewBotServer(sessionService, jwtManager, tokenCache)
+	// Start embedded TURN server if enabled.
+	// When running, automatically appends the TURN server entry to ICEServers
+	// so that all clients (botServer, /v1/rtc-config) use it.
+	iceServers := cfg.WebRTC.ICEServers
+	// Start embedded TURN server if the "embedded" ICE provider is configured.
+	var turnServer *webrtc.TURNServer
+	if cfg.WebRTC.TURN.Enabled || cfg.WebRTC.ICEProviderName == "embedded" {
+		ts, err := webrtc.StartTURNServer(ctx, cfg.WebRTC.TURN)
+		if err != nil {
+			logger.Fatalf("Failed to start TURN server: %v", err)
+		}
+		turnServer = ts
+		logger.Infof("TURN server running at %s", ts.Addr())
+	}
+
+	// Build the ICE provider (PAL factory — single routing point).
+	iceProvider, err := webrtc.NewICEProvider(&cfg.WebRTC, turnServer)
+	if err != nil {
+		logger.Fatalf("Failed to init ICE provider: %v", err)
+	}
+
+	botServer := api.NewBotServer(sessionService, jwtManager, tokenCache, iceServers)
 
 	minutesHandler := handler.NewMinutesHandler(minutesService)
-	apiServer := api.NewServerWithDeps(cfg, sessionService, botServer, minutesHandler, nil)
+	rtcHandler := handler.NewRTCConfigHandler(cfg, iceProvider)
+	apiServer := api.NewServerWithDeps(cfg, sessionService, botServer, minutesHandler, nil, rtcHandler)
 
 	go func() {
 		logger.Infof("HTTP server listening on %s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
@@ -232,6 +261,7 @@ func runMigrations(ctx context.Context, db *sqlite.DB) error {
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			ended_at TEXT,
 			participant_count INTEGER NOT NULL CHECK (participant_count >= 2),
+			template_id TEXT NOT NULL DEFAULT '',
 			metadata TEXT
 		);
 		
@@ -290,13 +320,9 @@ func runMigrations(ctx context.Context, db *sqlite.DB) error {
 		CREATE TABLE IF NOT EXISTS minutes (
 			id TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+			template_id TEXT NOT NULL DEFAULT '',
 			version INTEGER NOT NULL DEFAULT 1,
-			themes TEXT NOT NULL,
-			contents_reported TEXT NOT NULL,
-			professional_interventions TEXT NOT NULL,
-			progress_issues TEXT NOT NULL,
-			next_steps TEXT NOT NULL,
-			citations TEXT NOT NULL,
+			content TEXT NOT NULL DEFAULT '{"sections":{},"citations":[]}',
 			generated_at TEXT NOT NULL DEFAULT (datetime('now')),
 			delivered_at TEXT,
 			status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'delivered', 'error')),
@@ -348,4 +374,44 @@ func runMigrations(ctx context.Context, db *sqlite.DB) error {
 		_, err := tx.ExecContext(ctx, migrationSQL)
 		return err
 	})
+}
+
+// checkWhisperHealth pings the whisper-local server at startup and logs a clear
+// warning if it is unreachable, so operators know immediately rather than
+// discovering it on the first transcription attempt.
+func checkWhisperHealth(baseURL string) {
+	if baseURL == "" {
+		return
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	healthURL := strings.TrimRight(baseURL, "/") + "/health"
+	resp, err := client.Get(healthURL)
+	if err != nil {
+		logging.Warnf("whisper-local server unreachable at %s: %v", baseURL, err)
+		logging.Warnf("Transcriptions will fail until whisper_server.py is running (run: aftertalk start)")
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		logging.Infof("whisper-local server healthy at %s", baseURL)
+	} else {
+		logging.Warnf("whisper-local server returned HTTP %d at %s", resp.StatusCode, baseURL)
+	}
+}
+
+// migrateWebhookEvents upgrades the webhook_events table to add the `payload`
+// and `next_retry_at` columns required by the Retrier worker.
+// Uses ADD COLUMN which is idempotent-safe via a separate error-ignored exec.
+func migrateWebhookEvents(ctx context.Context, db *sqlite.DB) {
+	upgrades := []string{
+		`ALTER TABLE webhook_events ADD COLUMN payload TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE webhook_events ADD COLUMN next_retry_at TEXT`,
+	}
+	for _, stmt := range upgrades {
+		// Ignore "duplicate column" errors (SQLite returns them as generic errors).
+		_ = db.RunInTx(ctx, func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, stmt)
+			return err
+		})
+	}
 }
