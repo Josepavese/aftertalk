@@ -108,11 +108,11 @@ func TestSessionCRUD(t *testing.T) {
 
 	sessionRepo := session.NewSessionRepository(db.DB)
 
-	_, err = db.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, status TEXT, created_at TEXT, ended_at TEXT, participant_count INTEGER, metadata TEXT)`)
+	_, err = db.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, status TEXT, created_at TEXT, ended_at TEXT, participant_count INTEGER, template_id TEXT NOT NULL DEFAULT '', metadata TEXT)`)
 	require.NoError(t, err)
 
 	t.Run("CreateSession", func(t *testing.T) {
-		session := session.NewSession(generateID(t), 3)
+		session := session.NewSession(generateID(t), 3, "")
 		session.Status = "active"
 
 		err := sessionRepo.Create(context.Background(), session)
@@ -162,7 +162,7 @@ func TestConcurrentOperations(t *testing.T) {
 
 	sessionRepo := session.NewSessionRepository(db.DB)
 
-	_, err = db.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, status TEXT, created_at TEXT, ended_at TEXT, participant_count INTEGER, metadata TEXT)`)
+	_, err = db.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, status TEXT, created_at TEXT, ended_at TEXT, participant_count INTEGER, template_id TEXT NOT NULL DEFAULT '', metadata TEXT)`)
 	require.NoError(t, err)
 
 	t.Run("ConcurrentSessionCRUD", func(t *testing.T) {
@@ -173,7 +173,7 @@ func TestConcurrentOperations(t *testing.T) {
 			wg.Add(1)
 			go func(n int) {
 				defer wg.Done()
-				session := session.NewSession(generateID(t), 1)
+				session := session.NewSession(generateID(t), 1, "")
 				session.Status = "active"
 				err := sessionRepo.Create(context.Background(), session)
 				assert.NoError(t, err)
@@ -193,7 +193,7 @@ func generateID(t *testing.T) string {
 }
 
 func createTestSession(t *testing.T, repo *session.SessionRepository) *session.Session {
-	session := session.NewSession(generateID(t), 2)
+	session := session.NewSession(generateID(t), 2, "")
 	session.Metadata = `{"title": "Test"}`
 	session.Status = "active"
 	err := repo.Create(context.Background(), session)

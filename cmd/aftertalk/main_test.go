@@ -282,7 +282,7 @@ func TestDatabaseInitialization_Failure(t *testing.T) {
 
 func TestServiceCreation(t *testing.T) {
 	repo := session.NewSessionRepository(nil)
-	sessionService := session.NewService(repo, nil, nil, nil, nil, nil, nil)
+	sessionService := session.NewService(repo, nil, nil, nil, nil, nil, nil, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
 
 	assert.NotNil(t, sessionService)
 }
@@ -308,8 +308,8 @@ func TestJWTManagerCreation(t *testing.T) {
 func TestAPIServerCreation(t *testing.T) {
 	cfg := &config.Config{}
 	repo := session.NewSessionRepository(nil)
-	sessionService := session.NewService(repo, nil, nil, nil, nil, nil, nil)
-	botServer := api.NewBotServer(sessionService, nil, nil)
+	sessionService := session.NewService(repo, nil, nil, nil, nil, nil, nil, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	botServer := api.NewBotServer(sessionService, nil, nil, nil)
 
 	apiServer := api.NewServer(cfg, sessionService, botServer)
 
@@ -318,11 +318,11 @@ func TestAPIServerCreation(t *testing.T) {
 
 func TestBotServerCreation(t *testing.T) {
 	repo := session.NewSessionRepository(nil)
-	sessionService := session.NewService(repo, nil, nil, nil, nil, nil, nil)
+	sessionService := session.NewService(repo, nil, nil, nil, nil, nil, nil, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
 	tokenCache := cache.NewTokenCache()
 
-	botServer := api.NewBotServer(sessionService, jwtManager, tokenCache)
+	botServer := api.NewBotServer(sessionService, jwtManager, tokenCache, nil)
 
 	assert.NotNil(t, botServer)
 }

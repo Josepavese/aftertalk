@@ -13,6 +13,7 @@ import (
 	"github.com/flowup/aftertalk/internal/core/minutes"
 	"github.com/flowup/aftertalk/internal/core/session"
 	"github.com/flowup/aftertalk/internal/core/transcription"
+	"github.com/flowup/aftertalk/internal/config"
 	"github.com/flowup/aftertalk/internal/storage/cache"
 	"github.com/flowup/aftertalk/internal/storage/sqlite"
 	"github.com/flowup/aftertalk/pkg/jwt"
@@ -33,6 +34,7 @@ func runMigrations(db *sql.DB) error {
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			ended_at TEXT,
 			participant_count INTEGER NOT NULL CHECK (participant_count >= 2),
+			template_id TEXT NOT NULL DEFAULT '',
 			metadata TEXT
 		);
 
@@ -76,17 +78,13 @@ func runMigrations(db *sql.DB) error {
 		CREATE TABLE IF NOT EXISTS minutes (
 			id TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+			template_id TEXT NOT NULL DEFAULT '',
 			version INTEGER NOT NULL DEFAULT 1,
-			themes TEXT NOT NULL,
-			contents_reported TEXT NOT NULL,
-			professional_interventions TEXT NOT NULL,
-			progress_issues TEXT NOT NULL,
-			next_steps TEXT NOT NULL,
-			citations TEXT NOT NULL,
+			content TEXT NOT NULL DEFAULT '{}',
 			generated_at TEXT NOT NULL DEFAULT (datetime('now')),
 			delivered_at TEXT,
 			status TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'delivered', 'error')),
-			provider TEXT NOT NULL
+			provider TEXT NOT NULL DEFAULT ''
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_minutes_status ON minutes(status, generated_at);
@@ -167,7 +165,7 @@ func BenchmarkSessionCreation1000(b *testing.B) {
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
-	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil)
+	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
 
 	b.ResetTimer()
 
@@ -195,7 +193,7 @@ func BenchmarkSessionRetrieval(b *testing.B) {
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
-	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil)
+	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
 
 	b.ResetTimer()
 
@@ -266,12 +264,12 @@ func BenchmarkMinutesGeneration(b *testing.B) {
 
 	sessionID := "test-session"
 	transcriptionText := generateLargeTranscriptionText()
-	roles := []string{"host", "guest"}
+	tmpl := config.DefaultTemplates()[0]
 
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := service.GenerateMinutes(context.Background(), sessionID, transcriptionText, roles)
+		_, err := service.GenerateMinutes(context.Background(), sessionID, transcriptionText, tmpl)
 		if err != nil {
 			b.Fatalf("Failed to generate minutes: %v", err)
 		}
