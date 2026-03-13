@@ -30,13 +30,13 @@ test-unit:
 test-integration:
 	$(GO) test -v -race -count=1 ./internal/storage/sqlite/... -run TestDB_ -coverprofile=coverage_integration.out -covermode=atomic
 
-# E2E tests
+# E2E tests (run integration tests against a live server)
 test-e2e:
-	./e2e/run_tests.sh
+	$(GO) test -v -race -count=1 ./internal/api/... -run TestIntegration
 
 # Performance tests
 test-performance:
-	./run_performance_tests.sh
+	./scripts/run-performance-tests.sh
 
 # Test coverage - All tests
 test-coverage:

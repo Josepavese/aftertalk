@@ -12,6 +12,20 @@ node_modules/
 *.exe
 *.bin
 /bin/
+/aftertalk
+
+# Coverage & test artifacts
+coverage.out
+coverage.html
+coverage_unit.out
+coverage_integration.out
+coverage_unit.html
+coverage_integration.html
+coverage_total.txt
+*.out
+
+# IDE
+.claude/
 
 # Environment
 .env

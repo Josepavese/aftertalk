@@ -1,4 +1,4 @@
-package tests
+package llm_test
 
 import (
 	"strings"
