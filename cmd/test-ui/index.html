@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -52,45 +52,45 @@
         <!-- API Key bar -->
         <div class="api-key-bar">
             <label>🔑 API Key:</label>
-            <input type="text" id="apiKeyInput" placeholder="Incolla la tua API key" oninput="saveApiKey(this.value)">
+            <input type="text" id="apiKeyInput" placeholder="Paste your API key" oninput="saveApiKey(this.value)">
             <span id="apiKeyStatus"></span>
         </div>
 
-        <!-- Step 1: Avvio -->
+        <!-- Step 1: Session setup -->
         <div class="step-card" id="step1-card">
             <div class="step-header">
                 <div class="step-number" id="step1-num">1</div>
-                <div style="font-size:16px;font-weight:600;">Avvio sessione</div>
-                <span class="status-badge status-waiting" id="step1-status">In attesa</span>
+                <div style="font-size:16px;font-weight:600;">Session setup</div>
+                <span class="status-badge status-waiting" id="step1-status">Waiting</span>
             </div>
             <div class="instructions">
-                Scegli il <strong>template</strong>, inserisci codice stanza, nome e ruolo, poi clicca <strong>Entra</strong>.<br>
-                Entrambi i partecipanti usano lo stesso codice stanza con ruoli diversi.
+                Choose the <strong>template</strong>, enter a room code, your name and role, then click <strong>Join</strong>.<br>
+                Both participants use the same room code with different roles.
             </div>
             <div class="input-group">
                 <select id="templateSelect" onchange="onTemplateChange()">
-                    <option value="">Caricamento template...</option>
+                    <option value="">Loading templates...</option>
                 </select>
             </div>
             <div class="input-group">
-                <input type="text" id="roomCode" placeholder="Codice stanza" value="stanza-1">
-                <input type="text" id="userName" placeholder="Il tuo nome" value="Mario">
+                <input type="text" id="roomCode" placeholder="Room code" value="room-1">
+                <input type="text" id="userName" placeholder="Your name" value="Alex">
                 <select id="userRole"></select>
             </div>
-            <button id="btnStart" onclick="startSession()">🚀 Entra</button>
+            <button id="btnStart" onclick="startSession()">🚀 Join</button>
         </div>
 
-        <!-- Step 2: Connessione WebRTC -->
+        <!-- Step 2: WebRTC connection -->
         <div class="step-card" id="step2-card">
             <div class="step-header">
                 <div class="step-number" id="step2-num">2</div>
-                <div style="font-size:16px;font-weight:600;">Connessione al server</div>
-                <span class="status-badge status-waiting" id="step2-status">In attesa</span>
+                <div style="font-size:16px;font-weight:600;">Server connection</div>
+                <span class="status-badge status-waiting" id="step2-status">Waiting</span>
             </div>
-            <div id="step2-desc" class="instructions">In attesa di avvio...</div>
+            <div id="step2-desc" class="instructions">Waiting to start...</div>
             <div class="audio-row" id="audioRow" style="display:none">
                 <div class="audio-box">
-                    <div><span class="recording-dot"></span>Il tuo microfono (→ server)</div>
+                    <div><span class="recording-dot"></span>Your microphone (→ server)</div>
                     <audio id="localAudio" autoplay muted controls style="width:200px;margin-top:4px"></audio>
                 </div>
             </div>
@@ -101,22 +101,22 @@
             </div>
         </div>
 
-        <!-- Step 3: Fine sessione -->
+        <!-- Step 3: End session -->
         <div class="step-card" id="step3-card">
             <div class="step-header">
                 <div class="step-number" id="step3-num">3</div>
-                <div style="font-size:16px;font-weight:600;">Fine sessione e minuta</div>
-                <span class="status-badge status-waiting" id="step3-status">In attesa</span>
+                <div style="font-size:16px;font-weight:600;">End session &amp; minutes</div>
+                <span class="status-badge status-waiting" id="step3-status">Waiting</span>
             </div>
-            <div id="step3-desc" class="instructions">Quando la conversazione è terminata, clicca <strong>Termina</strong>.</div>
+            <div id="step3-desc" class="instructions">When the conversation is over, click <strong>End</strong>.</div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <button id="btnMute" onclick="toggleMute()" disabled style="background:#f59e0b;min-width:130px">🎙️ Muta mic</button>
-                <button id="btnEnd" onclick="endSession()" disabled>⏹ Termina sessione</button>
+                <button id="btnMute" onclick="toggleMute()" disabled style="background:#f59e0b;min-width:130px">🎙️ Mute mic</button>
+                <button id="btnEnd" onclick="endSession()" disabled>⏹ End session</button>
             </div>
             <div id="minutesBox" style="display:none;margin-top:12px">
                 <div id="minutesRendered" style="margin-bottom:12px"></div>
                 <details style="margin-top:8px">
-                    <summary style="cursor:pointer;font-size:12px;color:#888">JSON grezzo</summary>
+                    <summary style="cursor:pointer;font-size:12px;color:#888">Raw JSON</summary>
                     <pre id="minutesContent" style="background:#f8fafc;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;border:1px solid var(--border);margin-top:6px"></pre>
                 </details>
             </div>
@@ -153,7 +153,7 @@
                     if (cfg.api_key) {
                         saveApiKey(cfg.api_key);
                         document.getElementById('apiKeyInput').value = cfg.api_key;
-                        document.getElementById('apiKeyStatus').innerHTML = '<span class="ok">✓ dal server</span>';
+                        document.getElementById('apiKeyStatus').innerHTML = '<span class="ok">✓ from server</span>';
                     }
                     if (cfg.templates && cfg.templates.length) {
                         templates = cfg.templates;
@@ -203,7 +203,7 @@
             const badge = document.getElementById('step'+n+'-status');
             num.className = 'step-number' + (status==='success' ? ' done' : '');
             badge.className = 'status-badge status-' + (status==='success'?'success':status==='active'?'active':'waiting');
-            badge.textContent = status==='success'?'✓ Fatto':status==='active'?'In corso':'In attesa';
+            badge.textContent = status==='success'?'✓ Done':status==='active'?'In progress':'Waiting';
             if (text) document.getElementById('step'+n+'-desc').innerHTML = text;
         }
 
@@ -212,13 +212,13 @@
             const name = document.getElementById('userName').value.trim();
             const role = document.getElementById('userRole').value;
             const templateId = document.getElementById('templateSelect').value;
-            if (!code || !name) return alert('Inserisci codice stanza e nome');
+            if (!code || !name) return alert('Enter room code and name');
 
             document.getElementById('btnStart').disabled = true;
             setStep(1, 'active');
 
             try {
-                log('info', `Entro nella stanza "${code}" come ${role} [${templateId}]...`);
+                log('info', `Joining room "${code}" as ${role} [${templateId}]...`);
                 const res = await fetch(`${API}/test/start`, {
                     method: 'POST',
                     headers: {'Content-Type':'application/json'},
@@ -231,31 +231,31 @@
                 currentToken = data.token;
 
                 const tmplName = currentTemplate ? currentTemplate.name : templateId;
-                log('success', `Sessione: ${data.session_id.slice(0,8)}...`);
-                setStep(1, 'success', `Stanza <strong>${code}</strong> — ruolo: <strong>${role}</strong><span class="tmpl-badge">${tmplName}</span>`);
+                log('success', `Session: ${data.session_id.slice(0,8)}...`);
+                setStep(1, 'success', `Room <strong>${code}</strong> — role: <strong>${role}</strong><span class="tmpl-badge">${tmplName}</span>`);
 
                 await connectWebRTC(name, role);
             } catch(e) {
-                log('error', 'Errore: '+e.message);
+                log('error', 'Error: '+e.message);
                 setStep(1, 'waiting');
                 document.getElementById('btnStart').disabled = false;
             }
         }
 
         async function connectWebRTC(name, role) {
-            setStep(2, 'active', 'Connessione al server WebRTC...');
+            setStep(2, 'active', 'Connecting to WebRTC server...');
             document.getElementById('infoRow').style.display = 'flex';
             document.getElementById('infoSession').textContent = 'Session: ' + (currentSessionId||'').slice(0,8)+'...';
-            document.getElementById('infoRole').textContent = 'Ruolo: ' + role;
+            document.getElementById('infoRole').textContent = 'Role: ' + role;
             document.getElementById('infoIce').textContent = 'ICE: -';
 
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({audio:true});
                 document.getElementById('localAudio').srcObject = localStream;
                 document.getElementById('audioRow').style.display = 'flex';
-                log('success', 'Microfono attivo');
+                log('success', 'Microphone active');
             } catch(e) {
-                log('error', 'Microfono: '+e.message);
+                log('error', 'Microphone: '+e.message);
                 return;
             }
 
@@ -269,11 +269,11 @@
                     const rtcCfg = await rtcRes.json();
                     if (rtcCfg.ice_servers && rtcCfg.ice_servers.length > 0) {
                         iceServers = rtcCfg.ice_servers;
-                        log('info', `ICE: ${iceServers.length} server(s) da /v1/rtc-config`);
+                        log('info', `ICE: ${iceServers.length} server(s) from /v1/rtc-config`);
                     }
                 }
             } catch(e) {
-                log('warn', 'rtc-config non disponibile, uso STUN pubblico: '+e.message);
+                log('warn', 'rtc-config unavailable, using public STUN: '+e.message);
             }
             pc = new RTCPeerConnection({iceServers});
 
@@ -282,19 +282,19 @@
                 document.getElementById('infoIce').textContent = 'ICE: ' + state;
                 log('info', 'ICE state: ' + state);
                 if (state === 'connected' || state === 'completed') {
-                    setStep(2, 'success', '✓ Connesso al server. <span class="recording-dot"></span>Audio inviato al server per la trascrizione.');
+                    setStep(2, 'success', '✓ Connected to server. <span class="recording-dot"></span>Audio sent to server for transcription.');
                     document.getElementById('btnEnd').disabled = false;
                     document.getElementById('btnMute').disabled = false;
                     setStep(3, 'active');
                 } else if (state === 'closed') {
-                    log('warn', 'Sessione terminata dal server — minuta in generazione...');
-                    setStep(2, 'waiting', 'Sessione terminata dal server');
+                    log('warn', 'Session ended by server — generating minutes...');
+                    setStep(2, 'waiting', 'Session ended by server');
                     document.getElementById('btnEnd').disabled = true;
                     document.getElementById('btnMute').disabled = true;
                     if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
                     if (currentSessionId) setTimeout(() => fetchMinutes(), 3000);
                 } else if (state === 'failed' || state === 'disconnected') {
-                    setStep(2, 'waiting', '✗ Connessione persa: ' + state);
+                    setStep(2, 'waiting', '✗ Connection lost: ' + state);
                 }
             };
 
@@ -306,22 +306,22 @@
             localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
 
             const wsUrl = `ws://${location.host}/signaling?token=${currentToken}`;
-            log('info', 'Connessione signaling...');
+            log('info', 'Connecting signaling...');
             ws = new WebSocket(wsUrl);
 
             ws.onopen = async () => {
-                log('success', 'WebSocket connesso');
+                log('success', 'WebSocket connected');
                 try {
                     const offer = await pc.createOffer();
                     await pc.setLocalDescription(offer);
                     ws.send(JSON.stringify({type:'offer', sdp:offer.sdp}));
-                    log('info', 'Offer inviato al server');
+                    log('info', 'Offer sent to server');
                 } catch(e) { log('error', 'Offer: '+e.message); }
             };
 
             ws.onmessage = async (e) => {
                 const msg = JSON.parse(e.data);
-                log('info', 'Ricevuto: ' + msg.type);
+                log('info', 'Received: ' + msg.type);
                 if (msg.type === 'answer') {
                     try {
                         await pc.setRemoteDescription({type:'answer', sdp:msg.sdp});
@@ -333,8 +333,8 @@
                 }
             };
 
-            ws.onerror = () => log('error', 'Errore WebSocket');
-            ws.onclose = () => log('warn', 'WebSocket disconnesso');
+            ws.onerror = () => log('error', 'WebSocket error');
+            ws.onclose = () => log('warn', 'WebSocket disconnected');
         }
 
         function toggleMute() {
@@ -344,13 +344,13 @@
             if (!track) return;
             track.enabled = !track.enabled;
             if (track.enabled) {
-                btn.textContent = '🎙️ Muta mic';
+                btn.textContent = '🎙️ Mute mic';
                 btn.style.background = '#f59e0b';
-                log('info', 'Microfono attivo');
+                log('info', 'Microphone active');
             } else {
-                btn.textContent = '🔇 Riattiva mic';
+                btn.textContent = '🔇 Unmute mic';
                 btn.style.background = '#6b7280';
-                log('warn', 'Microfono mutato');
+                log('warn', 'Microphone muted');
             }
         }
 
@@ -358,8 +358,8 @@
             if (!currentSessionId) return;
             document.getElementById('btnEnd').disabled = true;
             document.getElementById('btnMute').disabled = true;
-            setStep(3, 'active', 'Termino la sessione e genero la minuta...');
-            log('info', 'Terminazione sessione...');
+            setStep(3, 'active', 'Ending session and generating minutes...');
+            log('info', 'Ending session...');
 
             if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
             if (pc) { pc.close(); pc = null; }
@@ -371,7 +371,7 @@
                     headers: authHeader()
                 });
                 if (!res.ok) throw new Error(await res.text());
-                log('success', 'Sessione terminata');
+                log('success', 'Session ended');
                 setTimeout(() => fetchMinutes(), 3000);
             } catch(e) {
                 log('error', 'End session: '+e.message);
@@ -473,7 +473,7 @@
                     const r = tmpl.roles.find(r => r.key === roleKey);
                     return r ? r.label : roleKey;
                 };
-                html += `<div class="min-sec"><strong>💬 Citazioni</strong><ul>`;
+                html += `<div class="min-sec"><strong>💬 Citations</strong><ul>`;
                 citations.forEach(c => {
                     html += `<li><span class="min-ts">${msToTime(c.timestamp_ms||0)}</span><em>"${c.text}"</em> <span style="color:#888">[${roleLabel(c.role||'')}]</span></li>`;
                 });
@@ -482,10 +482,10 @@
 
             const hasContent = orderedKeys.some(k => sections[k] != null) || citations.length > 0;
             if (!hasContent) {
-                html += `<p style="color:#888;font-style:italic">Nessun contenuto rilevante estratto dalla trascrizione.</p>`;
+                html += `<p style="color:#888;font-style:italic">No relevant content extracted from the transcript.</p>`;
             }
 
-            html += `<div style="font-size:11px;color:#aaa;margin-top:8px">Generato: ${d.generated_at||''} · Provider: ${d.provider||''}</div>`;
+            html += `<div style="font-size:11px;color:#aaa;margin-top:8px">Generated: ${d.generated_at||''} · Provider: ${d.provider||''}</div>`;
             html += `</div>`;
             return html;
         }
@@ -501,16 +501,16 @@
                         document.getElementById('minutesRendered').innerHTML = renderMinutes(data);
                         document.getElementById('minutesContent').textContent = JSON.stringify(data, null, 2);
                         document.getElementById('minutesBox').style.display = 'block';
-                        setStep(3, 'success', '✓ Minuta generata!');
-                        log('success', 'Minuta ricevuta');
+                        setStep(3, 'success', '✓ Minutes generated!');
+                        log('success', 'Minutes received');
                     } else if (data.status === 'error') {
-                        log('error', 'Generazione minuta fallita');
+                        log('error', 'Minutes generation failed');
                     } else {
-                        log('warn', 'Minuta in elaborazione (status=' + data.status + '), riprovo...');
+                        log('warn', 'Minutes processing (status=' + data.status + '), retrying...');
                         setTimeout(() => fetchMinutes(), 5000);
                     }
                 } else if (res.status === 404) {
-                    log('warn', 'Minuta non ancora pronta, riprovo...');
+                    log('warn', 'Minutes not ready yet, retrying...');
                     setTimeout(() => fetchMinutes(), 5000);
                 } else {
                     log('error', 'Fetch minutes HTTP ' + res.status);

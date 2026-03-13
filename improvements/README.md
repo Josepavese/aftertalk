@@ -1,88 +1,88 @@
-# Improvements — Analisi Critica
+# Improvements — Critical Analysis
 
-> Verdetto avvocato del diavolo sulle 4 feature dichiarate.
+> Devil's advocate verdict on the 4 declared features.
 
 ---
 
-## Riepilogo Esecutivo
+## Executive Summary
 
-| Feature Dichiarata | Verdetto | Stato Reale |
+| Declared Feature | Verdict | Real Status |
 |---|---|---|
-| Installer semplice, SSOT, PAL | ✅ **Implementato** | Modulare, `--dump-defaults` SSOT, systemd/launchd, modalità `local-ai/cloud/offline` |
-| Fullstack self-contained | ✅ **Implementato** | TURN embedded (Pion), Google/AWS/Azure STT, ICE configurabile, webhook retry |
-| REST API moderna e sicura | ✅ **Implementato** | Rate limiting, CORS configurabile, `/demo/config` sicuro, nuovi endpoint CRUD, validazione input, paginazione |
-| SDK JS/TS robusto e moderno | ✅ **Implementato** | `@aftertalk/sdk` TypeScript package completo con WebRTC, poller, 47 test |
+| Simple installer, SSOT, PAL | ✅ **Implemented** | Modular, `--dump-defaults` SSOT, systemd/launchd, `local-ai/cloud/offline` modes |
+| Fullstack self-contained | ✅ **Implemented** | Embedded TURN (Pion), Google/AWS/Azure STT, configurable ICE, webhook retry |
+| Modern and secure REST API | ✅ **Implemented** | Rate limiting, configurable CORS, secure `/demo/config`, new CRUD endpoints, input validation, pagination |
+| Robust and modern JS/TS SDK | ✅ **Implemented** | `@aftertalk/sdk` complete TypeScript package with WebRTC, poller, 47 tests |
 
 ---
 
-## Tutti i miglioramenti completati
+## All improvements completed
 
 ---
 
-## Documenti
+## Documents
 
-### Completati (`closed/`)
+### Completed (`closed/`)
 
-- **[closed/01-installer.md](closed/01-installer.md)** — SSOT & PAL gaps nell'installer ✅
-  - `ChunkSizeMs` e `TranscriptionQueueSize` in config
-  - `--dump-defaults` flag (SSOT per config defaults)
-  - Installer modulare (`providers/_go.sh`, `_python.sh`, `_whisper.sh`, `_ollama.sh`)
-  - Steps separati (`steps/_binary.sh`, `_config.sh`, `_cli.sh`)
+- **[closed/01-installer.md](closed/01-installer.md)** — SSOT & PAL gaps in installer ✅
+  - `ChunkSizeMs` and `TranscriptionQueueSize` in config
+  - `--dump-defaults` flag (SSOT for config defaults)
+  - Modular installer (`providers/_go.sh`, `_python.sh`, `_whisper.sh`, `_ollama.sh`)
+  - Separate steps (`steps/_binary.sh`, `_config.sh`, `_cli.sh`)
   - `--mode=local-ai|cloud|offline` flag
   - Systemd/launchd integration (`aftertalk service install/uninstall`)
 
-- **[closed/02-fullstack-selfcontained.md](closed/02-fullstack-selfcontained.md)** — Self-containment reale ✅
-  - TURN server embedded (Pion/turn) con UDP+TCP
-  - ICE provider configurabile (static/embedded/twilio/xirsys/metered)
-  - Google/AWS/Azure STT implementati
-  - Webhook retry queue persistente
+- **[closed/02-fullstack-selfcontained.md](closed/02-fullstack-selfcontained.md)** — Real self-containment ✅
+  - Embedded TURN server (Pion/turn) with UDP+TCP
+  - Configurable ICE provider (static/embedded/twilio/xirsys/metered)
+  - Google/AWS/Azure STT implemented
+  - Persistent webhook retry queue
 
-- **[closed/03-rest-api.md](closed/03-rest-api.md)** — Sicurezza e completezza API REST ✅
-  - `/demo/config` sicuro (API key solo con `demo.enabled=true`)
-  - `/test/start` protetto da API key
+- **[closed/03-rest-api.md](closed/03-rest-api.md)** — REST API security and completeness ✅
+  - Secure `/demo/config` (API key only with `demo.enabled=true`)
+  - `/test/start` protected by API key
   - Rate limiting wired (`cfg.API.RateLimit`)
-  - CORS configurabile (`cfg.API.CORS`)
-  - `GET /v1/sessions` con paginazione (`?status=&limit=&offset=`)
+  - Configurable CORS (`cfg.API.CORS`)
+  - `GET /v1/sessions` with pagination (`?status=&limit=&offset=`)
   - `GET /v1/sessions/{id}/status`
   - `DELETE /v1/sessions/{id}`
   - `DELETE /v1/minutes/{id}`
-  - Paginazione su `GET /v1/transcriptions`
-  - Validazione input `CreateSessionRequest` (user_id, role, lunghezza, count match)
+  - Pagination on `GET /v1/transcriptions`
+  - Input validation on `CreateSessionRequest` (user_id, role, length, count match)
   - `GET /v1/openapi.yaml`
-  - `/v1/config` endpoint pubblico (templates senza API key)
+  - `/v1/config` public endpoint (templates without API key)
 
-- **[closed/04-js-ts-sdk.md](closed/04-js-ts-sdk.md)** — SDK TypeScript `@aftertalk/sdk` ✅
-  - `types.ts`: tipi completi allineati all'API (Session, Minutes, Transcription, Template, RTC)
-  - `errors.ts`: `AftertalkError` con codici tipizzati + mapping da HTTP status
-  - `http.ts`: `HttpClient` con timeout, API key header, error handling
+- **[closed/04-js-ts-sdk.md](closed/04-js-ts-sdk.md)** — TypeScript SDK `@aftertalk/sdk` ✅
+  - `types.ts`: complete types aligned to API (Session, Minutes, Transcription, Template, RTC)
+  - `errors.ts`: `AftertalkError` with typed codes + HTTP status mapping
+  - `http.ts`: `HttpClient` with timeout, API key header, error handling
   - `api/`: `SessionsAPI`, `MinutesAPI`, `TranscriptionsAPI`, `ConfigAPI`
   - `webrtc/`: `SignalingClient` (reconnect + backoff + message queue), `WebRTCConnection`, `AudioManager`
-  - `realtime/`: `MinutesPoller` con `waitForReady()` + `watch()` + exponential backoff
-  - `client.ts`: `AfterthalkClient` con `connectWebRTC()` e `waitForMinutes()` high-level
-  - 27 test unitari (vitest), tutti verdi
-  - `cmd/test-ui/src/main.ts`: demo UI riscritta in TypeScript con SDK
-  - Build: tsup (CJS + ESM + types), peer dep solo TypeScript ≥5.0
+  - `realtime/`: `MinutesPoller` with `waitForReady()` + `watch()` + exponential backoff
+  - `client.ts`: `AfterthalkClient` with `connectWebRTC()` and `waitForMinutes()` high-level
+  - 27 unit tests (vitest), all passing
+  - `cmd/test-ui/src/main.ts`: demo UI rewritten in TypeScript with SDK
+  - Build: tsup (CJS + ESM + types), peer dep only TypeScript ≥5.0
 
 - **[closed/05-webrtc-turn-stun.md](closed/05-webrtc-turn-stun.md)** — WebRTC/ICE fixes ✅
 
 - **[closed/06-sdk-webrtc-resilience.md](closed/06-sdk-webrtc-resilience.md)** — SDK WebRTC resilience ✅
-  - Fix memory leak: listener accumulation su WS reconnect (`attachListeners`/`detachListeners`)
-  - ICE `disconnected` grace period (5s) prima di reagire
-  - ICE restart automatico su `failed` (`pc.restartIce()` + re-offer `{iceRestart:true}`)
-  - Rinegoziazione automatica quando signaling si riconnette con ICE failed
-  - `tokenProvider` callback per JWT refresh su reconnect
-  - Backoff jitter configurabile (`backoffJitter`) per thundering herd
-  - WS close code 4001/4003 → errore `unauthorized` immediato senza retry
-  - Counter ICE restart reset solo su `connected`/`completed`, non su answer
+  - Fix memory leak: listener accumulation on WS reconnect (`attachListeners`/`detachListeners`)
+  - ICE `disconnected` grace period (5s) before reacting
+  - Automatic ICE restart on `failed` (`pc.restartIce()` + re-offer `{iceRestart:true}`)
+  - Automatic renegotiation when signaling reconnects with ICE failed
+  - `tokenProvider` callback for JWT refresh on reconnect
+  - Configurable backoff jitter (`backoffJitter`) for thundering herd
+  - WS close code 4001/4003 → immediate `unauthorized` error without retry
+  - ICE restart counter reset only on `connected`/`completed`, not on answer
 
 - **[07-secure-minutes-delivery.md](07-secure-minutes-delivery.md)** — Secure minutes delivery: notify_pull pattern ✅
   - `WebhookConfig.Mode`: `"push"` (legacy) | `"notify_pull"` (production/HIPAA/GDPR)
-  - `retrieval_tokens` table: token single-use, time-limited, scoped a un solo record minutes
-  - `GET /v1/minutes/pull/{token}`: endpoint di pull autenticato dal token, fuori dall'API key middleware
-  - `webhook.NotificationPayload`: corpo webhook con solo retrieval URL (zero dati sensibili)
-  - Firma HMAC-SHA256 (`X-Aftertalk-Signature`) sui notification webhook
-  - `PurgeMinutes`: cancella minutes + trascrizioni dopo pull riuscito (`delete_on_pull=true`)
-  - Retrier: `EnqueueNotification` + colonna `payload_type` per dispatch corretto
+  - `retrieval_tokens` table: single-use, time-limited token scoped to a single minutes record
+  - `GET /v1/minutes/pull/{token}`: pull endpoint authenticated by token, outside API key middleware
+  - `webhook.NotificationPayload`: webhook body with retrieval URL only (zero sensitive data)
+  - HMAC-SHA256 signature (`X-Aftertalk-Signature`) on notification webhooks
+  - `PurgeMinutes`: deletes minutes + transcriptions after successful pull (`delete_on_pull=true`)
+  - Retrier: `EnqueueNotification` + `payload_type` column for correct dispatch
 
 ### Open
 

@@ -143,8 +143,8 @@ curl -X POST http://localhost:8080/v1/sessions \
   -H "X-API-Key: dev-api-key" \
   -d '{
     "participants": [
-      {"userId": "user-1", "role": "professionista"},
-      {"userId": "user-2", "role": "paziente"}
+      {"userId": "user-1", "role": "therapist"},
+      {"userId": "user-2", "role": "patient"}
     ]
   }'
 
@@ -154,8 +154,8 @@ curl -X POST http://localhost:8080/v1/sessions \
 #   "id": "550e8400-e29b-41d4-a716-446655440000",
 #   "status": "active",
 #   "participants": [
-#     {"userId": "user-1", "role": "professionista", "token": "eyJhbGc..."},
-#     {"userId": "user-2", "role": "paziente", "token": "eyJhbGc..."}
+#     {"userId": "user-1", "role": "therapist", "token": "eyJhbGc..."},
+#     {"userId": "user-2", "role": "patient", "token": "eyJhbGc..."}
 #   ]
 # }
 ```
@@ -180,7 +180,7 @@ wscat -c ws://localhost:8081/ws
 {"type":"authenticate","token":"your-jwt-token"}
 
 // 2. Server responds
-{"type":"connection_acknowledged","sessionId":"session-id","role":"professionista"}
+{"type":"connection_acknowledged","sessionId":"session-id","role":"therapist"}
 
 // 3. Send audio chunks (base64-encoded Opus)
 {"type":"audio_chunk","sequenceNumber":0,"timestamp":1709560000000,"duration":15000,"data":"//NkAAAA..."}
@@ -224,7 +224,7 @@ curl http://localhost:8080/v1/sessions/<SESSION_ID>/minutes \
 #   "progressIssues": {"progress": [...], "issues": [...]},
 #   "nextSteps": ["Step 1", "Step 2"],
 #   "citations": [
-#     {"text": "Quote", "timestampMs": 12345, "role": "paziente"}
+#     {"text": "Quote", "timestampMs": 12345, "role": "patient"}
 #   ],
 #   "status": "ready"
 # }

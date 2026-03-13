@@ -1,17 +1,17 @@
 # Improvement: SDK JS/TS
 
-## Verdetto Avvocato del Diavolo
+## Devil's Advocate Verdict
 
-**L'asserzione "SDK JS/TS ben organizzato, strutturato, robusto e moderno" è FALSA.**
+**The claim "well-organized, structured, robust and modern JS/TS SDK" is FALSE.**
 
-Non esiste uno SDK JS/TS. Esiste un file HTML di test con JavaScript inline. Le due cose non sono la stessa cosa.
+There is no JS/TS SDK. There is an HTML test file with inline JavaScript. The two things are not the same.
 
 ---
 
-## Stato Attuale
+## Current State
 
 ```
-cmd/test-ui/index.html   (509 righe, tutto inline)
+cmd/test-ui/index.html   (509 lines, all inline)
 ├── HTML markup
 ├── CSS inline (<style>)
 └── JavaScript inline (<script>)
@@ -22,29 +22,29 @@ cmd/test-ui/index.html   (509 righe, tutto inline)
     └── Minutes rendering
 ```
 
-**Questo è un prototipo di demo, non uno SDK.**
+**This is a demo prototype, not an SDK.**
 
-Problemi strutturali dell'implementazione attuale:
+Structural problems of the current implementation:
 
-| Problema | Dettaglio |
+| Problem | Detail |
 |---|---|
-| Tutto inline in 509 righe | Impossibile da testare, manutenere, riusare |
-| Nessun TypeScript | Nessun type safety, nessun autocompletamento |
-| Nessun package | Non installabile via npm/yarn |
-| Nessun bundler | Non integrabile in React/Vue/Angular/Svelte |
-| Nessun test | Zero test unitari o integration |
-| Nessun error handling robusto | try/catch sparse, nessuna strategia uniforme |
-| Nessuna documentazione API | Nessun JSDoc, nessun typedoc |
-| Hardcoded WebRTC config | STUN servers hardcoded anche nel JS |
-| Polling manuale minutes | `setInterval` a 5s senza exponential backoff |
-| Nessun reconnect logic | WebSocket si chiude → nessun retry |
-| Italiana UI hardcoded | Non internazionalizzabile |
+| All inline in 509 lines | Impossible to test, maintain, reuse |
+| No TypeScript | No type safety, no autocompletion |
+| No package | Not installable via npm/yarn |
+| No bundler | Not integrable in React/Vue/Angular/Svelte |
+| No tests | Zero unit or integration tests |
+| No robust error handling | Sparse try/catch, no uniform strategy |
+| No API documentation | No JSDoc, no typedoc |
+| Hardcoded WebRTC config | STUN servers hardcoded in JS too |
+| Manual minutes polling | `setInterval` at 5s without exponential backoff |
+| No reconnect logic | WebSocket closes → no retry |
+| Hardcoded UI strings | Not internationalizable |
 
 ---
 
-## Architettura SDK Proposta
+## Proposed SDK Architecture
 
-### Struttura Package
+### Package Structure
 
 ```
 sdk/
@@ -52,9 +52,9 @@ sdk/
 ├── tsconfig.json
 ├── vitest.config.ts
 └── src/
-    ├── index.ts                  # Entry point, esporta tutto
-    ├── client.ts                 # AfterthalkClient (classe principale)
-    ├── types.ts                  # Tutti i tipi TypeScript
+    ├── index.ts                  # Entry point, exports everything
+    ├── client.ts                 # AfterthalkClient (main class)
+    ├── types.ts                  # All TypeScript types
     ├── api/
     │   ├── sessions.ts           # SessionsAPI
     │   ├── transcriptions.ts     # TranscriptionsAPI
@@ -65,18 +65,18 @@ sdk/
     │   ├── signaling.ts          # SignalingClient (WebSocket)
     │   └── audio.ts              # AudioManager
     ├── realtime/
-    │   └── minutes-poller.ts     # MinutesPoller (con backoff)
+    │   └── minutes-poller.ts     # MinutesPoller (with backoff)
     └── errors.ts                 # AftertalkError hierarchy
 ```
 
 ---
 
-### API Design dello SDK
+### SDK API Design
 
-#### 1. Client Principale
+#### 1. Main Client
 
 ```typescript
-// Uso minimale
+// Minimal usage
 import { AfterthalkClient } from '@aftertalk/sdk';
 
 const client = new AfterthalkClient({
@@ -84,7 +84,7 @@ const client = new AfterthalkClient({
   apiKey: 'your-api-key',
 });
 
-// Creare sessione
+// Create session
 const session = await client.sessions.create({
   participantCount: 2,
   templateId: 'therapy',
@@ -94,23 +94,23 @@ const session = await client.sessions.create({
   ],
 });
 
-// Connettere WebRTC
+// Connect WebRTC
 const connection = await client.webrtc.connect({
   sessionId: session.sessionId,
   token: session.participants[0].token,
 });
 
-// Terminare sessione
+// End session
 await client.sessions.end(session.sessionId);
 
-// Attendere minuta
+// Wait for minutes
 const minutes = await client.minutes.waitForReady(session.sessionId, {
   timeout: 120_000,
   pollingInterval: 3_000,
 });
 ```
 
-#### 2. Tipi TypeScript (Allineati al Server)
+#### 2. TypeScript Types (Aligned with Server)
 
 ```typescript
 // src/types.ts
@@ -219,7 +219,7 @@ export class WebRTCConnection extends EventEmitter {
 }
 ```
 
-#### 5. Minutes Poller con Backoff
+#### 5. Minutes Poller with Backoff
 
 ```typescript
 // src/realtime/minutes-poller.ts
@@ -280,7 +280,7 @@ export type AftertalkErrorCode =
   | 'rate_limited';
 ```
 
-#### 7. WebSocket Signaling con Reconnect
+#### 7. WebSocket Signaling with Reconnect
 
 ```typescript
 // src/webrtc/signaling.ts
@@ -290,15 +290,15 @@ export class SignalingClient extends EventEmitter {
   private readonly maxReconnectAttempts = 5;
 
   async connect(url: string, token: string): Promise<void> {
-    // Gestione automatica reconnect con backoff
-    // onclose → if not intentional → reconnect con delay esponenziale
+    // Automatic reconnect with exponential backoff
+    // onclose → if not intentional → reconnect with exponential delay
   }
 
   send(message: SignalingMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     } else {
-      this.messageQueue.push(message);  // queue per dopo il reconnect
+      this.messageQueue.push(message);  // queue for after reconnect
     }
   }
 }
@@ -375,7 +375,7 @@ describe('SessionsAPI', () => {
 ### React Hook
 
 ```typescript
-// Esempio uso in React (non parte dell'SDK core, ma documentato)
+// Example usage in React (not part of the core SDK, but documented)
 import { useState, useEffect } from 'react';
 import { AfterthalkClient } from '@aftertalk/sdk';
 
@@ -397,12 +397,12 @@ export function useAfterthalkSession(sessionId: string) {
 
 ---
 
-## Test UI Riscritta con SDK
+## Test UI Rewritten with SDK
 
-Una volta creato l'SDK, il test-ui dovrebbe essere riscritto usandolo:
+Once the SDK is created, the test-ui should be rewritten using it:
 
 ```typescript
-// cmd/test-ui/src/app.ts — test UI che dimostra l'SDK
+// cmd/test-ui/src/app.ts — test UI demonstrating the SDK
 import { AfterthalkClient } from '@aftertalk/sdk';
 
 const client = new AfterthalkClient({
@@ -410,44 +410,44 @@ const client = new AfterthalkClient({
   apiKey: localStorage.getItem('aftertalk_api_key') ?? '',
 });
 
-// ↑ 3 righe invece di 509 righe di codice inline
+// ↑ 3 lines instead of 509 lines of inline code
 ```
 
 ---
 
-## Compatibilità Target
+## Target Compatibility
 
-| Ambiente | Supporto |
+| Environment | Support |
 |---|---|
-| Browser moderni (Chrome/Firefox/Safari/Edge) | ✅ |
-| Node.js 18+ | ✅ (senza WebRTC, solo API HTTP) |
+| Modern browsers (Chrome/Firefox/Safari/Edge) | ✅ |
+| Node.js 18+ | ✅ (without WebRTC, HTTP API only) |
 | Deno | ✅ (ESM) |
 | React / Vue / Angular / Svelte | ✅ (via npm) |
-| Next.js (SSR) | ✅ (solo API lato server, WebRTC solo client) |
-| React Native | ⚠️ Parziale (WebRTC richiede lib native) |
+| Next.js (SSR) | ✅ (server-side API only, WebRTC client-side only) |
+| React Native | ⚠️ Partial (WebRTC requires native libs) |
 
 ---
 
-## Priorità di Intervento
+## Intervention Priority
 
-| # | Task | Effort | Priorità |
+| # | Task | Effort | Priority |
 |---|---|---|---|
-| 1 | Definire `types.ts` da spec OpenAPI | Basso (2h) | **Alta** |
-| 2 | Implementare `HttpClient` con error handling | Medio (3h) | **Alta** |
-| 3 | Implementare `SessionsAPI`, `MinutesAPI`, `TranscriptionsAPI` | Medio (4h) | **Alta** |
-| 4 | Implementare `SignalingClient` con reconnect | Alto (6h) | **Alta** |
-| 5 | Implementare `WebRTCConnection` | Alto (8h) | **Alta** |
-| 6 | Implementare `MinutesPoller` con backoff | Basso (2h) | **Media** |
-| 7 | Setup build (tsup + vitest) | Basso (2h) | **Alta** |
-| 8 | Test unitari per API layer | Medio (4h) | **Alta** |
-| 9 | Test integrazione E2E (con server reale) | Alto (8h) | **Media** |
-| 10 | Riscrivere test-ui con SDK | Medio (4h) | **Media** |
-| 11 | Documentazione typedoc + README | Medio (3h) | **Media** |
-| 12 | Publish npm package | Basso (1h) | **Bassa** |
+| 1 | Define `types.ts` from OpenAPI spec | Low (2h) | **High** |
+| 2 | Implement `HttpClient` with error handling | Medium (3h) | **High** |
+| 3 | Implement `SessionsAPI`, `MinutesAPI`, `TranscriptionsAPI` | Medium (4h) | **High** |
+| 4 | Implement `SignalingClient` with reconnect | High (6h) | **High** |
+| 5 | Implement `WebRTCConnection` | High (8h) | **High** |
+| 6 | Implement `MinutesPoller` with backoff | Low (2h) | **Medium** |
+| 7 | Setup build (tsup + vitest) | Low (2h) | **High** |
+| 8 | Unit tests for API layer | Medium (4h) | **High** |
+| 9 | E2E integration tests (with real server) | High (8h) | **Medium** |
+| 10 | Rewrite test-ui with SDK | Medium (4h) | **Medium** |
+| 11 | Typedoc documentation + README | Medium (3h) | **Medium** |
+| 12 | Publish npm package | Low (1h) | **Low** |
 
 ---
 
-## Passi di Implementazione
+## Implementation Steps
 
 ### Step 1 — Scaffolding (2h)
 
@@ -456,28 +456,28 @@ mkdir sdk
 cd sdk
 npm init -y
 npm install -D typescript tsup vitest @types/node
-# Creare tsconfig.json, vitest.config.ts
+# Create tsconfig.json, vitest.config.ts
 ```
 
-### Step 2 — Types da OpenAPI (2h)
+### Step 2 — Types from OpenAPI (2h)
 
-Generare `types.ts` da `specs/contracts/api.yaml`:
+Generate `types.ts` from `specs/contracts/api.yaml`:
 ```bash
 npx openapi-typescript specs/contracts/api.yaml -o sdk/src/types.ts
 ```
 
 ### Step 3 — HttpClient + API Classes (4h)
 
-Implementare le 3 API classes con full error handling.
+Implement the 3 API classes with full error handling.
 
 ### Step 4 — WebRTC Layer (8h)
 
-La parte più complessa: SignalingClient + WebRTCConnection con:
-- Gestione stato ICE
+The most complex part: SignalingClient + WebRTCConnection with:
+- ICE state management
 - Reconnect logic
 - Audio management
 - Event emitter pattern
 
-### Step 5 — Test + Docs (4h)
+### Step 5 — Tests + Docs (4h)
 
 Vitest unit tests + typedoc generation.

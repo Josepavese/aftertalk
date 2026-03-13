@@ -28,7 +28,7 @@
 - [ ] T002 Create directory structure per plan.md (cmd/, internal/, pkg/, migrations/)
 - [ ] T003 [P] Create Makefile with build, test, run, migrate targets
 - [ ] T004 [P] Create Dockerfile for single-stage Go build
-- [ ] T005 [P] Create docker-compose.yml for local development (postgres, redis)
+- [ ] T005 [P] Create docker-compose.yml for local development
 - [ ] T006 [P] Create .env.example with configuration template
 - [ ] T007 [P] Create .gitignore for Go project
 - [ ] T008 [P] Create README.md with project overview
@@ -56,15 +56,15 @@
 - [ ] T019 Create base repository interface in internal/core/repository.go
 - [ ] T020 Implement graceful shutdown in cmd/aftertalk/main.go
 
-**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
+**Checkpoint**: Foundation ready — user story implementation can now begin in parallel
 
 ---
 
-## Phase 3: User Story 1 - Acquisizione Audio da Sessione WebRTC (Priority: P1) 🎯 MVP
+## Phase 3: User Story 1 - WebRTC Audio Capture (Priority: P1) 🎯 MVP
 
-**Goal**: Bot Recorder riceve stream audio separati per ogni partecipante con timestamp server-side
+**Goal**: Bot Recorder receives separate audio streams per participant with server-side timestamps
 
-**Independent Test**: Avviare una sessione WebRTC e verificare che il Bot Recorder riceva stream audio separati per ogni partecipante con timestamp server-side corretti
+**Independent Test**: Start a WebRTC session and verify that the Bot Recorder receives separate audio streams for each participant with correct server-side timestamps
 
 ### Implementation for User Story 1
 
@@ -73,7 +73,7 @@
 - [ ] T023 [P] [US1] Create AudioStream entity in internal/core/session/entity.go
 - [ ] T024 [US1] Implement SessionRepository in internal/core/session/repository.go
 - [ ] T025 [US1] Implement SessionService in internal/core/session/service.go (business logic)
-- [ ] T026 [US1] Implement WebSocket server in internal/bot/server.go (gorilla/websocket or similar)
+- [ ] T026 [US1] Implement WebSocket server in internal/bot/server.go (gorilla/websocket)
 - [ ] T027 [US1] Implement JWT authentication in internal/bot/auth.go (token validation)
 - [ ] T028 [US1] Implement Pion peer connection in internal/bot/peer.go (WebRTC server-side)
 - [ ] T029 [US1] Implement audio processing in internal/bot/audio.go (Opus → PCM, chunking)
@@ -92,11 +92,11 @@
 
 ---
 
-## Phase 4: User Story 2 - Trascrizione Automatica con Ruoli Certi (Priority: P2)
+## Phase 4: User Story 2 - Automatic Transcription with Verified Roles (Priority: P2)
 
-**Goal**: Sistema trascrive automaticamente l'audio con ruoli certi e produce segmenti strutturati
+**Goal**: System automatically transcribes audio with verified roles and produces structured segments
 
-**Independent Test**: Inviare audio preregistrato al Bot Recorder e verificare che la trascrizione prodotta contenga segmenti con ruolo, timestamp, testo e confidence score
+**Independent Test**: Send pre-recorded audio to the Bot Recorder and verify that the produced transcription contains segments with role, timestamp, text and confidence score
 
 ### Implementation for User Story 2
 
@@ -118,11 +118,11 @@
 
 ---
 
-## Phase 5: User Story 3 - Generazione Minuta AI Strutturata (Priority: P3)
+## Phase 5: User Story 3 - Structured AI Minutes Generation (Priority: P3)
 
-**Goal**: Sistema elabora la trascrizione e produce una minuta strutturata con citazioni temporali
+**Goal**: System processes the transcription and produces structured minutes with temporal citations
 
-**Independent Test**: Fornire una trascrizione completa al modulo AI e verificare che la minuta prodotta contenga tutti i campi obbligatori: Temi principali, Contenuti riportati, Interventi del professionista, Progressi/criticità, Next steps, Citazioni con timestamp
+**Independent Test**: Provide a complete transcription to the AI module and verify that the produced minutes contain all mandatory fields: Main themes, Reported contents, Professional interventions, Progress/issues, Next steps, Citations with timestamps
 
 ### Implementation for User Story 3
 
@@ -147,11 +147,11 @@
 
 ---
 
-## Phase 6: User Story 4 - Consultazione e Modifica Minuta da Parte del Professionista (Priority: P4)
+## Phase 6: User Story 4 - Professional Review and Editing of Minutes (Priority: P4)
 
-**Goal**: Il professionista può visualizzare la minuta, consultare i timestamp e modificare il testo
+**Goal**: The professional can view the minutes, consult timestamps and edit the text
 
-**Independent Test**: Fornire una minuta completa all'interfaccia del professionista e verificare che possa visualizzare, cliccare sui timestamp, modificare il testo e salvare le modifiche
+**Independent Test**: Provide complete minutes to the professional's interface and verify that they can view them, click timestamps, edit the text and save changes
 
 ### Implementation for User Story 4
 
@@ -192,8 +192,8 @@
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies - can start immediately
-- **Foundational (Phase 2)**: Depends on Setup completion - BLOCKS all user stories
+- **Setup (Phase 1)**: No dependencies — can start immediately
+- **Foundational (Phase 2)**: Depends on Setup completion — BLOCKS all user stories
 - **User Stories (Phase 3+)**: All depend on Foundational phase completion
   - User stories can proceed in parallel (if staffed)
   - Or sequentially in priority order (P1 → P2 → P3 → P4)
@@ -201,10 +201,10 @@
 
 ### User Story Dependencies
 
-- **User Story 1 (P1)**: Can start after Foundational (Phase 2) - No dependencies on other stories
-- **User Story 2 (P2)**: Can start after Foundational (Phase 2) - Uses Session entities from US1 but independently testable
-- **User Story 3 (P3)**: Can start after Foundational (Phase 2) - Uses Transcription entities from US2 but independently testable
-- **User Story 4 (P4)**: Can start after Foundational (Phase 2) - Uses Minutes entities from US3 but independently testable
+- **User Story 1 (P1)**: Can start after Foundational (Phase 2) — No dependencies on other stories
+- **User Story 2 (P2)**: Can start after Foundational (Phase 2) — Uses Session entities from US1 but independently testable
+- **User Story 3 (P3)**: Can start after Foundational (Phase 2) — Uses Transcription entities from US2 but independently testable
+- **User Story 4 (P4)**: Can start after Foundational (Phase 2) — Uses Minutes entities from US3 but independently testable
 
 ### Within Each User Story
 
@@ -243,7 +243,7 @@ Task: "Implement SessionService in internal/core/session/service.go"
 ### MVP First (User Story 1 Only)
 
 1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
+2. Complete Phase 2: Foundational (CRITICAL — blocks all stories)
 3. Complete Phase 3: User Story 1
 4. **STOP and VALIDATE**: Test User Story 1 independently (WebRTC audio capture working)
 5. Deploy/demo if ready
@@ -264,8 +264,8 @@ With multiple developers:
 1. Team completes Setup + Foundational together
 2. Once Foundational is done:
    - Developer A: User Story 1 (WebRTC Audio Capture)
-   - Developer B: User Story 2 (Transcription) - can mock audio input
-   - Developer C: User Story 3 (Minutes Generation) - can mock transcription
+   - Developer B: User Story 2 (Transcription) — can mock audio input
+   - Developer C: User Story 3 (Minutes Generation) — can mock transcription
 3. Stories complete and integrate independently
 
 ---

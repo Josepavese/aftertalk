@@ -1,35 +1,35 @@
 # Improvement: Fullstack Self-Contained
 
-## Verdetto Avvocato del Diavolo
+## Devil's Advocate Verdict
 
-**L'asserzione "installi e usi, nulla di esterno" è FALSA per la maggior parte dei casi d'uso reali.**
+**The claim "install and use, nothing external" is FALSE for most real use cases.**
 
-Il core Go è self-contained. Ma la pipeline funzionante di trascrizione + minuta richiede obbligatoriamente servizi esterni. L'asserzione è vera solo in modalità "stub" (demo inutilizzabile in produzione).
+The Go core is self-contained. But the working transcription + minutes pipeline mandatorily requires external services. The claim is only true in "stub" mode (a demo that is unusable in production).
 
 ---
 
-## Gaps Identificati
+## Identified Gaps
 
-### 1. STT Providers Cloud — Stub, Non Implementazioni Reali
+### 1. Cloud STT Providers — Stubs, Not Real Implementations
 
-**Problema critico**: Google, AWS e Azure STT sono **stub con placeholder**, non implementazioni reali.
+**Critical problem**: Google, AWS and Azure STT are **stubs with placeholders**, not real implementations.
 
 ```go
 // internal/ai/stt/providers.go — Google "provider"
 func (p *GoogleSTTProvider) Transcribe(...) (*TranscriptionResult, error) {
     segment := &TranscriptionSegment{
         Text: "[Transcription placeholder - Google STT integration required]",
-        // ↑ PLACEHOLDER, non una vera chiamata API
+        // ↑ PLACEHOLDER, not a real API call
     }
 }
 ```
 
-**Impatto**: Se un utente configura `stt.provider: google` e fornisce credenziali, riceverà placeholder text invece di trascrizioni reali. Non c'è nessun warning visibile che sia un placeholder.
+**Impact**: If a user configures `stt.provider: google` and provides credentials, they will receive placeholder text instead of real transcriptions. There is no visible warning that it is a placeholder.
 
-**Solo whisper-local è funzionante** (via HTTP al Python server). Ma whisper-local richiede Python + faster-whisper come dipendenza esterna.
+**Only whisper-local is functional** (via HTTP to the Python server). But whisper-local requires Python + faster-whisper as an external dependency.
 
-**Fix Richiesto**:
-Implementare le chiamate HTTP reali per ogni provider:
+**Required Fix**:
+Implement real HTTP calls for each provider:
 
 ```go
 // Google Speech-to-Text REST API
@@ -37,40 +37,40 @@ POST https://speech.googleapis.com/v1/speech:recognize
 Authorization: Bearer {access_token}
 Content-Type: application/json
 {
-  "config": {"encoding": "LINEAR16", "sampleRateHertz": 16000, "languageCode": "it-IT"},
+  "config": {"encoding": "LINEAR16", "sampleRateHertz": 16000, "languageCode": "en-US"},
   "audio": {"content": "{base64_audio}"}
 }
 ```
 
 ```go
-// AWS Transcribe — Streaming API o StartTranscriptionJob
+// AWS Transcribe — Streaming API or StartTranscriptionJob
 // Azure Speech Services — Batch Transcription API
 ```
 
 ---
 
-### 2. STUN Server Hardcoded — Google (Privacy + Availability)
+### 2. Hardcoded STUN Server — Google (Privacy + Availability)
 
-**Problema**: WebRTC usa esclusivamente `stun:stun.l.google.com:19302` hardcoded.
+**Problem**: WebRTC exclusively uses `stun:stun.l.google.com:19302` hardcoded.
 
 ```go
 // internal/bot/webrtc/peer.go:37
 {URLs: []string{"stun:stun.l.google.com:19302"}},
 ```
 
-**Implicazioni**:
-1. **Privacy**: Ogni connessione WebRTC rivela l'IP pubblico del server a Google
-2. **Affidabilità**: Se il STUN Google è irraggiungibile (firewall aziendali), WebRTC non funziona
-3. **Ambienti privati**: Reti air-gapped o corporate non possono usare STUN pubblici
-4. **TURN mancante**: In presenza di NAT simmetrico (comune in enterprise) senza TURN server le connessioni falliscono completamente
+**Implications**:
+1. **Privacy**: Every WebRTC connection reveals the server's public IP to Google
+2. **Reliability**: If Google STUN is unreachable (corporate firewalls), WebRTC fails
+3. **Private environments**: Air-gapped or corporate networks cannot use public STUNs
+4. **Missing TURN**: With symmetric NAT (common in enterprise), without a TURN server connections fail completely
 
-**Fix Richiesto**:
+**Required Fix**:
 ```yaml
 # config.yaml
 webrtc:
   ice_servers:
-    - urls: ["stun:stun.l.google.com:19302"]  # default, configurabile
-  turn_servers: []  # opzionale
+    - urls: ["stun:stun.l.google.com:19302"]  # default, configurable
+  turn_servers: []  # optional
   # turn_servers:
   #   - urls: ["turn:turn.example.com:3478"]
   #     username: "user"
@@ -78,7 +78,7 @@ webrtc:
 ```
 
 ```go
-// peer.go — leggere da config
+// peer.go — read from config
 iceServers := make([]webrtc.ICEServer, 0, len(cfg.WebRTC.ICEServers))
 for _, s := range cfg.WebRTC.ICEServers {
     iceServers = append(iceServers, webrtc.ICEServer{URLs: s.URLs, ...})
@@ -87,74 +87,74 @@ for _, s := range cfg.WebRTC.ICEServers {
 
 ---
 
-### 3. Whisper-Local — Dipendenza Python Non Eliminabile
+### 3. Whisper-Local — Non-Eliminable Python Dependency
 
-**Problema**: La pipeline STT di default richiede Python 3.9+, faster-whisper, ffmpeg come dipendenze a runtime esterne al binario Go.
+**Problem**: The default STT pipeline requires Python 3.9+, faster-whisper, ffmpeg as runtime dependencies external to the Go binary.
 
 ```
 aftertalk-server (Go, self-contained)
     ↓ HTTP POST localhost:9001
-whisper_server.py (Python, dipendenza esterna)
+whisper_server.py (Python, external dependency)
     ↓ uses
 faster-whisper (pip package)
     ↓ uses
 ffmpeg (system binary)
 ```
 
-**Non è "nulla di esterno"**: l'utente deve avere Python funzionante. Se Python o pip si aggiornano e rompono la compatibilità, la pipeline STT si interrompe.
+**Not "nothing external"**: the user must have working Python. If Python or pip update and break compatibility, the STT pipeline stops.
 
-**Fix Richiesto (Lungo Termine)**: Portare Whisper in Go puro.
-- Opzione A: `github.com/ggerganov/whisper.cpp` via CGO (rinuncia al "no CGO")
-- Opzione B: ONNX Runtime con modello Whisper esportato (Go puro via `github.com/yalue/onnxruntime_go`)
-- Opzione C: Mantenere Python ma containerizzare → `whisper_server` come immagine Docker sidecar
+**Required Fix (Long Term)**: Port Whisper to pure Go.
+- Option A: `github.com/ggerganov/whisper.cpp` via CGO (gives up "no CGO")
+- Option B: ONNX Runtime with exported Whisper model (pure Go via `github.com/yalue/onnxruntime_go`)
+- Option C: Keep Python but containerize → `whisper_server` as a Docker sidecar image
 
-**Fix Richiesto (Breve Termine)**: Health check esplicito al whisper server all'avvio con messaggio chiaro:
+**Required Fix (Short Term)**: Explicit health check against the whisper server at startup with clear message:
 ```
-2026-03-11T10:00:00Z WARN  whisper-local STT server non raggiungibile su http://localhost:9001
-2026-03-11T10:00:00Z WARN  Le trascrizioni non saranno disponibili. Avviare whisper_server.py
+2026-03-11T10:00:00Z WARN  whisper-local STT server unreachable at http://localhost:9001
+2026-03-11T10:00:00Z WARN  Transcriptions will not be available. Start whisper_server.py
 ```
 
 ---
 
-### 4. Nessun TURN Server — Connessioni Enterprise Falliscono
+### 4. No TURN Server — Enterprise Connections Fail
 
-**Problema**: In ambienti corporate con NAT simmetrico, STUN non è sufficiente per stabilire connessioni WebRTC. Senza TURN server integrato o configurabile, aftertalk non funziona in:
-- Reti aziendali con proxy HTTP
-- VPN strict
-- Docker networks (NAT simmetrico)
-- Ambienti Kubernetes
+**Problem**: In corporate environments with symmetric NAT, STUN is not sufficient to establish WebRTC connections. Without an integrated or configurable TURN server, aftertalk does not work in:
+- Corporate networks with HTTP proxies
+- Strict VPN
+- Docker networks (symmetric NAT)
+- Kubernetes environments
 
-**Non è autoconsistente in questi contesti**.
+**Not self-contained in these contexts**.
 
-**Fix Richiesto**:
-- Opzione A: Integrare Pion's built-in TURN server (`pion/turn`) → **completamente self-contained**
-- Opzione B: Documentare e configurare TURN server esterno (Coturn) → **dipendenza dichiarata**
+**Required Fix**:
+- Option A: Integrate Pion's built-in TURN server (`pion/turn`) → **completely self-contained**
+- Option B: Document and configure external TURN server (Coturn) → **declared dependency**
 
 ```go
-// Opzione A — TURN server embedded
+// Option A — embedded TURN server
 import "github.com/pion/turn/v3"
 
 func startTURNServer(cfg config.WebRTCConfig) (*turn.Server, error) {
-    // Pion ha un'implementazione TURN completa
-    // Porta configurabile, credenziali da config.yaml
+    // Pion has a complete TURN implementation
+    // Configurable port, credentials from config.yaml
 }
 ```
 
 ---
 
-### 5. Webhook Delivery — Fire-and-Forget senza Persistenza
+### 5. Webhook Delivery — Fire-and-Forget Without Persistence
 
-**Problema**: Il webhook viene consegnato in un goroutine `go s.deliverWebhook(...)` senza:
-- Coda persistente (se il server si riavvia durante la delivery, il webhook è perso)
-- Retry con backoff (solo tentativo singolo con timeout 30s)
+**Problem**: The webhook is delivered in a `go s.deliverWebhook(...)` goroutine without:
+- Persistent queue (if the server restarts during delivery, the webhook is lost)
+- Retry with backoff (single attempt with 30s timeout only)
 - Dead letter queue
-- Registro di successo/fallimento visibile tramite API
+- Success/failure log visible via API
 
-La tabella `webhook_events` esiste nel DB ma non è chiaro se venga effettivamente usata per tracciare le consegne.
+The `webhook_events` table exists in the DB but it is unclear whether it is actually used to track deliveries.
 
-**Fix Richiesto**:
+**Required Fix**:
 ```go
-// Webhook delivery con retry persistente
+// Webhook delivery with persistent retry
 type WebhookEvent struct {
     ID          string
     SessionID   string
@@ -168,13 +168,13 @@ type WebhookEvent struct {
 
 ---
 
-### 6. Nessuna Modalità Offline Verificata
+### 6. No Verified Offline Mode
 
-**Problema**: Il sistema afferma di funzionare con stub providers, ma non esiste un "modalità offline" esplicitamente testata e documentata. Non c'è un profilo di configurazione `offline.yaml` né un flag `--mode=offline`.
+**Problem**: The system claims to work with stub providers, but there is no explicitly tested and documented "offline mode". There is no `offline.yaml` configuration profile nor a `--mode=offline` flag.
 
-Un utente che installa il sistema senza internet non sa quale configurazione usare per avere un sistema funzionante (anche se minimale con stub).
+A user who installs the system without internet does not know which configuration to use to have a working system (even if minimal with stubs).
 
-**Fix Richiesto**:
+**Required Fix**:
 ```bash
 # Install flag
 ./install.sh --mode=offline     # Skip Ollama, skip Whisper download, use stubs
@@ -184,71 +184,71 @@ Un utente che installa il sistema senza internet non sa quale configurazione usa
 
 ---
 
-## Matrice di Self-Containment Reale
+## Real Self-Containment Matrix
 
-| Feature | Self-Contained? | Dipendenze Runtime | Fix |
+| Feature | Self-Contained? | Runtime Dependencies | Fix |
 |---|---|---|---|
-| HTTP API | ✅ Sì | Nessuna | — |
-| WebRTC Signaling | ✅ Sì | Nessuna | — |
-| SQLite DB | ✅ Sì | Nessuna | — |
-| JWT Auth | ✅ Sì | Nessuna | — |
-| STT (stub) | ✅ Sì | Nessuna | Documentare |
-| STT (whisper-local) | ⚠️ Parziale | Python + faster-whisper | Go-native Whisper |
-| STT (Google/AWS/Azure) | ❌ Stub | API Cloud + implementazione | Implementare |
-| LLM (stub) | ✅ Sì | Nessuna | Documentare |
-| LLM (Ollama) | ⚠️ Parziale | Ollama daemon (locale) | — |
-| LLM (OpenAI/Anthropic) | ✅ Sì | API Cloud (funzionante) | — |
-| WebRTC ICE (LAN) | ✅ Sì | Nessuna | — |
-| WebRTC ICE (WAN) | ⚠️ Parziale | STUN Google (hardcoded) | Config STUN |
-| WebRTC NAT Simmetrico | ❌ No | TURN server esterno | Pion TURN embedded |
-| Webhook Delivery | ⚠️ Parziale | HTTP endpoint esterno | Retry persistente |
+| HTTP API | ✅ Yes | None | — |
+| WebRTC Signaling | ✅ Yes | None | — |
+| SQLite DB | ✅ Yes | None | — |
+| JWT Auth | ✅ Yes | None | — |
+| STT (stub) | ✅ Yes | None | Document |
+| STT (whisper-local) | ⚠️ Partial | Python + faster-whisper | Go-native Whisper |
+| STT (Google/AWS/Azure) | ❌ Stub | Cloud API + implementation | Implement |
+| LLM (stub) | ✅ Yes | None | Document |
+| LLM (Ollama) | ⚠️ Partial | Ollama daemon (local) | — |
+| LLM (OpenAI/Anthropic) | ✅ Yes | Cloud API (working) | — |
+| WebRTC ICE (LAN) | ✅ Yes | None | — |
+| WebRTC ICE (WAN) | ⚠️ Partial | Google STUN (hardcoded) | Config STUN |
+| WebRTC Symmetric NAT | ❌ No | External TURN server | Pion TURN embedded |
+| Webhook Delivery | ⚠️ Partial | External HTTP endpoint | Persistent retry |
 
 ---
 
-## Priorità di Intervento
+## Intervention Priority
 
-| # | Gap | Impatto | Effort | Priorità |
-|---|-----|---------|--------|----------|
-| 1 | STT cloud = stub, non funzionante | Critico | Alto | **Critica** |
-| 4 | No TURN → NAT simmetrico fallisce | Alto | Medio | **Alta** |
-| 2 | STUN hardcoded Google | Medio | Basso | **Alta** |
-| 3 | Whisper dipende da Python | Medio | Alto | **Media** |
-| 5 | Webhook fire-and-forget | Medio | Medio | **Media** |
-| 6 | Nessuna modalità offline | Basso | Basso | **Bassa** |
+| # | Gap | Impact | Effort | Priority |
+|---|-----|--------|--------|----------|
+| 1 | STT cloud = stub, not working | Critical | High | **Critical** |
+| 4 | No TURN → symmetric NAT fails | High | Medium | **High** |
+| 2 | Hardcoded Google STUN | Medium | Low | **High** |
+| 3 | Whisper depends on Python | Medium | High | **Medium** |
+| 5 | Fire-and-forget webhook | Medium | Medium | **Medium** |
+| 6 | No offline mode | Low | Low | **Low** |
 
 ---
 
-## Passi di Implementazione
+## Implementation Steps
 
-### Step 1 — Implementare Google STT reale (4-6h)
+### Step 1 — Implement real Google STT (4-6h)
 
 ```go
-// internal/ai/stt/google.go — implementazione reale
+// internal/ai/stt/google.go — real implementation
 func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audio *AudioData) (*TranscriptionResult, error) {
-    // 1. Get OAuth2 token da credentials.json
+    // 1. Get OAuth2 token from credentials.json
     // 2. Encode audio in base64
-    // 3. POST a https://speech.googleapis.com/v1/speech:recognize
-    // 4. Parse response JSON → TranscriptionSegment[]
+    // 3. POST to https://speech.googleapis.com/v1/speech:recognize
+    // 4. Parse JSON response → TranscriptionSegment[]
 }
 ```
 
-### Step 2 — TURN Server Embedded (6-8h)
+### Step 2 — Embedded TURN Server (6-8h)
 
 ```go
-// cmd/aftertalk/main.go — avviare TURN se configurato
+// cmd/aftertalk/main.go — start TURN if configured
 if cfg.WebRTC.TURN.Enabled {
     turnServer, err := webrtc.StartTURNServer(cfg.WebRTC.TURN)
     // Pion turn: github.com/pion/turn/v3
 }
 ```
 
-### Step 3 — Config STUN/TURN (1h)
+### Step 3 — STUN/TURN Config (1h)
 
-Aggiungere `WebRTCConfig` e leggere in `peer.go` (vedi documento installer).
+Add `WebRTCConfig` and read it in `peer.go` (see installer document).
 
 ### Step 4 — Webhook Retry Queue (3-4h)
 
 ```go
-// Usare la tabella webhook_events esistente per una coda persistente
-// Worker goroutine che legge eventi pending e riprova con backoff
+// Use the existing webhook_events table for a persistent queue
+// Worker goroutine that reads pending events and retries with backoff
 ```

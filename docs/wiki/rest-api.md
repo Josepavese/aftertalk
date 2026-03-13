@@ -2,14 +2,14 @@
 
 Base URL: `http://localhost:8080`
 
-## Autenticazione
+## Authentication
 
-Tutti gli endpoint `/v1/*` richiedono l'header:
+All `/v1/*` endpoints require the header:
 ```
 X-API-Key: your-api-key
 ```
 
-Eccezione: `GET /v1/minutes/pull/{token}` — il token nell'URL è la credential.
+Exception: `GET /v1/minutes/pull/{token}` — the token in the URL is the credential.
 
 ---
 
@@ -32,14 +32,14 @@ curl http://localhost:8080/v1/ready
 ## Config
 
 ### GET /v1/config
-Restituisce i template disponibili e l'ID del template di default.
+Returns available templates and the default template ID.
 ```bash
 curl -H "X-API-Key: $KEY" http://localhost:8080/v1/config
 # → {"templates":[...],"default_template_id":"therapy"}
 ```
 
 ### GET /v1/rtc-config
-Restituisce i server ICE da passare a `RTCPeerConnection`.
+Returns ICE servers to pass to `RTCPeerConnection`.
 ```bash
 curl -H "X-API-Key: $KEY" http://localhost:8080/v1/rtc-config
 # → {"iceServers":[{"urls":["stun:stun.l.google.com:19302"]}]}
@@ -50,7 +50,7 @@ curl -H "X-API-Key: $KEY" http://localhost:8080/v1/rtc-config
 ## Sessions
 
 ### POST /v1/sessions
-Crea una nuova sessione con i partecipanti.
+Creates a new session with participants.
 
 ```bash
 curl -X POST http://localhost:8080/v1/sessions \
@@ -60,20 +60,20 @@ curl -X POST http://localhost:8080/v1/sessions \
     "participant_count": 2,
     "template_id": "therapy",
     "participants": [
-      {"user_id": "dott-rossi", "role": "therapist"},
-      {"user_id": "paziente-1", "role": "patient"}
+      {"user_id": "dr-smith", "role": "therapist"},
+      {"user_id": "patient-1", "role": "patient"}
     ]
   }'
 ```
 
-Risposta:
+Response:
 ```json
 {
   "session_id": "uuid",
   "participants": [
     {
       "id": "uuid",
-      "user_id": "dott-rossi",
+      "user_id": "dr-smith",
       "role": "therapist",
       "token": "eyJ...",
       "expires_at": "2026-03-13T14:00:00Z"
@@ -83,13 +83,13 @@ Risposta:
 }
 ```
 
-**Validazione:**
-- Almeno 2 partecipanti
-- `user_id` max 128 char, `role` max 64 char
-- `template_id` opzionale; se omesso usa il template di default
+**Validation:**
+- At least 2 participants
+- `user_id` max 128 chars, `role` max 64 chars
+- `template_id` optional; defaults to the configured default template
 
 ### GET /v1/sessions
-Lista sessioni con paginazione.
+List sessions with pagination.
 
 ```bash
 curl -H "X-API-Key: $KEY" \
@@ -97,8 +97,8 @@ curl -H "X-API-Key: $KEY" \
 # → {"sessions":[...],"total":42,"limit":20,"offset":0}
 ```
 
-Parametri query:
-- `status`: filtra per stato (`active`, `ended`, `processing`, `completed`, `error`)
+Query parameters:
+- `status`: filter by status (`active`, `ended`, `processing`, `completed`, `error`)
 - `limit`: max 200, default 50
 - `offset`: default 0
 
@@ -108,24 +108,24 @@ curl -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid
 ```
 
 ### GET /v1/sessions/{id}/status
-Risposta compatta `{id, status}`.
+Compact response `{id, status}`.
 ```bash
 curl -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid/status
 # → {"id":"uuid","status":"completed"}
 ```
 
 ### POST /v1/sessions/{id}/end
-Termina la sessione. In background: trascrive l'audio rimanente, genera le minute, chiama il webhook.
+Ends the session. In the background: transcribes remaining audio, generates minutes, calls the webhook.
 
 ```bash
 curl -X POST -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid/end
 # → 204 No Content
 ```
 
-**Idempotente**: chiamate multiple su una sessione già terminata restituiscono 204 senza errore.
+**Idempotent**: multiple calls on an already-ended session return 204 without error.
 
 ### DELETE /v1/sessions/{id}
-Elimina sessione e dati associati. Fallisce se la sessione è ancora `active`.
+Deletes the session and associated data. Fails if the session is still `active`.
 
 ```bash
 curl -X DELETE -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid
@@ -157,7 +157,7 @@ curl -H "X-API-Key: $KEY" \
   "http://localhost:8080/v1/minutes?session_id=uuid"
 ```
 
-Risposta (struttura sections dipende dal template):
+Response (sections structure depends on the template):
 ```json
 {
   "id": "uuid",
@@ -167,18 +167,18 @@ Risposta (struttura sections dipende dal template):
   "status": "ready",
   "provider": "openai",
   "sections": {
-    "themes": ["Ansia da prestazione", "Relazioni familiari"],
+    "themes": ["Performance anxiety", "Family relationships"],
     "contents_reported": [
-      {"text": "Il paziente riferisce...", "timestamp": 1200}
+      {"text": "The patient reports...", "timestamp": 1200}
     ],
     "progress_issues": {
-      "progress": ["Miglioramento del sonno"],
-      "issues": ["Ancora difficoltà nelle relazioni"]
+      "progress": ["Improved sleep"],
+      "issues": ["Still struggling with relationships"]
     },
-    "next_steps": ["Esercizio di respirazione quotidiano"]
+    "next_steps": ["Daily breathing exercise"]
   },
   "citations": [
-    {"timestamp_ms": 1200, "text": "non riesco a dormire", "role": "patient"}
+    {"timestamp_ms": 1200, "text": "I can't sleep", "role": "patient"}
   ],
   "generated_at": "2026-03-13T12:00:00Z"
 }
@@ -190,23 +190,23 @@ curl -H "X-API-Key: $KEY" http://localhost:8080/v1/minutes/uuid
 ```
 
 ### PUT /v1/minutes/{id}
-Aggiorna le minute. Crea automaticamente un record di history con la versione precedente.
+Updates the minutes. Automatically creates a history record with the previous version.
 
 ```bash
 curl -X PUT http://localhost:8080/v1/minutes/uuid \
   -H "X-API-Key: $KEY" \
   -H "Content-Type: application/json" \
-  -H "X-User-ID: dott-rossi" \
+  -H "X-User-ID: dr-smith" \
   -d '{
     "sections": {
-      "themes": ["Ansia da prestazione"],
-      "next_steps": ["Esercizio respirazione 2x/giorno"]
+      "themes": ["Performance anxiety"],
+      "next_steps": ["Breathing exercise 2x/day"]
     },
     "citations": []
   }'
 ```
 
-`X-User-ID` è opzionale; se omesso viene salvato come `"unknown"`.
+`X-User-ID` is optional; if omitted it is stored as `"unknown"`.
 
 ### DELETE /v1/minutes/{id}
 ```bash
@@ -215,7 +215,7 @@ curl -X DELETE -H "X-API-Key: $KEY" http://localhost:8080/v1/minutes/uuid
 ```
 
 ### GET /v1/minutes/{id}/versions
-Storico delle modifiche.
+History of edits.
 ```bash
 curl -H "X-API-Key: $KEY" http://localhost:8080/v1/minutes/uuid/versions
 # → [{"id":"...","minutes_id":"...","version":1,"content":"{...}","edited_at":"...","edited_by":"..."}]
@@ -225,37 +225,37 @@ curl -H "X-API-Key: $KEY" http://localhost:8080/v1/minutes/uuid/versions
 
 ## Notify-Pull: GET /v1/minutes/pull/{token}
 
-**No API key richiesta** — il token è la credential.
+**No API key required** — the token is the credential.
 
-Usato nel flusso `notify_pull`. Il token è single-use e scade dopo `token_ttl` (default: 1h).
+Used in the `notify_pull` flow. The token is single-use and expires after `token_ttl` (default: 1h).
 
 ```bash
 curl http://localhost:8080/v1/minutes/pull/TOKEN
-# → {minutes JSON} oppure 404 se token invalido/scaduto/già usato
+# → {minutes JSON} or 404 if token is invalid/expired/already used
 ```
 
-Tutti gli errori restituiscono `404` indistinguibilmente (prevenzione oracle attack).
+All errors return `404` indistinguishably (prevents oracle attacks).
 
-Vedere [webhook.md](webhook.md) per il flusso completo.
+See [webhook.md](webhook.md) for the complete flow.
 
 ---
 
 ## WebSocket / Signaling
 
-### GET /signaling  (o /ws)
-WebSocket per la segnalazione WebRTC. Autenticazione via JWT token nel query string.
+### GET /signaling  (or /ws)
+WebSocket for WebRTC signaling. Authenticated via JWT token in the query string.
 
 ```
 ws://localhost:8080/signaling?token=eyJ...
 ```
 
-Messaggi inviati dal client:
+Messages sent by the client:
 ```json
 {"type": "offer", "sdp": "v=0..."}
 {"type": "ice-candidate", "candidate": {...}}
 ```
 
-Messaggi ricevuti dal server:
+Messages received from the server:
 ```json
 {"type": "answer", "sdp": "v=0..."}
 {"type": "ice-candidate", "candidate": {...}}
@@ -266,20 +266,20 @@ Messaggi ricevuti dal server:
 ## Test / Demo
 
 ### POST /test/start
-Crea o unisce una sessione tramite codice stanza. Richiede API key se configurata.
+Creates or joins a session via room code. Requires API key if configured.
 
 ```bash
 curl -X POST http://localhost:8080/test/start \
   -H "X-API-Key: $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"code":"stanza-01","name":"Dott. Rossi","role":"therapist","template_id":"therapy"}'
+  -d '{"code":"room-01","name":"Dr. Smith","role":"therapist","template_id":"therapy"}'
 # → {"session_id":"uuid","token":"eyJ..."}
 ```
 
-Se il ruolo è già occupato da un altro utente: `409 Conflict`.
+If the role is already taken by another user: `409 Conflict`.
 
 ### GET /demo/config
-Restituisce template e (se `demo.enabled=true`) l'API key. **Solo per sviluppo locale.**
+Returns templates and (if `demo.enabled=true`) the API key. **For local development only.**
 
 ### GET /v1/openapi.yaml
-Spec OpenAPI completa (servita dal file `specs/contracts/api.yaml`).
+Full OpenAPI spec (served from `specs/contracts/api.yaml`).

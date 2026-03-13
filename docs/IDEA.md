@@ -1,74 +1,74 @@
-# Specifiche Tecniche
+# Technical Specification
 
-## Modulo AI per Minuta Automatica di Fine Seduta
+## AI Module for Automatic Session Minutes
 
-Documento destinato **ai progettisti e sviluppatori**. Linguaggio volutamente operativo e prescrittivo.
-
----
-
-## 1. Scopo
-
-Implementare un modulo che:
-
-* intercetti **solo l’audio** delle sedute WebRTC,
-* generi una **trascrizione testuale con ruoli certi (medico/paziente)**,
-* produca una **minuta AI strutturata** a fine seduta,
-* renda la minuta **consultabile e modificabile** dal medico.
-
-Il sistema **NON**:
-
-* registra o conserva audio in modo persistente,
-* effettua diagnosi automatiche,
-* espone trascrizioni o minute al paziente.
+Document for **architects and developers**. Language is intentionally operational and prescriptive.
 
 ---
 
-## 2. Vincoli architetturali
+## 1. Purpose
 
-* PeerJS usato **esclusivamente per signaling**
-* Media WebRTC **P2P tra medico e paziente**
-* Terzo peer dedicato (Bot Recorder) per ricezione audio
-* Backend applicativo = source of truth per ruoli e sessioni
-* Tutte le operazioni AI sono **post‑sessione (batch)**
+Implement a module that:
+
+* intercepts **only the audio** of WebRTC sessions,
+* generates a **textual transcription with verified roles (professional/patient)**,
+* produces a **structured AI minutes** at the end of the session,
+* makes the minutes **viewable and editable** by the professional.
+
+The system **does NOT**:
+
+* record or permanently store audio,
+* perform automatic diagnoses,
+* expose transcriptions or minutes to the patient.
 
 ---
 
-## 3. Attori e servizi
+## 2. Architectural constraints
 
-### 3.1 Client Medico
+* PeerJS used **exclusively for signaling**
+* WebRTC media **P2P between professional and patient**
+* Dedicated third peer (Bot Recorder) for audio reception
+* Application backend = source of truth for roles and sessions
+* All AI operations are **post-session (batch)**
 
-* Browser Web
-* WebRTC audio/video P2P
-* WebRTC audio verso Bot Recorder
+---
 
-### 3.2 Client Paziente
+## 3. Actors and services
 
-* Browser Web
-* WebRTC audio/video P2P
-* WebRTC audio verso Bot Recorder
+### 3.1 Professional client
 
-### 3.3 Backend Applicativo
+* Web browser
+* P2P WebRTC audio/video
+* WebRTC audio toward Bot Recorder
 
-* Gestione utenti e ruoli
-* Creazione seduta (`callId`)
-* Emissione token firmati
-* Segnalazione fine seduta
+### 3.2 Patient client
+
+* Web browser
+* P2P WebRTC audio/video
+* WebRTC audio toward Bot Recorder
+
+### 3.3 Application backend
+
+* User and role management
+* Session creation (`callId`)
+* Signed token issuance
+* Session end signaling
 
 ### 3.4 Bot Recorder / Transcriber
 
-* Peer WebRTC server-side
-* Ricezione audio
-* Timestamp server-side
-* Integrazione STT
-* Persistenza temporanea trascrizioni
+* Server-side WebRTC peer
+* Audio reception
+* Server-side timestamping
+* STT integration
+* Temporary transcription persistence
 
 ---
 
-## 4. Identità, ruoli e sicurezza
+## 4. Identity, roles and security
 
-### 4.1 Token di sessione
+### 4.1 Session token
 
-Il backend emette un JWT per ogni partecipante:
+The backend issues a JWT for each participant:
 
 ```
 {
@@ -80,53 +80,53 @@ Il backend emette un JWT per ogni partecipante:
 }
 ```
 
-Regole:
+Rules:
 
-* un solo stream per `(callId, role)`
-* token verificato dal Bot Recorder
-* token scaduti o riusati → connessione rifiutata
-
----
-
-## 5. Flusso di seduta (sequenza tecnica)
-
-1. Backend crea `callId`
-2. Backend emette token firmati
-3. Client avvia call P2P (PeerJS)
-4. Client apre WebRTC audio verso Bot Recorder
-5. Bot valida token
-6. Bot riceve audio e assegna timestamp
-7. Audio processato in chunk
-8. A fine seduta backend invia `SESSION_END`
-9. Bot finalizza trascrizione
-10. Bot invoca pipeline AI minuta
+* one stream per `(callId, role)`
+* token verified by the Bot Recorder
+* expired or reused tokens → connection rejected
 
 ---
 
-## 6. Gestione audio
+## 5. Session flow (technical sequence)
 
-### 6.1 Caratteristiche audio
+1. Backend creates `callId`
+2. Backend issues signed tokens
+3. Client starts P2P call (PeerJS)
+4. Client opens WebRTC audio toward Bot Recorder
+5. Bot validates token
+6. Bot receives audio and assigns timestamps
+7. Audio processed in chunks
+8. At session end, backend sends `SESSION_END`
+9. Bot finalizes transcription
+10. Bot invokes AI minutes pipeline
+
+---
+
+## 6. Audio management
+
+### 6.1 Audio characteristics
 
 * Codec: Opus (input)
-* Conversione interna: PCM mono 16kHz
-* Chunking: 10–30 secondi
+* Internal conversion: PCM mono 16kHz
+* Chunking: 10–30 seconds
 
-### 6.2 Timestamp
+### 6.2 Timestamps
 
-* Clock monotonic server-side
-* Timestamp relativi all’inizio seduta
-* Niente timestamp client-side
+* Server-side monotonic clock
+* Timestamps relative to session start
+* No client-side timestamps
 
 ---
 
-## 7. Trascrizione (STT)
+## 7. Transcription (STT)
 
-### 7.1 Modalità
+### 7.1 Mode
 
 * Batch STT (post-processing)
-* Provider cloud configurabile
+* Configurable cloud provider
 
-### 7.2 Output STT
+### 7.2 STT output
 
 ```
 {
@@ -139,61 +139,61 @@ Regole:
 }
 ```
 
-Persistenza:
+Persistence:
 
 * append-only
-* nessuna modifica in-place
+* no in-place modification
 
 ---
 
-## 8. Minuta AI (LLM)
+## 8. AI Minutes (LLM)
 
 ### 8.1 Pre-processing
 
-* Ordinamento per timestamp
-* Chunking trascrizione (2–5 min)
+* Sort by timestamp
+* Transcription chunking (2–5 min)
 
 ### 8.2 Prompting
 
-Il prompt deve:
+The prompt must:
 
-* vietare diagnosi
-* vietare inferenze non esplicite
-* richiedere output strutturato
-* includere citazioni con timestamp
+* prohibit diagnoses
+* prohibit non-explicit inferences
+* require structured output
+* include citations with timestamps
 
-### 8.3 Output minuta
+### 8.3 Minutes output
 
-Struttura obbligatoria:
+Mandatory structure:
 
-* Temi principali
-* Contenuti riportati dal paziente
-* Interventi del terapeuta
-* Progressi / criticità
+* Main themes
+* Patient-reported contents
+* Therapist interventions
+* Progress / issues
 * Next steps
-* Citazioni (timestamp)
+* Citations (with timestamps)
 
 ---
 
-## 9. Consegna al backend
+## 9. Backend delivery
 
-* La minuta è inviata via webhook applicativo
-* Il webhook deve essere idempotente
-* Stato: `READY → DELIVERED`
+* Minutes are sent via application webhook
+* The webhook must be idempotent
+* Status: `READY → DELIVERED`
 
 ---
 
-## 10. Frontend – UI Medico
+## 10. Frontend – Professional UI
 
-### 10.1 Vista elenco sedute
+### 10.1 Session list view
 
-* Stato AI: in corso / pronta / errore
+* AI status: in progress / ready / error
 
-### 10.2 Vista minuta
+### 10.2 Minutes view
 
-* Testo editabile
-* Timestamp cliccabili
-* Salvataggio manuale
+* Editable text
+* Clickable timestamps
+* Manual save
 
 ---
 
@@ -201,34 +201,30 @@ Struttura obbligatoria:
 
 * STT failure → retry
 * LLM failure → retry
-* Timeout → stato `ERROR`
+* Timeout → `ERROR` status
 
 ---
 
-## 12. Retention e cleanup
+## 12. Retention and cleanup
 
-* Audio: **mai persistito**
-* Trascrizione: retention configurabile
-* Log: senza contenuti sensibili
+* Audio: **never persisted**
+* Transcription: configurable retention
+* Logs: without sensitive content
 
 ---
 
 ## 13. Non-goals
 
-* Analisi emotiva automatica
-* Diagnosi clinica
-* Accesso paziente alla minuta
+* Automatic emotional tone analysis
+* Clinical diagnosis
+* Patient access to the minutes
 
 ---
 
 ## 14. Definition of Done
 
-* Trascrizione corretta con ruoli
-* Minuta generata e visibile
-* Editing funzionante
-* Nessun audio persistente
-* Audit sicurezza superato
-
----
-
-Fine specifiche tecniche.
+* Correct transcription with roles
+* Minutes generated and visible
+* Editing working
+* No persistent audio
+* Security audit passed
