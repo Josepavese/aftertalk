@@ -20,7 +20,7 @@ Documentazione operativa verificata sul codice sorgente.
 
 ```bash
 # Installa
-curl -fsSL https://raw.githubusercontent.com/flowup/aftertalk/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.sh | bash
 
 # Configura (copia il template)
 cp .env.example .env && nano .env   # cambia JWT_SECRET, API_KEY, LLM_PROVIDER
