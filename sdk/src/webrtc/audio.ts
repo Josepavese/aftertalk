@@ -17,6 +17,9 @@ export class AudioManager {
   }
 
   async acquire(constraints?: MediaTrackConstraints): Promise<MediaStream> {
+    // Stop any existing stream before acquiring a new one to avoid resource leak.
+    this.release();
+
     const audioConstraints: MediaTrackConstraints = {
       echoCancellation: true,
       noiseSuppression: true,
