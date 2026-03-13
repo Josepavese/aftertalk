@@ -28,9 +28,25 @@ func NewRetrier(db *sql.DB, client *Client) *Retrier {
 	return &Retrier{db: db, client: client}
 }
 
-// Enqueue persists a pending webhook event. The caller should call this instead
-// of Client.Send directly; the background worker delivers it with retries.
+// payloadTypeMinutes is the push-mode payload discriminator stored in webhook_events.
+const payloadTypeMinutes = "minutes"
+
+// payloadTypeNotification is the notify_pull-mode payload discriminator.
+const payloadTypeNotification = "notification"
+
+// Enqueue persists a pending push-mode webhook event (full minutes payload).
+// The background worker will call Client.Send() to deliver it with retries.
 func (r *Retrier) Enqueue(ctx context.Context, minutesID, webhookURL string, payload *MinutesPayload) error {
+	return r.enqueue(ctx, minutesID, webhookURL, payloadTypeMinutes, payload)
+}
+
+// EnqueueNotification persists a pending notify_pull-mode webhook event.
+// The background worker will call Client.SendNotification() to deliver it.
+func (r *Retrier) EnqueueNotification(ctx context.Context, minutesID, webhookURL string, payload *NotificationPayload) error {
+	return r.enqueue(ctx, minutesID, webhookURL, payloadTypeNotification, payload)
+}
+
+func (r *Retrier) enqueue(ctx context.Context, minutesID, webhookURL, payloadType string, payload interface{}) error {
 	if webhookURL == "" {
 		return nil
 	}
@@ -43,9 +59,10 @@ func (r *Retrier) Enqueue(ctx context.Context, minutesID, webhookURL string, pay
 	now := time.Now().UTC()
 	_, err = r.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO webhook_events
-			(id, minutes_id, webhook_url, payload, attempt_number, status, next_retry_at, created_at)
-		VALUES (?, ?, ?, ?, 0, 'pending', ?, ?)`,
-		id, minutesID, webhookURL, string(payloadBytes), now.Format(time.RFC3339), now.Format(time.RFC3339),
+			(id, minutes_id, webhook_url, payload, payload_type, attempt_number, status, next_retry_at, created_at)
+		VALUES (?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
+		id, minutesID, webhookURL, string(payloadBytes), payloadType,
+		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
 	return err
 }
@@ -68,7 +85,7 @@ func (r *Retrier) Run(ctx context.Context) {
 
 func (r *Retrier) processPending(ctx context.Context) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, minutes_id, webhook_url, payload, attempt_number
+		SELECT id, minutes_id, webhook_url, payload, payload_type, attempt_number
 		FROM webhook_events
 		WHERE status = 'pending' AND next_retry_at <= ?
 		ORDER BY created_at ASC
@@ -82,38 +99,56 @@ func (r *Retrier) processPending(ctx context.Context) {
 	defer rows.Close()
 
 	type event struct {
-		id, minutesID, webhookURL, payload string
-		attempt                            int
+		id, minutesID, webhookURL, payload, payloadType string
+		attempt                                         int
 	}
 	var events []event
 	for rows.Next() {
 		var e event
-		if err := rows.Scan(&e.id, &e.minutesID, &e.webhookURL, &e.payload, &e.attempt); err != nil {
+		var pt sql.NullString
+		if err := rows.Scan(&e.id, &e.minutesID, &e.webhookURL, &e.payload, &pt, &e.attempt); err != nil {
 			logging.Errorf("webhook retrier: scan row: %v", err)
 			continue
+		}
+		if pt.Valid {
+			e.payloadType = pt.String
+		} else {
+			e.payloadType = payloadTypeMinutes // legacy rows without payload_type
 		}
 		events = append(events, e)
 	}
 	rows.Close()
 
 	for _, e := range events {
-		r.deliver(ctx, e.id, e.minutesID, e.webhookURL, e.payload, e.attempt)
+		r.deliver(ctx, e.id, e.minutesID, e.webhookURL, e.payload, e.payloadType, e.attempt)
 	}
 }
 
-func (r *Retrier) deliver(ctx context.Context, id, minutesID, webhookURL, payloadJSON string, attempt int) {
+func (r *Retrier) deliver(ctx context.Context, id, minutesID, webhookURL, payloadJSON, payloadType string, attempt int) {
 	attempt++
-	var payload MinutesPayload
-	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
-		logging.Errorf("webhook retrier: unmarshal payload for event %s: %v", id, err)
-		r.markFailed(ctx, id, attempt, "unmarshal error: "+err.Error())
-		return
-	}
 
 	deliverCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	sendErr := r.client.Send(deliverCtx, &payload)
+	var sendErr error
+	switch payloadType {
+	case payloadTypeNotification:
+		var payload NotificationPayload
+		if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+			logging.Errorf("webhook retrier: unmarshal notification payload for event %s: %v", id, err)
+			r.markFailed(ctx, id, attempt, "unmarshal error: "+err.Error())
+			return
+		}
+		sendErr = r.client.SendNotification(deliverCtx, &payload)
+	default: // payloadTypeMinutes and legacy rows
+		var payload MinutesPayload
+		if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+			logging.Errorf("webhook retrier: unmarshal payload for event %s: %v", id, err)
+			r.markFailed(ctx, id, attempt, "unmarshal error: "+err.Error())
+			return
+		}
+		sendErr = r.client.Send(deliverCtx, &payload)
+	}
 	now := time.Now().UTC()
 
 	if sendErr == nil {

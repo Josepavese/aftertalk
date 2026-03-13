@@ -35,6 +35,7 @@ func openTestDB(t *testing.T) *sql.DB {
 			minutes_id TEXT NOT NULL,
 			webhook_url TEXT NOT NULL,
 			payload TEXT NOT NULL,
+			payload_type TEXT NOT NULL DEFAULT 'minutes',
 			attempt_number INTEGER NOT NULL DEFAULT 0,
 			status TEXT NOT NULL DEFAULT 'pending',
 			next_retry_at TEXT,

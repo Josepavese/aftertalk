@@ -12,20 +12,36 @@ import (
 	"github.com/go-chi/render"
 )
 
+// MinutesService is the interface required by MinutesHandler.
+// It is implemented by minutes.Service.
 type MinutesService interface {
 	GetMinutes(ctx context.Context, sessionID string) (*minutes.Minutes, error)
 	GetMinutesByID(ctx context.Context, id string) (*minutes.Minutes, error)
 	UpdateMinutes(ctx context.Context, id string, updatedMinutes *minutes.Minutes, editedBy string) (*minutes.Minutes, error)
 	GetMinutesHistory(ctx context.Context, minutesID string) ([]*minutes.MinutesHistory, error)
 	DeleteMinutes(ctx context.Context, id string) error
+	// ConsumeRetrievalToken validates and atomically marks a pull token as used.
+	// Returns a generic error (not distinguishing invalid/expired/used) to prevent oracle attacks.
+	ConsumeRetrievalToken(ctx context.Context, tokenID string) (*minutes.RetrievalToken, error)
+	// PurgeMinutes deletes minutes, transcriptions, and retrieval tokens for the
+	// given minutes ID. Called after a successful pull when delete_on_pull is true.
+	PurgeMinutes(ctx context.Context, minutesID string)
 }
 
+// MinutesHandler handles all HTTP routes for the minutes resource.
 type MinutesHandler struct {
-	service MinutesService
+	service      MinutesService
+	deleteOnPull bool // true → purge DB after a successful pull (notify_pull mode)
 }
 
 func NewMinutesHandler(service MinutesService) *MinutesHandler {
 	return &MinutesHandler{service: service}
+}
+
+// NewMinutesHandlerWithConfig creates a handler with the delete-on-pull flag
+// derived from the webhook configuration.
+func NewMinutesHandlerWithConfig(service MinutesService, deleteOnPull bool) *MinutesHandler {
+	return &MinutesHandler{service: service, deleteOnPull: deleteOnPull}
 }
 
 func (h *MinutesHandler) Routes() chi.Router {
@@ -144,4 +160,46 @@ func (h *MinutesHandler) GetMinutesHistory(w http.ResponseWriter, r *http.Reques
 	}
 
 	render.JSON(w, r, history)
+}
+
+// PullMinutes handles GET /v1/minutes/pull/{token}.
+//
+// This endpoint is part of the "notify_pull" secure delivery flow:
+//  1. After minutes generation, a notification webhook is sent to the operator's
+//     system containing a signed retrieval URL (no medical data).
+//  2. The operator's server calls this endpoint using the token from that URL.
+//  3. The minutes are returned once; the token is then permanently consumed.
+//  4. If delete_on_pull is enabled (default for notify_pull mode), the minutes
+//     and transcriptions are purged from the Aftertalk DB after delivery.
+//
+// Authentication: the token in the URL path IS the credential — no API key needed.
+// All invalid/expired/used tokens return 404 (intentionally indistinguishable).
+func (h *MinutesHandler) PullMinutes(w http.ResponseWriter, r *http.Request) {
+	tokenID := chi.URLParam(r, "token")
+	if tokenID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	tok, err := h.service.ConsumeRetrievalToken(r.Context(), tokenID)
+	if err != nil {
+		// Intentionally generic 404 — do not leak whether the token existed.
+		logging.Warnf("PullMinutes: invalid/consumed/expired token %s: %v", tokenID, err)
+		http.NotFound(w, r)
+		return
+	}
+
+	m, err := h.service.GetMinutesByID(r.Context(), tok.MinutesID)
+	if err != nil {
+		logging.Errorf("PullMinutes: fetch minutes %s: %v", tok.MinutesID, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	render.JSON(w, r, m)
+
+	// Purge after responding so the client receives the data even if purge fails.
+	if h.deleteOnPull {
+		go h.service.PurgeMinutes(r.Context(), tok.MinutesID)
+	}
 }

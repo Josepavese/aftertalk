@@ -327,6 +327,14 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 		})
 	})
 
+	// GET /v1/minutes/pull/{token} — notify_pull secure retrieval endpoint.
+	// Registered outside the API key middleware group: the token in the URL path
+	// IS the credential (single-use, time-limited). All invalid/expired/used tokens
+	// return 404 (intentionally indistinguishable from not-found).
+	if minutesHandler != nil {
+		r.Get("/v1/minutes/pull/{token}", minutesHandler.PullMinutes)
+	}
+
 	// WebSocket endpoints are public — they authenticate via JWT token in query param
 	r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
 		botServer.HandleWebSocket(w, r)

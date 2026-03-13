@@ -85,7 +85,9 @@ func main() {
 	if err := runMigrations(ctx, db); err != nil {
 		logger.Fatalf("Failed to run migrations: %v", err)
 	}
-	migrateWebhookEvents(ctx, db) // idempotent: adds payload + next_retry_at columns
+	migrateWebhookEvents(ctx, db)      // idempotent: adds payload + next_retry_at columns
+	migrateRetrievalTokens(ctx, db)    // idempotent: adds retrieval_tokens table
+	migrateWebhookPayloadType(ctx, db) // idempotent: adds payload_type column to webhook_events
 	logger.Info("Migrations completed")
 
 	sessionCache := cache.NewSessionCache()
@@ -161,6 +163,12 @@ func main() {
 	}
 	logger.Infof("LLM provider: %s", llmProvider.Name())
 
+	// Resolve delete_on_pull: default true for notify_pull mode.
+	deleteOnPull := true
+	if cfg.Webhook.DeleteOnPull != nil {
+		deleteOnPull = *cfg.Webhook.DeleteOnPull
+	}
+
 	minutesService := minutes.NewServiceWithDeps(
 		minutesRepo,
 		llmProvider,
@@ -170,8 +178,13 @@ func main() {
 			MaxBackoff:     cfg.Processing.LLMMaxBackoff,
 		},
 		&minutes.WebhookConfig{
-			URL:     cfg.Webhook.URL,
-			Timeout: cfg.Webhook.Timeout,
+			URL:          cfg.Webhook.URL,
+			Timeout:      cfg.Webhook.Timeout,
+			Mode:         cfg.Webhook.Mode,
+			Secret:       cfg.Webhook.Secret,
+			TokenTTL:     cfg.Webhook.TokenTTL,
+			DeleteOnPull: deleteOnPull,
+			PullBaseURL:  cfg.Webhook.PullBaseURL,
 		},
 	)
 
@@ -181,11 +194,16 @@ func main() {
 		if timeout == 0 {
 			timeout = 30 * time.Second
 		}
-		webhookClient := webhook.NewClient(cfg.Webhook.URL, timeout)
+		var webhookClient *webhook.Client
+		if cfg.Webhook.Mode == "notify_pull" && cfg.Webhook.Secret != "" {
+			webhookClient = webhook.NewClientWithSecret(cfg.Webhook.URL, cfg.Webhook.Secret, timeout)
+		} else {
+			webhookClient = webhook.NewClient(cfg.Webhook.URL, timeout)
+		}
 		retrier := webhook.NewRetrier(db.DB, webhookClient)
 		minutesService.WithWebhookRetrier(retrier)
 		go retrier.Run(ctx)
-		logger.Infof("Webhook retry worker started (url=%s)", cfg.Webhook.URL)
+		logger.Infof("Webhook retry worker started (url=%s, mode=%s)", cfg.Webhook.URL, cfg.Webhook.Mode)
 	}
 
 	transcriptionAdapter := &api.TranscriptionAdapter{Svc: transcriptionService}
@@ -226,7 +244,7 @@ func main() {
 
 	botServer := api.NewBotServer(sessionService, jwtManager, tokenCache, iceServers)
 
-	minutesHandler := handler.NewMinutesHandler(minutesService)
+	minutesHandler := handler.NewMinutesHandlerWithConfig(minutesService, deleteOnPull)
 	rtcHandler := handler.NewRTCConfigHandler(cfg, iceProvider)
 	apiServer := api.NewServerWithDeps(cfg, sessionService, botServer, minutesHandler, nil, rtcHandler)
 
@@ -414,4 +432,42 @@ func migrateWebhookEvents(ctx context.Context, db *sqlite.DB) {
 			return err
 		})
 	}
+}
+
+// migrateRetrievalTokens creates the retrieval_tokens table used by the
+// notify_pull secure delivery mode. Idempotent (CREATE TABLE IF NOT EXISTS).
+//
+// Schema notes:
+//   - used_at NULL means the token is unconsumed; set atomically on first pull.
+//   - expires_at enforced in ConsumeToken(); expired rows are cleaned up by
+//     MinutesRepository.DeleteExpiredTokens() (call periodically, e.g. daily).
+//   - ON DELETE CASCADE means tokens are auto-removed when the minutes row is
+//     deleted (e.g. by PurgeMinutes after a successful pull).
+func migrateRetrievalTokens(ctx context.Context, db *sqlite.DB) {
+	_ = db.RunInTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			CREATE TABLE IF NOT EXISTS retrieval_tokens (
+				id          TEXT PRIMARY KEY,
+				minutes_id  TEXT NOT NULL REFERENCES minutes(id) ON DELETE CASCADE,
+				expires_at  TEXT NOT NULL,
+				used_at     TEXT,
+				created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+			);
+			CREATE INDEX IF NOT EXISTS idx_retrieval_tokens_minutes ON retrieval_tokens(minutes_id);
+			CREATE INDEX IF NOT EXISTS idx_retrieval_tokens_expires ON retrieval_tokens(expires_at);
+		`)
+		return err
+	})
+}
+
+// migrateWebhookPayloadType adds the payload_type column to webhook_events,
+// needed to distinguish push-mode (MinutesPayload) from notify_pull-mode
+// (NotificationPayload) rows in the Retrier worker. Idempotent.
+func migrateWebhookPayloadType(ctx context.Context, db *sqlite.DB) {
+	_ = db.RunInTx(ctx, func(tx *sql.Tx) error {
+		// ADD COLUMN returns an error if the column already exists; ignore it.
+		_, err := tx.ExecContext(ctx,
+			`ALTER TABLE webhook_events ADD COLUMN payload_type TEXT NOT NULL DEFAULT 'minutes'`)
+		return err
+	})
 }
