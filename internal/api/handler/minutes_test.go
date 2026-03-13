@@ -61,6 +61,18 @@ func (m *MockMinutesService) GetMinutesHistory(ctx context.Context, minutesID st
 	return args.Get(0).([]*minutes.MinutesHistory), args.Error(1)
 }
 
+func (m *MockMinutesService) ConsumeRetrievalToken(ctx context.Context, tokenID string) (*minutes.RetrievalToken, error) {
+	args := m.Called(ctx, tokenID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*minutes.RetrievalToken), args.Error(1)
+}
+
+func (m *MockMinutesService) PurgeMinutes(ctx context.Context, minutesID string) {
+	m.Called(ctx, minutesID)
+}
+
 func addChiContext(req *http.Request, key, value string) *http.Request {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add(key, value)

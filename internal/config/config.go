@@ -167,9 +167,47 @@ type AzureLLMConfig struct {
 	Deployment string `koanf:"deployment"`
 }
 
+// WebhookConfig controls how generated minutes are delivered to the caller's system.
+//
+// Two delivery modes are supported:
+//
+//	push (legacy default):
+//	  The full minutes JSON is POSTed to URL immediately after generation.
+//	  Simple but unsuitable for sensitive data — the payload traverses the network
+//	  unsolicited and Aftertalk retains the data indefinitely.
+//
+//	notify_pull (recommended for production / HIPAA / GDPR):
+//	  Only a signed, single-use retrieval URL is POSTed to URL.
+//	  The recipient must call GET /v1/minutes/pull/{token} to obtain the data.
+//	  On a successful pull the minutes and transcriptions are deleted from the DB,
+//	  making Aftertalk a pure processing pipeline, not a medical data archive.
+//
+// Minimal notify_pull config:
+//
+//	webhook:
+//	  mode: notify_pull
+//	  url:  https://your-app.example.com/webhook/aftertalk
+//	  secret: "<at-least-32-byte-random-string>"
+//	  pull_base_url: https://api.aftertalk.io
 type WebhookConfig struct {
 	URL     string        `koanf:"url"`
 	Timeout time.Duration `koanf:"timeout"`
+	// Mode selects the delivery strategy: "push" (default) or "notify_pull".
+	Mode string `koanf:"mode"`
+	// Secret is the HMAC-SHA256 key used to sign notification webhook payloads
+	// so the recipient can verify authenticity before making the pull request.
+	// Required (≥32 bytes) when Mode = "notify_pull".
+	Secret string `koanf:"secret"`
+	// TokenTTL is how long a retrieval token remains valid (default: 1h).
+	// Expired tokens are rejected with 404 (indistinguishable from invalid).
+	TokenTTL time.Duration `koanf:"token_ttl"`
+	// DeleteOnPull removes minutes and transcriptions from the DB after a
+	// successful pull. Defaults to true when Mode = "notify_pull".
+	DeleteOnPull *bool `koanf:"delete_on_pull"`
+	// PullBaseURL is the public base URL of this Aftertalk instance, used to
+	// build the retrieval URL sent in the notification webhook.
+	// Example: "https://api.aftertalk.io"
+	PullBaseURL string `koanf:"pull_base_url"`
 }
 
 type ProcessingConfig struct {
@@ -324,8 +362,12 @@ func Default() *Config {
 			},
 		},
 		Webhook: WebhookConfig{
-			URL:     "https://example.com/webhook",
-			Timeout: 30 * time.Second,
+			URL:         "https://example.com/webhook",
+			Timeout:     30 * time.Second,
+			Mode:        "push", // change to "notify_pull" for production
+			Secret:      "change-this-webhook-secret-min-32-bytes",
+			TokenTTL:    1 * time.Hour,
+			PullBaseURL: "https://api.aftertalk.io",
 		},
 		Processing: ProcessingConfig{
 			MaxConcurrentTranscriptions:     10,

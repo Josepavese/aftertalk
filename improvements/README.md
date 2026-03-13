@@ -74,3 +74,12 @@
   - Backoff jitter configurabile (`backoffJitter`) per thundering herd
   - WS close code 4001/4003 → errore `unauthorized` immediato senza retry
   - Counter ICE restart reset solo su `connected`/`completed`, non su answer
+
+- **[07-secure-minutes-delivery.md](07-secure-minutes-delivery.md)** — Secure minutes delivery: notify_pull pattern ✅
+  - `WebhookConfig.Mode`: `"push"` (legacy) | `"notify_pull"` (production/HIPAA/GDPR)
+  - `retrieval_tokens` table: token single-use, time-limited, scoped a un solo record minutes
+  - `GET /v1/minutes/pull/{token}`: endpoint di pull autenticato dal token, fuori dall'API key middleware
+  - `webhook.NotificationPayload`: corpo webhook con solo retrieval URL (zero dati sensibili)
+  - Firma HMAC-SHA256 (`X-Aftertalk-Signature`) sui notification webhook
+  - `PurgeMinutes`: cancella minutes + trascrizioni dopo pull riuscito (`delete_on_pull=true`)
+  - Retrier: `EnqueueNotification` + colonna `payload_type` per dispatch corretto

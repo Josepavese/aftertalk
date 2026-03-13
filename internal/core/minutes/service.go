@@ -13,15 +13,31 @@ import (
 	"github.com/google/uuid"
 )
 
+// webhookModeNotifyPull is the notify_pull delivery mode identifier.
+const webhookModeNotifyPull = "notify_pull"
+
 type RetryConfig struct {
 	MaxRetries     int
 	InitialBackoff time.Duration
 	MaxBackoff     time.Duration
 }
 
+// WebhookConfig mirrors the relevant subset of config.WebhookConfig for the
+// minutes service. See config.WebhookConfig for full documentation.
 type WebhookConfig struct {
 	URL     string
 	Timeout time.Duration
+	// Mode: "push" (default) or "notify_pull". See config.WebhookConfig.
+	Mode string
+	// Secret is the HMAC-SHA256 signing key for notify_pull notifications.
+	Secret string
+	// TokenTTL is how long a pull token remains valid (default: 1h).
+	TokenTTL time.Duration
+	// DeleteOnPull removes minutes + transcriptions after a successful pull.
+	// Defaults to true when Mode = "notify_pull".
+	DeleteOnPull bool
+	// PullBaseURL is the public base URL used to build the retrieval URL.
+	PullBaseURL string
 }
 
 type Service struct {
@@ -29,6 +45,7 @@ type Service struct {
 	llmProvider    llm.LLMProvider
 	retryConfig    *RetryConfig
 	webhookClient  *webhook.Client
+	webhookConfig  *WebhookConfig
 	webhookRetrier *webhook.Retrier
 }
 
@@ -55,7 +72,12 @@ func NewServiceWithDeps(repo *MinutesRepository, provider llm.LLMProvider, retry
 		if timeout == 0 {
 			timeout = 30 * time.Second
 		}
-		s.webhookClient = webhook.NewClient(webhookConfig.URL, timeout)
+		if webhookConfig.Mode == webhookModeNotifyPull && webhookConfig.Secret != "" {
+			s.webhookClient = webhook.NewClientWithSecret(webhookConfig.URL, webhookConfig.Secret, timeout)
+		} else {
+			s.webhookClient = webhook.NewClient(webhookConfig.URL, timeout)
+		}
+		s.webhookConfig = webhookConfig
 	}
 	return s
 }
@@ -137,17 +159,28 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 	return m, nil
 }
 
+// deliverWebhook dispatches the minutes notification based on the configured mode.
+//
+//   - "push" (legacy): full minutes JSON POSTed to the webhook URL.
+//   - "notify_pull": a signed notification carrying only a retrieval URL is POSTed;
+//     the recipient must call GET /v1/minutes/pull/{token} to fetch the data.
 func (s *Service) deliverWebhook(sessionID string, m *Minutes) {
 	if s.webhookClient == nil {
 		return
 	}
+
+	if s.webhookConfig != nil && s.webhookConfig.Mode == webhookModeNotifyPull {
+		s.deliverNotification(sessionID, m)
+		return
+	}
+
+	// Legacy push mode: send full minutes payload.
 	payload := &webhook.MinutesPayload{
 		SessionID: sessionID,
 		Minutes:   m,
 		Timestamp: time.Now(),
 	}
 
-	// Prefer persistent retry queue over fire-and-forget.
 	if s.webhookRetrier != nil {
 		ctx := context.Background()
 		if err := s.webhookRetrier.Enqueue(ctx, m.ID, s.webhookClient.URL(), payload); err != nil {
@@ -156,7 +189,7 @@ func (s *Service) deliverWebhook(sessionID string, m *Minutes) {
 		return
 	}
 
-	// Fallback: direct delivery (fire-and-forget, no retry).
+	// Fallback: direct delivery, no retry.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := s.webhookClient.Send(ctx, payload); err != nil {
@@ -166,6 +199,90 @@ func (s *Service) deliverWebhook(sessionID string, m *Minutes) {
 	logging.Infof("Webhook delivered for session %s", sessionID)
 	m.MarkDelivered()
 	s.repo.Update(context.Background(), m)
+}
+
+// deliverNotification implements the notify_pull delivery strategy:
+//  1. Generate a single-use retrieval token stored in the DB.
+//  2. Build the retrieval URL: {pull_base_url}/v1/minutes/pull/{tokenID}.
+//  3. POST a NotificationPayload (no sensitive data) to the webhook URL.
+//     The payload is HMAC-SHA256 signed if a secret is configured.
+//  4. The actual minutes data is transmitted only when the recipient calls
+//     the retrieval URL — at which point it is deleted from the DB.
+func (s *Service) deliverNotification(sessionID string, m *Minutes) {
+	ttl := s.webhookConfig.TokenTTL
+	if ttl == 0 {
+		ttl = time.Hour
+	}
+	tok := &RetrievalToken{
+		ID:        uuid.New().String(),
+		MinutesID: m.ID,
+		ExpiresAt: time.Now().Add(ttl),
+		CreatedAt: time.Now(),
+	}
+
+	ctx := context.Background()
+	if err := s.repo.CreateRetrievalToken(ctx, tok); err != nil {
+		logging.Errorf("deliverNotification: create token for session %s: %v", sessionID, err)
+		return
+	}
+
+	retrieveURL := s.webhookConfig.PullBaseURL + "/v1/minutes/pull/" + tok.ID
+	payload := &webhook.NotificationPayload{
+		SessionID:   sessionID,
+		RetrieveURL: retrieveURL,
+		ExpiresAt:   tok.ExpiresAt,
+		Timestamp:   time.Now(),
+	}
+
+	if s.webhookRetrier != nil {
+		if err := s.webhookRetrier.EnqueueNotification(ctx, m.ID, s.webhookClient.URL(), payload); err != nil {
+			logging.Errorf("webhook retrier: enqueue notification failed for session %s: %v", sessionID, err)
+		}
+		return
+	}
+
+	// Fallback: direct delivery, no retry.
+	dCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := s.webhookClient.SendNotification(dCtx, payload); err != nil {
+		logging.Errorf("Failed to deliver notification for session %s: %v", sessionID, err)
+	} else {
+		logging.Infof("Notification webhook delivered for session %s (token=%s)", sessionID, tok.ID)
+	}
+}
+
+// ConsumeRetrievalToken validates and atomically consumes a pull token.
+// Returns the token (with MinutesID) on success. Any failure returns a generic
+// error — the caller should respond with 404 to prevent oracle attacks.
+func (s *Service) ConsumeRetrievalToken(ctx context.Context, tokenID string) (*RetrievalToken, error) {
+	return s.repo.ConsumeToken(ctx, tokenID)
+}
+
+// PurgeMinutes deletes a minutes record, its history, its transcriptions, and
+// its retrieval tokens from the DB. Used after a successful pull when
+// delete_on_pull is enabled — Aftertalk becomes a pure processing pipeline,
+// not a long-term archive of sensitive session data.
+func (s *Service) PurgeMinutes(ctx context.Context, minutesID string) {
+	// Retrieve session_id so we can also clean up transcriptions.
+	m, err := s.repo.GetByID(ctx, minutesID)
+	if err != nil {
+		logging.Errorf("PurgeMinutes: get minutes %s: %v", minutesID, err)
+		return
+	}
+
+	// Delete transcriptions for the session (they contain the full STT text).
+	if _, err := s.repo.ExecContext(ctx,
+		"DELETE FROM transcriptions WHERE session_id = ?", m.SessionID); err != nil {
+		logging.Errorf("PurgeMinutes: delete transcriptions for session %s: %v", m.SessionID, err)
+	}
+
+	// Delete the minutes record (cascades to minutes_history and retrieval_tokens).
+	if err := s.repo.Delete(ctx, minutesID); err != nil {
+		logging.Errorf("PurgeMinutes: delete minutes %s: %v", minutesID, err)
+		return
+	}
+
+	logging.Infof("PurgeMinutes: session %s purged after pull", m.SessionID)
 }
 
 func (s *Service) GetMinutes(ctx context.Context, sessionID string) (*Minutes, error) {
