@@ -1,0 +1,45 @@
+{
+  "name": "@aftertalk/sdk",
+  "version": "1.0.0",
+  "description": "Official JavaScript/TypeScript SDK for Aftertalk API",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "types": "./dist/types/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format esm --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "docs": "typedoc src/index.ts --out docs"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^1.0.0",
+    "eslint": "^8.0.0",
+    "tsup": "^8.0.0",
+    "typedoc": "^0.25.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["aftertalk", "webrtc", "transcription", "minutes", "sdk"],
+  "license": "MIT"
+}

@@ -1,0 +1,20 @@
+import type { HttpClient } from '../http.js';
+import type { PaginatedResponse, Transcription, TranscriptionFilters } from '../types.js';
+
+export class TranscriptionsAPI {
+  constructor(private readonly http: HttpClient) {}
+
+  async listBySession(
+    sessionId: string,
+    filters?: TranscriptionFilters,
+  ): Promise<PaginatedResponse<Transcription>> {
+    const params = new URLSearchParams();
+    if (filters?.limit !== undefined) params.set('limit', String(filters.limit));
+    if (filters?.offset !== undefined) params.set('offset', String(filters.offset));
+
+    const qs = params.toString();
+    return this.http.get<PaginatedResponse<Transcription>>(
+      `/v1/sessions/${sessionId}/transcriptions${qs ? `?${qs}` : ''}`,
+    );
+  }
+}
