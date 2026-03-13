@@ -10,6 +10,7 @@ type ConnectionEventMap = {
   disconnected: [reason: string];
   'audio-started': [];
   'ice-state-changed': [state: RTCIceConnectionState];
+  'ice-restarting': [attempt: number];
   'signaling-reconnecting': [attempt: number];
   error: [err: AftertalkError];
 };
@@ -25,6 +26,13 @@ export class WebRTCConnection {
   private signaling?: SignalingClient;
   private audio: AudioManager;
   private _sessionId?: string;
+
+  // Grace timer: ICE `disconnected` is transient — wait before acting.
+  private iceDisconnectedTimer?: ReturnType<typeof setTimeout>;
+
+  // ICE restart state.
+  private iceRestartAttempts = 0;
+  private iceRestartInProgress = false;
 
   private listeners: {
     [K in keyof ConnectionEventMap]?: Set<ConnectionListener<K>>;
@@ -69,11 +77,17 @@ export class WebRTCConnection {
       url: signalingUrl,
       token,
       maxReconnectAttempts: this.config.maxReconnectAttempts,
+      tokenProvider: this.config.tokenProvider,
+      backoffJitter: this.config.backoffJitter,
     });
 
     this.signaling.on('answer', async (msg) => {
       if (!this.pc) return;
       await this.pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+      // Answer received — allow a new restart attempt if ICE fails again.
+      // iceRestartAttempts is NOT reset here: it only resets when ICE actually
+      // reaches `connected`, preventing infinite restarts on persistent failure.
+      this.iceRestartInProgress = false;
     });
 
     this.signaling.on('ice-candidate', async (msg) => {
@@ -81,7 +95,15 @@ export class WebRTCConnection {
       try {
         await this.pc.addIceCandidate(msg.candidate);
       } catch {
-        // non-fatal: stale candidate after reconnect
+        // Non-fatal: stale candidate after ICE restart or reconnect.
+      }
+    });
+
+    // When signaling reconnects, check ICE state and renegotiate if needed.
+    this.signaling.on('connected', async () => {
+      const iceState = this.pc?.iceConnectionState;
+      if (iceState === 'failed' || iceState === 'disconnected') {
+        await this.attemptICERestart();
       }
     });
 
@@ -91,7 +113,7 @@ export class WebRTCConnection {
 
     await this.signaling.connect();
 
-    // 5. Create and send offer
+    // 5. Create and send initial offer
     const offer = await this.pc.createOffer();
     await this.pc.setLocalDescription(offer);
     this.signaling.send({ type: 'offer', sdp: offer.sdp ?? '' });
@@ -102,12 +124,15 @@ export class WebRTCConnection {
   }
 
   async disconnect(): Promise<void> {
+    this.clearICEDisconnectedTimer();
     this.signaling?.close();
     this.pc?.close();
     this.audio.release();
     this.pc = undefined;
     this.signaling = undefined;
     this._sessionId = undefined;
+    this.iceRestartAttempts = 0;
+    this.iceRestartInProgress = false;
     this.emit('disconnected', 'closed');
   }
 
@@ -139,13 +164,78 @@ export class WebRTCConnection {
       this.emit('ice-state-changed', state);
 
       if (state === 'connected' || state === 'completed') {
+        // ICE actually succeeded — clear grace timer and reset all restart state.
+        this.clearICEDisconnectedTimer();
+        this.iceRestartAttempts = 0;
+        this.iceRestartInProgress = false;
         this.emit('connected', this._sessionId ?? '');
+
+      } else if (state === 'disconnected') {
+        // `disconnected` is transient per W3C spec: the browser may recover
+        // on its own (e.g. WiFi ↔ mobile handoff). Wait before acting.
+        const graceMs = this.config.iceDisconnectedGraceMs ?? 5_000;
+        this.iceDisconnectedTimer = setTimeout(async () => {
+          if (this.pc?.iceConnectionState === 'disconnected') {
+            await this.attemptICERestart();
+          }
+        }, graceMs);
+
       } else if (state === 'failed') {
-        this.emit('error', new AftertalkError('webrtc_ice_failed', { message: 'ICE connection failed' }));
-      } else if (state === 'disconnected' || state === 'closed') {
-        this.emit('disconnected', `ICE ${state}`);
+        this.clearICEDisconnectedTimer();
+        void this.attemptICERestart();
+
+      } else if (state === 'closed') {
+        this.clearICEDisconnectedTimer();
+        this.emit('disconnected', 'ICE closed');
       }
     };
+  }
+
+  /**
+   * Attempts to recover a broken ICE connection via ICE restart (RFC 8445 §9.3.2).
+   * Sends a new offer with iceRestart:true via signaling.
+   * Resets after a successful answer is received.
+   */
+  private async attemptICERestart(): Promise<void> {
+    if (!this.pc || !this.signaling || this.iceRestartInProgress) return;
+
+    const maxRestarts = this.config.maxIceRestarts ?? 3;
+    if (this.iceRestartAttempts >= maxRestarts) {
+      this.emit(
+        'error',
+        new AftertalkError('webrtc_ice_failed', {
+          message: `ICE failed after ${maxRestarts} restart attempts`,
+        }),
+      );
+      return;
+    }
+
+    this.iceRestartInProgress = true;
+    this.iceRestartAttempts++;
+    this.emit('ice-restarting', this.iceRestartAttempts);
+
+    try {
+      // restartIce() triggers new candidate gathering on the existing PC.
+      this.pc.restartIce();
+      const offer = await this.pc.createOffer({ iceRestart: true });
+      await this.pc.setLocalDescription(offer);
+      this.signaling.send({ type: 'offer', sdp: offer.sdp ?? '' });
+      // iceRestartInProgress is reset in the 'answer' handler.
+    } catch (err) {
+      this.iceRestartInProgress = false;
+      this.emit(
+        'error',
+        new AftertalkError('webrtc_ice_failed', {
+          message: 'ICE restart failed',
+          details: err,
+        }),
+      );
+    }
+  }
+
+  private clearICEDisconnectedTimer(): void {
+    clearTimeout(this.iceDisconnectedTimer);
+    this.iceDisconnectedTimer = undefined;
   }
 
   private emit<K extends keyof ConnectionEventMap>(event: K, ...args: ConnectionEventMap[K]): void {

@@ -30,6 +30,28 @@ export interface AnswerMessage extends SignalingMessage {
   sdp: string;
 }
 
+// ─── Options ─────────────────────────────────────────────────────────────────
+
+export interface SignalingClientOptions {
+  url: string;
+  /** Static token used if tokenProvider is not given. */
+  token: string;
+  /** Max number of reconnect attempts before giving up (default: 5). */
+  maxReconnectAttempts?: number;
+  /**
+   * Optional callback invoked on each connection attempt to obtain a fresh
+   * token. Use this when tokens are short-lived (e.g. JWT with 1h TTL) so
+   * that reconnects don't fail with 401.
+   */
+  tokenProvider?: () => string | Promise<string>;
+  /**
+   * Fractional jitter applied to the backoff delay (0–1, default: 0.3).
+   * A value of 0.3 means ±30% random variation, which prevents thundering
+   * herd when many clients reconnect simultaneously.
+   */
+  backoffJitter?: number;
+}
+
 // ─── Events ───────────────────────────────────────────────────────────────────
 
 type SignalingEventMap = {
@@ -57,18 +79,22 @@ export class SignalingClient {
   private pingTimer?: ReturnType<typeof setInterval>;
   private messageQueue: SignalingMessage[] = [];
 
-  private readonly url: string;
-  private readonly token: string;
-  private readonly maxReconnectAttempts: number;
+  private readonly options: Required<Omit<SignalingClientOptions, 'tokenProvider'>> & {
+    tokenProvider?: () => string | Promise<string>;
+  };
 
   private listeners: {
     [K in keyof SignalingEventMap]?: Set<SignalingListener<K>>;
   } = {};
 
-  constructor(options: { url: string; token: string; maxReconnectAttempts?: number }) {
-    this.url = options.url;
-    this.token = options.token;
-    this.maxReconnectAttempts = options.maxReconnectAttempts ?? 5;
+  constructor(options: SignalingClientOptions) {
+    this.options = {
+      url: options.url,
+      token: options.token,
+      maxReconnectAttempts: options.maxReconnectAttempts ?? 5,
+      tokenProvider: options.tokenProvider,
+      backoffJitter: options.backoffJitter ?? 0.3,
+    };
   }
 
   get connected(): boolean {
@@ -76,9 +102,17 @@ export class SignalingClient {
   }
 
   async connect(): Promise<void> {
+    // Detach listeners from previous WS instance to prevent accumulation.
+    if (this.ws) {
+      this.detachListeners(this.ws);
+    }
+
+    const token = await this.resolveToken();
+    const wsUrl = `${this.options.url}?token=${encodeURIComponent(token)}`;
+
     return new Promise((resolve, reject) => {
-      const wsUrl = `${this.url}?token=${encodeURIComponent(this.token)}`;
-      this.ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(wsUrl);
+      this.ws = ws;
 
       const onOpen = () => {
         this._connected = true;
@@ -91,14 +125,18 @@ export class SignalingClient {
 
       const onError = (e: Event) => {
         if (!this._connected) {
-          reject(new AftertalkError('webrtc_connection_failed', { message: 'WebSocket connection failed', details: e }));
+          reject(
+            new AftertalkError('webrtc_connection_failed', {
+              message: 'WebSocket connection failed',
+              details: e,
+            }),
+          );
         }
       };
 
-      this.ws.addEventListener('open', onOpen, { once: true });
-      this.ws.addEventListener('error', onError, { once: true });
-      this.ws.addEventListener('message', this.onMessage);
-      this.ws.addEventListener('close', this.onClose);
+      ws.addEventListener('open', onOpen, { once: true });
+      ws.addEventListener('error', onError, { once: true });
+      this.attachListeners(ws);
     });
   }
 
@@ -114,7 +152,10 @@ export class SignalingClient {
     this._closed = true;
     this.stopPing();
     clearTimeout(this.reconnectTimer);
-    this.ws?.close();
+    if (this.ws) {
+      this.detachListeners(this.ws);
+      this.ws.close();
+    }
     this._connected = false;
   }
 
@@ -142,6 +183,18 @@ export class SignalingClient {
         }
       }
     }
+  }
+
+  // Attach persistent (non-once) listeners to a WebSocket instance.
+  private attachListeners(ws: WebSocket): void {
+    ws.addEventListener('message', this.onMessage);
+    ws.addEventListener('close', this.onClose);
+  }
+
+  // Remove persistent listeners — must be called before replacing this.ws.
+  private detachListeners(ws: WebSocket): void {
+    ws.removeEventListener('message', this.onMessage);
+    ws.removeEventListener('close', this.onClose);
   }
 
   private onMessage = (event: MessageEvent): void => {
@@ -172,29 +225,61 @@ export class SignalingClient {
     this._connected = false;
     this.stopPing();
 
+    // WS close code 4001 → treat as auth failure rather than retriable error.
+    if (event.code === 4001 || event.code === 4003) {
+      this.emit('disconnected', 'unauthorized');
+      this.emit('error', new AftertalkError('unauthorized', { message: 'Signaling token rejected' }));
+      return;
+    }
+
     if (this._closed) {
       this.emit('disconnected', 'closed');
       return;
     }
 
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.emit('disconnected', `max reconnect attempts (${this.maxReconnectAttempts}) reached`);
+    if (this.reconnectAttempts >= this.options.maxReconnectAttempts) {
+      this.emit(
+        'disconnected',
+        `max reconnect attempts (${this.options.maxReconnectAttempts}) reached`,
+      );
       this.emit('error', new AftertalkError('signaling_reconnect_failed'));
       return;
     }
 
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30_000);
+    const delay = this.backoffDelay();
     this.reconnectAttempts++;
     this.emit('reconnecting', this.reconnectAttempts);
 
-    this.reconnectTimer = setTimeout(async () => {
-      try {
-        await this.connect();
-      } catch {
+    // Non-async callback: if we used `async () => { await this.connect() }`,
+    // advanceTimersByTimeAsync() would await the returned Promise — which
+    // hangs until the WS open event fires, deadlocking tests. Using a
+    // sync wrapper with void ensures the timer returns undefined immediately.
+    this.reconnectTimer = setTimeout(() => {
+      void this.connect().catch((err: unknown) => {
+        if (err instanceof AftertalkError && err.code === 'unauthorized') {
+          this.emit('disconnected', 'unauthorized');
+          this.emit('error', err);
+          return;
+        }
         this.onClose(event);
-      }
+      });
     }, delay);
   };
+
+  private async resolveToken(): Promise<string> {
+    if (this.options.tokenProvider) {
+      return await this.options.tokenProvider();
+    }
+    return this.options.token;
+  }
+
+  private backoffDelay(): number {
+    const base = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30_000);
+    const jitter = this.options.backoffJitter;
+    // Apply symmetric jitter: base * (1 ± jitter)
+    const factor = 1 - jitter + Math.random() * jitter * 2;
+    return Math.round(base * factor);
+  }
 
   private flushQueue(): void {
     while (this.messageQueue.length > 0) {

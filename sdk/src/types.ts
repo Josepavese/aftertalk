@@ -180,6 +180,28 @@ export interface WebRTCConfig {
   maxReconnectAttempts?: number;
   /** Audio constraints passed to getUserMedia */
   audioConstraints?: MediaTrackConstraints;
+  /**
+   * Optional callback to obtain a fresh token on each WS connect attempt.
+   * Use this when tokens are short-lived (e.g. JWT with 1h TTL) to prevent
+   * reconnects failing with 401.
+   */
+  tokenProvider?: () => string | Promise<string>;
+  /**
+   * Fractional jitter applied to the WS reconnect backoff (0–1, default: 0.3).
+   * Prevents thundering herd when many clients reconnect simultaneously.
+   */
+  backoffJitter?: number;
+  /**
+   * How long (ms) to wait after ICE enters `disconnected` before attempting
+   * an ICE restart. The browser may recover on its own during this period.
+   * Default: 5000.
+   */
+  iceDisconnectedGraceMs?: number;
+  /**
+   * Maximum number of ICE restart attempts before emitting a terminal error.
+   * Default: 3.
+   */
+  maxIceRestarts?: number;
 }
 
 export interface PollerOptions {
