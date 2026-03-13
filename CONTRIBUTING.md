@@ -4,7 +4,7 @@
 
 ```bash
 # Clone and install SDK dependencies
-git clone https://github.com/flowup/aftertalk
+git clone https://github.com/Josepavese/aftertalk
 cd aftertalk
 cd sdk && npm install && cd ..
 ```

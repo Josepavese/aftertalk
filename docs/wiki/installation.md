@@ -9,7 +9,7 @@
 ## Installer automatico
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/flowup/aftertalk/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.sh | bash
 ```
 
 L'installer:
@@ -26,7 +26,7 @@ curl -fsSL .../install.sh | less
 ## Build manuale
 
 ```bash
-git clone https://github.com/flowup/aftertalk
+git clone https://github.com/Josepavese/aftertalk
 cd aftertalk
 go build -o bin/aftertalk ./cmd/aftertalk
 ```
