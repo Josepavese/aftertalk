@@ -68,7 +68,6 @@ export class HttpClient {
         signal: combinedSignal,
       });
     } catch (err) {
-      clearTimeout(timeoutId);
       if (err instanceof Error && err.name === 'AbortError') {
         throw new AftertalkError('timeout', { message: `Request timed out after ${this.timeout}ms` });
       }
@@ -103,12 +102,19 @@ export class HttpClient {
 /** Aborts as soon as any of the given signals fires. */
 function anySignal(signals: AbortSignal[]): AbortSignal {
   const controller = new AbortController();
+  const onAbort = () => controller.abort();
   for (const signal of signals) {
     if (signal.aborted) {
       controller.abort();
       break;
     }
-    signal.addEventListener('abort', () => controller.abort(), { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
   }
+  // When the combined signal itself aborts, clean up all upstream listeners.
+  controller.signal.addEventListener('abort', () => {
+    for (const signal of signals) {
+      signal.removeEventListener('abort', onAbort);
+    }
+  }, { once: true });
   return controller.signal;
 }
