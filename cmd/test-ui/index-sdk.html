@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aftertalk — SDK Demo</title>
+  <style>
+    :root { --bg: #0f1117; --surface: #1a1d27; --border: #2e3148; --text: #e2e8f0; --accent: #6c63ff; --muted: #8892a4; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.6; }
+    .container { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 24px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+    .card h2 { font-size: 1rem; margin-bottom: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-size: .75rem; }
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+    label { color: var(--muted); font-size: .8rem; margin-bottom: 3px; display: block; }
+    input, select {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 6px 10px; font-size: 13px; flex: 1; min-width: 140px;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    button {
+      padding: 7px 16px; border-radius: 6px; border: none; cursor: pointer;
+      font-size: 13px; font-weight: 500; transition: opacity .15s;
+    }
+    button:hover { opacity: .85; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-danger  { background: #e53e3e; color: #fff; }
+    .btn-muted   { background: var(--border); color: var(--text); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: .75rem; background: var(--border); }
+    #log { background: #0a0c12; border: 1px solid var(--border); border-radius: 6px; padding: 12px; height: 180px; overflow-y: auto; font-family: monospace; font-size: 12px; color: #9ca3af; }
+    #log div { padding: 1px 0; }
+    .section { margin-bottom: 16px; }
+    .section h3 { font-size: .9rem; color: var(--accent); margin-bottom: 8px; }
+    .section ul { padding-left: 20px; }
+    .section li { margin-bottom: 4px; }
+    .section pre { font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+    #minutes-section { display: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Aftertalk SDK Demo</h1>
+  <p class="subtitle">Powered by <code>@aftertalk/sdk</code></p>
+
+  <div class="card">
+    <h2>Connection</h2>
+    <div class="form-row">
+      <div style="flex:1">
+        <label>API Key</label>
+        <input id="api-key" type="password" placeholder="your-api-key" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Session</h2>
+    <div class="form-row">
+      <div style="flex:1">
+        <label>Template</label>
+        <select id="template-select"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div style="flex:1">
+        <label>User 1 ID</label>
+        <input id="user1" placeholder="user-1" />
+      </div>
+      <div style="flex:1">
+        <label>Role 1</label>
+        <select id="role1-select"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div style="flex:1">
+        <label>User 2 ID</label>
+        <input id="user2" placeholder="user-2" />
+      </div>
+      <div style="flex:1">
+        <label>Role 2</label>
+        <select id="role2-select"></select>
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:6px">
+      <button id="connect-btn" class="btn-primary">Connect &amp; Start</button>
+      <button id="end-btn" class="btn-danger" style="display:none">End Session</button>
+      <button id="mute-btn" class="btn-muted" style="display:none">Mute</button>
+    </div>
+    <div style="margin-top:10px; color:var(--muted); font-size:12px">
+      Session: <span id="session-id" class="badge">—</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Log</h2>
+    <div id="log"></div>
+  </div>
+
+  <div class="card" id="minutes-section">
+    <h2>Minutes — <span id="minutes-status">Pending</span></h2>
+    <div id="minutes-content"></div>
+  </div>
+</div>
+<script type="module" src="./src/main.ts"></script>
+</body>
+</html>
