@@ -11,15 +11,11 @@
 | Installer semplice, SSOT, PAL | ✅ **Implementato** | Modulare, `--dump-defaults` SSOT, systemd/launchd, modalità `local-ai/cloud/offline` |
 | Fullstack self-contained | ✅ **Implementato** | TURN embedded (Pion), Google/AWS/Azure STT, ICE configurabile, webhook retry |
 | REST API moderna e sicura | ✅ **Implementato** | Rate limiting, CORS configurabile, `/demo/config` sicuro, nuovi endpoint CRUD, validazione input, paginazione |
-| SDK JS/TS robusto e moderno | ❌ **Non iniziato** | Non esiste. Esiste solo un prototipo HTML con JS inline |
+| SDK JS/TS robusto e moderno | ✅ **Implementato** | `@aftertalk/sdk` TypeScript package completo con WebRTC, poller, 27 test |
 
 ---
 
-## Issues Critici
-
-| Priorità | Issue | Documento |
-|---|---|---|
-| 🟠 Alto | SDK JS/TS non esiste | [04-js-ts-sdk.md](04-js-ts-sdk.md) |
+## Tutti i miglioramenti completati
 
 ---
 
@@ -55,20 +51,16 @@
   - `GET /v1/openapi.yaml`
   - `/v1/config` endpoint pubblico (templates senza API key)
 
+- **[closed/04-js-ts-sdk.md](closed/04-js-ts-sdk.md)** — SDK TypeScript `@aftertalk/sdk` ✅
+  - `types.ts`: tipi completi allineati all'API (Session, Minutes, Transcription, Template, RTC)
+  - `errors.ts`: `AftertalkError` con codici tipizzati + mapping da HTTP status
+  - `http.ts`: `HttpClient` con timeout, API key header, error handling
+  - `api/`: `SessionsAPI`, `MinutesAPI`, `TranscriptionsAPI`, `ConfigAPI`
+  - `webrtc/`: `SignalingClient` (reconnect + backoff + message queue), `WebRTCConnection`, `AudioManager`
+  - `realtime/`: `MinutesPoller` con `waitForReady()` + `watch()` + exponential backoff
+  - `client.ts`: `AfterthalkClient` con `connectWebRTC()` e `waitForMinutes()` high-level
+  - 27 test unitari (vitest), tutti verdi
+  - `cmd/test-ui/src/main.ts`: demo UI riscritta in TypeScript con SDK
+  - Build: tsup (CJS + ESM + types), peer dep solo TypeScript ≥5.0
+
 - **[closed/05-webrtc-turn-stun.md](closed/05-webrtc-turn-stun.md)** — WebRTC/ICE fixes ✅
-
-### Aperti
-
-- **[04-js-ts-sdk.md](04-js-ts-sdk.md)** — SDK TypeScript da costruire da zero
-
----
-
-## Roadmap Suggerita
-
-### Sprint Prossimo — SDK TypeScript
-- Scaffolding package `@aftertalk/sdk`
-- Types da OpenAPI spec
-- HTTP client + API classes (Sessions, Minutes, Transcriptions)
-- WebRTC layer con SignalingClient + reconnect
-- MinutesPoller con exponential backoff
-- Test unitari + documentazione
