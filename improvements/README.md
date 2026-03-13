@@ -11,7 +11,7 @@
 | Installer semplice, SSOT, PAL | ✅ **Implementato** | Modulare, `--dump-defaults` SSOT, systemd/launchd, modalità `local-ai/cloud/offline` |
 | Fullstack self-contained | ✅ **Implementato** | TURN embedded (Pion), Google/AWS/Azure STT, ICE configurabile, webhook retry |
 | REST API moderna e sicura | ✅ **Implementato** | Rate limiting, CORS configurabile, `/demo/config` sicuro, nuovi endpoint CRUD, validazione input, paginazione |
-| SDK JS/TS robusto e moderno | ✅ **Implementato** | `@aftertalk/sdk` TypeScript package completo con WebRTC, poller, 27 test |
+| SDK JS/TS robusto e moderno | ✅ **Implementato** | `@aftertalk/sdk` TypeScript package completo con WebRTC, poller, 47 test |
 
 ---
 
@@ -64,3 +64,13 @@
   - Build: tsup (CJS + ESM + types), peer dep solo TypeScript ≥5.0
 
 - **[closed/05-webrtc-turn-stun.md](closed/05-webrtc-turn-stun.md)** — WebRTC/ICE fixes ✅
+
+- **[closed/06-sdk-webrtc-resilience.md](closed/06-sdk-webrtc-resilience.md)** — SDK WebRTC resilience ✅
+  - Fix memory leak: listener accumulation su WS reconnect (`attachListeners`/`detachListeners`)
+  - ICE `disconnected` grace period (5s) prima di reagire
+  - ICE restart automatico su `failed` (`pc.restartIce()` + re-offer `{iceRestart:true}`)
+  - Rinegoziazione automatica quando signaling si riconnette con ICE failed
+  - `tokenProvider` callback per JWT refresh su reconnect
+  - Backoff jitter configurabile (`backoffJitter`) per thundering herd
+  - WS close code 4001/4003 → errore `unauthorized` immediato senza retry
+  - Counter ICE restart reset solo su `connected`/`completed`, non su answer
