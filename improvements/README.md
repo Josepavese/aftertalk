@@ -83,3 +83,7 @@
   - Firma HMAC-SHA256 (`X-Aftertalk-Signature`) sui notification webhook
   - `PurgeMinutes`: cancella minutes + trascrizioni dopo pull riuscito (`delete_on_pull=true`)
   - Retrier: `EnqueueNotification` + colonna `payload_type` per dispatch corretto
+
+### Open
+
+- **[09-code-quality-bugs.md](09-code-quality-bugs.md)** — 9 bugs found during wiki reverse engineering (race condition, nil context, hardcoded dev path, JWT expiry ignored, wrong HTTP status codes, HTTP client no timeout, stub LLM wrong keys, log stdlib, SDK typo)
