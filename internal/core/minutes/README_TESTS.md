@@ -255,6 +255,32 @@ go tool cover -func=coverage.out
 go tool cover -html=coverage.out
 ```
 
+## Retrieval Token (notify_pull delivery)
+
+`retrieval_token.go` implements single-use, time-limited tokens for the
+notify_pull secure delivery pattern. Key methods:
+
+- `CreateRetrievalToken(ctx, tok)` — inserts token
+- `ConsumeToken(ctx, tokenID)` — atomic UPDATE; returns error if token is
+  invalid, expired, or already used (intentionally indistinguishable)
+- `DeleteExpiredTokens(ctx, olderThan)` — maintenance cleanup
+
+The `ConsumeToken` atomicity guarantee:
+```sql
+UPDATE retrieval_tokens
+SET used_at = ?
+WHERE id = ? AND used_at IS NULL AND expires_at > ?
+-- rows_affected == 0 → reject with 404
+```
+
+Test DB setup for retrieval_token tests must include:
+```sql
+CREATE TABLE retrieval_tokens (
+    id TEXT PRIMARY KEY, minutes_id TEXT NOT NULL,
+    expires_at TEXT NOT NULL, used_at TEXT, created_at TEXT NOT NULL
+);
+```
+
 ## Conclusion
 
 The Minutes package has comprehensive unit tests covering:
@@ -266,6 +292,7 @@ The Minutes package has comprehensive unit tests covering:
 - ✅ History tracking and versioning
 - ✅ Database constraints and validation
 - ✅ Concurrency and thread safety
+- ✅ Retrieval token lifecycle (notify_pull pattern)
 
 **All 74 test cases passing with 56.2% overall coverage.**
 
