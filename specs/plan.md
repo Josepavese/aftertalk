@@ -5,22 +5,22 @@
 
 ## Summary
 
-Aftertalk Core è un modulo AI agnostico per generare automaticamente minute di fine seduta da conversazioni WebRTC. Il sistema intercetta audio da sessioni WebRTC, trascrive con ruoli certi e produce minute strutturate. Il core è progettato per essere riutilizzabile in diversi domini (clinico, coaching, business) tramite configurazione e adapter.
+Aftertalk Core is a domain-agnostic AI module for automatically generating end-of-session minutes from WebRTC conversations. The system intercepts audio from WebRTC sessions, transcribes with verified roles, and produces structured minutes. The core is designed to be reusable across different domains (clinical, coaching, business) through configuration and adapters.
 
-**Approccio tecnico**: Architettura monolite modulare in Go con singolo binary. Internal packages garantiscono separazione delle responsabilità mantenendo i benefici di un singolo deploy: performance native, comunicazione in-process, operazioni semplificate.
+**Technical approach**: Modular monolith architecture in Go with a single binary. Internal packages guarantee separation of concerns while retaining the benefits of a single deployment: native performance, in-process communication, simplified operations.
 
 ## Technical Context
 
 **Language/Version**: Go 1.22+
-**Primary Dependencies**: 
+**Primary Dependencies**:
 - WebRTC: `pion/webrtc` v4+ (pure Go implementation)
 - Audio: `go-audio/opus`, `go-audio/wav` (Opus ↔ PCM conversion)
-- HTTP: `chi` or `gin` (REST API routing)
+- HTTP: `chi` (REST API routing)
 - STT: Pluggable adapters via HTTP client (Google Cloud Speech-to-Text, AWS Transcribe, Azure Speech)
 - LLM: Pluggable adapters via HTTP client (OpenAI GPT-4, Anthropic Claude, Azure OpenAI)
 - Database: `modernc.org/sqlite` (pure Go SQLite driver, no CGO)
 - Config: `knadh/koanf` (configuration management)
-- Logging: `uber-go/zap` or `rs/zerolog` (structured logging)
+- Logging: `uber-go/zap` (structured logging)
 
 **Storage**: SQLite (embedded database, all data in single file) + In-memory cache (session state, tokens, processing queues)
 
@@ -28,7 +28,7 @@ Aftertalk Core è un modulo AI agnostico per generare automaticamente minute di 
 
 **Target Platform**: Linux containers (Docker/Kubernetes), single binary deployment
 
-**Project Type**: Monolite modulare con internal packages (api, bot, ai, core, storage)
+**Project Type**: Modular monolith with internal packages (api, bot, ai, core, storage)
 
 **Performance Goals**: <100ms audio acquisition latency (in-process), <5min minutes generation for 1hr session, 200+ concurrent sessions
 
@@ -42,8 +42,8 @@ Aftertalk Core è un modulo AI agnostico per generare automaticamente minute di 
 
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| I. Core Agnostico | ✅ PASS | No domain-specific logic, pluggable providers, abstract roles |
-| II. Separazione Core/Applicazione | ✅ PASS | Clean internal package boundaries, stable API, no UI dependencies |
+| I. Domain-Agnostic Core | ✅ PASS | No domain-specific logic, pluggable providers, abstract roles |
+| II. Core/Application Separation | ✅ PASS | Clean internal package boundaries, stable API, no UI dependencies |
 | III. Privacy-First | ✅ PASS | No persistent audio, append-only transcriptions, secure tokens, in-memory processing |
 | IV. Human-in-the-loop | ✅ PASS | Minutes always editable, no automatic diagnoses, no semantic conclusions |
 | V. Design for Reuse | ✅ PASS | Single reusable binary, pluggable providers, declarative config, Go packages for sharing |
@@ -88,7 +88,7 @@ aftertalk/
 │   │   │   └── cors.go          # CORS handling
 │   │   ├── response/
 │   │   │   └── json.go          # JSON response helpers
-│   │   └── server.go            # HTTP server setup (chi/gin)
+│   │   └── server.go            # HTTP server setup (chi)
 │   │
 │   ├── bot/                     # WebRTC Bot Recorder
 │   │   ├── peer.go              # Pion peer connection management
@@ -175,14 +175,14 @@ aftertalk/
 └── README.md
 ```
 
-**Structure Decision**: Monolite modulare in Go con internal packages per garantire separazione delle responsabilità. Tutti i componenti (API, Bot, AI, Core) convivono nello stesso processo, comunicando via function calls (<1ms latency vs 10-50ms con Redis queues). Deploy semplificato: 1 binary = 1 container. Performance native Go gestisce 200+ sessioni concorrenti su singola istanza.
+**Structure Decision**: Modular monolith in Go with internal packages to ensure separation of concerns. All components (API, Bot, AI, Core) coexist in the same process, communicating via function calls (<1ms latency vs 10-50ms with Redis queues). Simplified deployment: 1 binary = 1 container. Native Go performance handles 200+ concurrent sessions on a single instance.
 
 ## Architecture Highlights
 
 ### 1. Single Binary Deployment
 
-**Benefici:**
-- ✅ Deploy singolo file (15MB binary)
+**Benefits:**
+- ✅ Deploy a single file (15MB binary)
 - ✅ Startup time: 10ms vs 1-3s (Node.js/Python)
 - ✅ Memory: 50MB vs 300MB+ (Node.js/Python)
 - ✅ Zero runtime dependencies
@@ -190,14 +190,14 @@ aftertalk/
 
 ### 2. In-Process Communication
 
-**Prima (Microservices):**
+**Before (Microservices):**
 ```
 Bot → Redis Queue → AI Pipeline
-Latenza: 10-50ms
-Serializzazione/Deserializzazione overhead
+Latency: 10-50ms
+Serialization/Deserialization overhead
 ```
 
-**Ora (Monolite):**
+**Now (Monolith):**
 ```go
 // Direct function call
 func (b *Bot) OnSessionEnd(sessionID string) {
@@ -207,7 +207,7 @@ func (b *Bot) OnSessionEnd(sessionID string) {
 }
 ```
 
-**Latenza: <1ms** (10-50x più veloce)
+**Latency: <1ms** (10-50x faster)
 
 ### 3. Concurrent Processing with Goroutines
 
@@ -215,11 +215,11 @@ func (b *Bot) OnSessionEnd(sessionID string) {
 // Worker pool for parallel processing
 func (p *Pipeline) Start(ctx context.Context, workers int) {
     tasks := make(chan Task, workers*2)
-    
+
     for i := 0; i < workers; i++ {
         go p.worker(ctx, tasks)
     }
-    
+
     // Submit tasks from session events
     for sessionID := range sessionEvents {
         tasks <- Task{SessionID: sessionID}
@@ -227,10 +227,10 @@ func (p *Pipeline) Start(ctx context.Context, workers int) {
 }
 ```
 
-**Benefici:**
-- Goroutines native: ~2KB stack vs 1MB+ thread (Java/C++)
-- M:N scheduler: Go runtime gestisce scheduling
-- Channel-based communication: idiomatic e thread-safe
+**Benefits:**
+- Native goroutines: ~2KB stack vs 1MB+ thread (Java/C++)
+- M:N scheduler: Go runtime handles scheduling
+- Channel-based communication: idiomatic and thread-safe
 
 ### 4. Shared Memory Cache
 
@@ -248,9 +248,9 @@ func (c *Cache) Get(key string) interface{} {
 }
 ```
 
-**Benefici:**
+**Benefits:**
 - Zero network latency
-- No Redis dependency per cache hot data
+- No Redis dependency for hot cache data
 - Automatic GC management
 
 ### 5. Transactional Integrity
@@ -263,25 +263,25 @@ func (s *Service) ProcessSession(ctx context.Context, sessionID string) error {
         return err
     }
     defer tx.Rollback()
-    
+
     transcription, err := s.Transcribe(tx, sessionID)
     if err != nil {
         return err
     }
-    
+
     minutes, err := s.GenerateMinutes(tx, transcription)
     if err != nil {
         return err
     }
-    
+
     return tx.Commit()
 }
 ```
 
-**Benefici:**
-- ACID transactions semplificate
-- No distributed saga pattern necessario
-- Consistency garantita
+**Benefits:**
+- Simplified ACID transactions
+- No distributed saga pattern needed
+- Guaranteed consistency
 
 ## Performance Targets
 
@@ -296,7 +296,7 @@ func (s *Service) ProcessSession(ctx context.Context, sessionID string) error {
 
 ## Cost Comparison
 
-| Metric | Go Monolite | Node.js/Python Microservices |
+| Metric | Go Monolith | Node.js/Python Microservices |
 |--------|-------------|------------------------------|
 | Containers | 1 | 3 |
 | Memory baseline | 50MB | 300MB+ |
@@ -306,10 +306,10 @@ func (s *Service) ProcessSession(ctx context.Context, sessionID string) error {
 
 ## Complexity Tracking
 
-> No violations to justify - monolite modulare rispetta tutti i principi costituzionali con maggiore semplicità.
+> No violations to justify — modular monolith respects all constitutional principles with greater simplicity.
 
-**Giustificazione architetturale:**
-- Monolite modulare ≠ spaghetti code: internal packages garantiscono boundaries
-- Performance native Go elimina necessità di microservizi per scaling
-- Semplicità operativa > over-engineering per 200 sessioni concorrenti
-- Cost reduction 75% senza compromettere qualità
+**Architectural justification:**
+- Modular monolith ≠ spaghetti code: internal packages enforce boundaries
+- Native Go performance eliminates the need for microservices for scaling
+- Operational simplicity > over-engineering for 200 concurrent sessions
+- 75% cost reduction without compromising quality

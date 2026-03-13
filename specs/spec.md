@@ -1,146 +1,146 @@
 # Feature Specification: Aftertalk Core
 
-**Feature Branch**: `001-aftertalk-core`  
-**Created**: 2026-03-04  
-**Status**: Draft  
-**Input**: User description: "Aftertalk Core - modulo AI per generare automaticamente minute di fine seduta da conversazioni WebRTC con trascrizione e sintesi AI"
+**Feature Branch**: `001-aftertalk-core`
+**Created**: 2026-03-04
+**Status**: Draft
+**Input**: User description: "Aftertalk Core - AI module to automatically generate end-of-session minutes from WebRTC conversations with transcription and AI summarization"
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Acquisizione Audio da Sessione WebRTC (Priority: P1)
+### User Story 1 - WebRTC Audio Capture (Priority: P1)
 
-Il sistema intercetta l'audio di una sessione WebRTC in corso e lo dirige verso un componente dedicato per la trascrizione, mantenendo separati gli stream audio dei diversi partecipanti.
+The system intercepts the audio of an ongoing WebRTC session and routes it to a dedicated component for transcription, keeping the audio streams of different participants separate.
 
-**Why this priority**: L'acquisizione audio è il prerequisite fondamentale per qualsiasi funzionalità di Aftertalk. Senza questa capacità, non è possibile né trascrivere né generare minute. È la base su cui si costruisce tutto il resto.
+**Why this priority**: Audio capture is the fundamental prerequisite for any Aftertalk functionality. Without this capability, neither transcription nor minutes generation is possible. It is the foundation on which everything else is built.
 
-**Independent Test**: Può essere testato indipendentemente avviando una sessione WebRTC e verificando che il Bot Recorder riceva stream audio separati per ogni partecipante con timestamp server-side corretti.
+**Independent Test**: Can be tested independently by starting a WebRTC session and verifying that the Bot Recorder receives separate audio streams for each participant with correct server-side timestamps.
 
 **Acceptance Scenarios**:
 
-1. **Given** una sessione WebRTC attiva tra due partecipanti, **When** i partecipanti parlano, **Then** il Bot Recorder riceve due stream audio separati (uno per partecipante) con identificazione del ruolo (professionista/paziente)
-2. **Given** una sessione WebRTC con token JWT validi, **When** il Bot Recorder riceve gli stream, **Then** i timestamp sono assegnati server-side con clock monotonic relativo all'inizio della seduta
-3. **Given** una sessione WebRTC con token scaduto o già usato, **When** un partecipante tenta di connettersi al Bot Recorder, **Then** la connessione viene rifiutata
+1. **Given** an active WebRTC session between two participants, **When** the participants speak, **Then** the Bot Recorder receives two separate audio streams (one per participant) with role identification (professional/patient)
+2. **Given** a WebRTC session with valid JWT tokens, **When** the Bot Recorder receives the streams, **Then** timestamps are assigned server-side with a monotonic clock relative to session start
+3. **Given** a WebRTC session with an expired or already-used token, **When** a participant attempts to connect to the Bot Recorder, **Then** the connection is rejected
 
 ---
 
-### User Story 2 - Trascrizione Automatica con Ruoli Certi (Priority: P2)
+### User Story 2 - Automatic Transcription with Verified Roles (Priority: P2)
 
-Il sistema trascrive automaticamente l'audio ricevuto in testo, assegnando correttamente il ruolo a ciascun segmento di conversazione.
+The system automatically transcribes the received audio into text, correctly assigning a role to each segment of conversation.
 
-**Why this priority**: La trascrizione è il secondo step fondamentale dopo l'acquisizione audio. È necessaria per poter generare la minuta strutturata. Senza trascrizione corretta con ruoli, la minuta non può essere generata.
+**Why this priority**: Transcription is the second fundamental step after audio capture. It is required to generate the structured minutes. Without correct transcription with roles, minutes cannot be generated.
 
-**Independent Test**: Può essere testato inviando audio preregistrato al Bot Recorder e verificando che la trascrizione prodotta contenga segmenti con ruolo, timestamp, testo e confidence score.
+**Independent Test**: Can be tested by sending pre-recorded audio to the Bot Recorder and verifying that the produced transcription contains segments with role, timestamp, text and confidence score.
 
 **Acceptance Scenarios**:
 
-1. **Given** stream audio ricevuti dal Bot Recorder, **When** la sessione termina, **Then** il sistema produce una trascrizione strutturata con segmenti `{callId, role, start_ms, end_ms, text, confidence}`
-2. **Given** una trascrizione in corso, **When** si verifica un errore STT, **Then** il sistema ritenta automaticamente la trascrizione prima di marcare lo stato come ERROR
-3. **Given** una trascrizione completata, **When** il backend la richiede, **Then** i dati sono disponibili in formato append-only senza modifiche in-place
+1. **Given** audio streams received by the Bot Recorder, **When** the session ends, **Then** the system produces a structured transcription with segments `{callId, role, start_ms, end_ms, text, confidence}`
+2. **Given** an ongoing transcription, **When** an STT error occurs, **Then** the system automatically retries before marking the status as ERROR
+3. **Given** a completed transcription, **When** the backend requests it, **Then** the data is available in append-only format without in-place modification
 
 ---
 
-### User Story 3 - Generazione Minuta AI Strutturata (Priority: P3)
+### User Story 3 - Structured AI Minutes Generation (Priority: P3)
 
-Il sistema elabora la trascrizione e produce una minuta strutturata con citazioni temporali, temi principali, interventi del professionista e next steps.
+The system processes the transcription and produces structured minutes with temporal citations, main themes, professional interventions and next steps.
 
-**Why this priority**: La minuta è il valore finale per l'utente professionista. È il prodotto che riduce il carico cognitivo e migliora la tracciabilità. Viene dopo l'acquisizione e la trascrizione.
+**Why this priority**: Minutes are the final value for the professional user. They are the product that reduces cognitive load and improves traceability. They come after capture and transcription.
 
-**Independent Test**: Può essere testato fornendo una trascrizione completa al modulo AI e verificando che la minuta prodotta contenga tutti i campi obbligatori: Temi principali, Contenuti riportati dal paziente, Interventi del terapeuta, Progressi/criticità, Next steps, Citazioni con timestamp.
+**Independent Test**: Can be tested by providing a complete transcription to the AI module and verifying that the produced minutes contain all mandatory fields: Main themes, Patient-reported contents, Therapist interventions, Progress/issues, Next steps, Citations with timestamps.
 
 **Acceptance Scenarios**:
 
-1. **Given** una trascrizione completa con ruoli certi, **When** il sistema elabora la trascrizione, **Then** produce una minuta strutturata con citazioni temporali verificabili
-2. **Given** una minuta in generazione, **When** si verifica un errore LLM, **Then** il sistema ritenta automaticamente prima di marcare lo stato come ERROR
-3. **Given** una minuta generata, **When** il backend la richiede via webhook, **Then** la consegna è idempotente con stato `READY → DELIVERED`
+1. **Given** a complete transcription with verified roles, **When** the system processes the transcription, **Then** it produces structured minutes with verifiable temporal citations
+2. **Given** minutes being generated, **When** an LLM error occurs, **Then** the system automatically retries before marking the status as ERROR
+3. **Given** generated minutes, **When** the backend requests them via webhook, **Then** delivery is idempotent with status `READY → DELIVERED`
 
 ---
 
-### User Story 4 - Consultazione e Modifica Minuta da Parte del Professionista (Priority: P4)
+### User Story 4 - Professional Review and Editing of Minutes (Priority: P4)
 
-Il professionista può visualizzare la minuta generata, consultare i timestamp cliccabili e modificare il testo prima del salvataggio definitivo.
+The professional can view the generated minutes, consult clickable timestamps, and edit the text before final save.
 
-**Why this priority**: L'interazione umana con la minuta è essenziale per il principio di Human-in-the-loop, ma è l'ultimo step dopo che il sistema ha acquisito, trascritto e generato la minuta.
+**Why this priority**: Human interaction with the minutes is essential for the Human-in-the-loop principle, but it is the last step after the system has captured, transcribed and generated the minutes.
 
-**Independent Test**: Può essere testato fornendo una minuta completa all'interfaccia del professionista e verificando che possa visualizzare, cliccare sui timestamp per rivedere i punti chiave, modificare il testo e salvare le modifiche.
+**Independent Test**: Can be tested by providing complete minutes to the professional's interface and verifying that they can view them, click timestamps to review key points, edit the text and save changes.
 
 **Acceptance Scenarios**:
 
-1. **Given** una minuta generata e consegnata al backend, **When** il professionista accede alla lista sedute, **Then** vede lo stato della minuta: in corso/pronta/errore
-2. **Given** una minuta pronta, **When** il professionista la apre, **Then** può visualizzare il testo completo, cliccare sui timestamp per saltare ai punti chiave e modificare il testo
-3. **Given** una minuta modificata dal professionista, **When** salva le modifiche, **Then** la versione modificata sostituisce quella originale ma la cronologia delle versioni è preservata
+1. **Given** minutes generated and delivered to the backend, **When** the professional accesses the session list, **Then** they see the minutes status: in progress / ready / error
+2. **Given** ready minutes, **When** the professional opens them, **Then** they can view the full text, click timestamps to jump to key points, and edit the text
+3. **Given** minutes edited by the professional, **When** they save changes, **Then** the edited version replaces the original but the version history is preserved
 
 ---
 
 ### Edge Cases
 
-- Cosa succede se il Bot Recorder perde la connessione durante una sessione? La trascrizione parziale è preservata?
-- Come gestisce il sistema una sessione con più di due partecipanti (es. terapia di coppia, gruppo)?
-- Cosa succede se il provider STT o LLM è temporaneamente non disponibile?
-- Come viene gestita una sessione molto breve (< 1 minuto) o molto lunga (> 2 ore)?
-- Cosa succede se l'audio è di bassa qualità o con molto rumore di fondo?
+- What happens if the Bot Recorder loses connection during a session? Is the partial transcription preserved?
+- How does the system handle a session with more than two participants (e.g. couples therapy, group)?
+- What happens if the STT or LLM provider is temporarily unavailable?
+- How is a very short session (< 1 minute) or very long session (> 2 hours) handled?
+- What happens if the audio quality is poor or there is significant background noise?
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: Il sistema MUST intercettare l'audio delle sessioni WebRTC senza interferire con la comunicazione P2P tra i partecipanti
-- **FR-002**: Il sistema MUST ricevere stream audio separati per ogni partecipante con identificazione del ruolo (professionista/paziente)
-- **FR-003**: Il sistema MUST assegnare timestamp server-side con clock monotonic relativo all'inizio della seduta
-- **FR-004**: Il sistema MUST convertire l'audio Opus in PCM mono 16kHz per l'elaborazione
-- **FR-005**: Il sistema MUST processare l'audio in chunk di 10-30 secondi
-- **FR-006**: Il sistema MUST trascrivere l'audio in testo utilizzando un provider STT cloud configurabile
-- **FR-007**: Il sistema MUST produrre trascrizioni con struttura `{callId, role, start_ms, end_ms, text, confidence}`
-- **FR-008**: Il sistema MUST persistere le trascrizioni in formato append-only senza modifiche in-place
-- **FR-009**: Il sistema MUST generare minute strutturate con campi obbligatori: Temi principali, Contenuti riportati, Interventi del professionista, Progressi/criticità, Next steps, Citazioni con timestamp
-- **FR-010**: Il sistema MUST vietare diagnosi automatiche e inferenze non esplicite nella minuta
-- **FR-011**: Il sistema MUST consegnare la minuta al backend via webhook idempotente
-- **FR-012**: Il sistema MUST permettere al professionista di visualizzare, consultare timestamp e modificare la minuta
-- **FR-013**: Il sistema MUST garantire che l'audio NON sia mai persistito in modo permanente
-- **FR-014**: Il sistema MUST verificare i token JWT per ogni connessione al Bot Recorder
-- **FR-015**: Il sistema MUST rifiutare connessioni con token scaduti o già usati
-- **FR-016**: Il sistema MUST consentire un solo stream per coppia `(callId, role)`
+- **FR-001**: The system MUST intercept audio from WebRTC sessions without interfering with P2P communication between participants
+- **FR-002**: The system MUST receive separate audio streams for each participant with role identification (professional/patient)
+- **FR-003**: The system MUST assign server-side timestamps with a monotonic clock relative to session start
+- **FR-004**: The system MUST convert Opus audio to PCM mono 16kHz for processing
+- **FR-005**: The system MUST process audio in chunks of 10-30 seconds
+- **FR-006**: The system MUST transcribe audio into text using a configurable cloud STT provider
+- **FR-007**: The system MUST produce transcriptions with structure `{callId, role, start_ms, end_ms, text, confidence}`
+- **FR-008**: The system MUST persist transcriptions in append-only format without in-place modification
+- **FR-009**: The system MUST generate structured minutes with mandatory fields: Main themes, Reported contents, Professional interventions, Progress/issues, Next steps, Citations with timestamps
+- **FR-010**: The system MUST prohibit automatic diagnoses and non-explicit inferences in minutes
+- **FR-011**: The system MUST deliver minutes to the backend via idempotent webhook
+- **FR-012**: The system MUST allow the professional to view, consult timestamps and edit the minutes
+- **FR-013**: The system MUST ensure audio is NEVER permanently stored
+- **FR-014**: The system MUST verify JWT tokens for every connection to the Bot Recorder
+- **FR-015**: The system MUST reject connections with expired or already-used tokens
+- **FR-016**: The system MUST allow only one stream per `(callId, role)` pair
 
 ### Key Entities
 
-- **Sessione (Session)**: Rappresenta una seduta conversazionale con identificativo univoco `callId`, partecipanti con ruoli, timestamp di inizio e fine, stato (active, ended, processing, completed, error)
-- **Partecipante (Participant)**: Rappresenta un attore nella conversazione con identificativo `userId`, ruolo astratto (professionista/paziente o altri ruoli configurabili), token JWT di sessione
-- **Stream Audio (AudioStream)**: Rappresenta il flusso audio di un partecipante con identificativo, codec (Opus), sample rate, chunk temporali, timestamp server-side
-- **Trascrizione (Transcription)**: Rappresenta la conversione testo dell'audio con segmenti strutturati `{callId, role, start_ms, end_ms, text, confidence}`, timestamp di creazione, stato (pending, processing, ready, error)
-- **Minuta (Minutes)**: Rappresenta la sintesi strutturata della conversazione con campi obbligatori (Temi, Contenuti, Interventi, Progressi, Next steps, Citazioni), timestamp di generazione, stato (pending, ready, delivered, error), versione (per modifiche)
-- **Token di Sessione (SessionToken)**: Rappresenta le credenziali di accesso con JWT contenente `{callId, userId, role, exp, jti}`, stato (valid, used, expired, revoked)
+- **Session**: Represents a conversational session with unique `callId`, participants with roles, start and end timestamps, status (active, ended, processing, completed, error)
+- **Participant**: Represents an actor in the conversation with `userId`, abstract role (professional/patient or other configurable roles), session JWT token
+- **AudioStream**: Represents a participant's audio stream with identifier, codec (Opus), sample rate, time chunks, server-side timestamps
+- **Transcription**: Represents the audio-to-text conversion with structured segments `{callId, role, start_ms, end_ms, text, confidence}`, creation timestamp, status (pending, processing, ready, error)
+- **Minutes**: Represents the structured conversation summary with mandatory fields (Themes, Contents, Interventions, Progress, Next steps, Citations), generation timestamp, status (pending, ready, delivered, error), version (for edits)
+- **SessionToken**: Represents access credentials as a JWT containing `{callId, userId, role, exp, jti}`, status (valid, used, expired, revoked)
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: Il sistema acquisisce audio da sessioni WebRTC con latenza < 500ms per l'inizio della ricezione dello stream
-- **SC-002**: Il sistema trascrive audio con accuratezza > 85% (confidence score medio) in condizioni audio standard
-- **SC-003**: Il sistema genera minute strutturate in < 5 minuti per sessioni di 1 ora
-- **SC-004**: Il professionista può visualizzare una minuta pronta entro 10 minuti dalla fine della sessione
-- **SC-005**: Il sistema gestisce fino a 100 sessioni concorrenti senza degradazione delle performance
-- **SC-006**: Il sistema mantiene traccia di tutti i tentativi di retry per errori STT/LLM con log (senza contenuti sensibili)
-- **SC-007**: Il professionista può modificare e salvare una minuta in < 2 minuti
-- **SC-008**: Il sistema rifiuta il 100% delle connessioni con token non validi, scaduti o già usati
-- **SC-009**: Il sistema non persiste MAI audio in modo permanente (verificabile tramite audit)
-- **SC-010**: Il core rimane agnostico rispetto al dominio applicativo (verificabile tramite code review: nessun riferimento a termini di dominio specifico)
+- **SC-001**: The system captures audio from WebRTC sessions with < 500ms latency for stream reception start
+- **SC-002**: The system transcribes audio with > 85% accuracy (average confidence score) under standard audio conditions
+- **SC-003**: The system generates structured minutes in < 5 minutes for 1-hour sessions
+- **SC-004**: The professional can view ready minutes within 10 minutes of session end
+- **SC-005**: The system handles up to 100 concurrent sessions without performance degradation
+- **SC-006**: The system tracks all retry attempts for STT/LLM errors with logs (without sensitive content)
+- **SC-007**: The professional can edit and save minutes in < 2 minutes
+- **SC-008**: The system rejects 100% of connections with invalid, expired or already-used tokens
+- **SC-009**: The system NEVER permanently stores audio (verifiable via audit)
+- **SC-010**: The core remains agnostic to the application domain (verifiable via code review: no references to domain-specific terms)
 
 ## Assumptions
 
-- PeerJS è già configurato per il signaling WebRTC nel layer applicativo (MondoPsicologi)
-- Il backend applicativo esiste già e può emettere token JWT firmati
-- Il provider STT cloud supporta lingua italiana e inglese (configurabile)
-- Il provider LLM cloud supporta prompt in italiano e inglese (configurabile)
-- I partecipanti hanno browser Web moderni con supporto WebRTC
-- La connessione internet ha bandwidth sufficiente per stream audio bidirezionali + stream verso Bot Recorder
-- Il professionista ha familiarità con interfacce web per consultare e modificare documenti
+- PeerJS is already configured for WebRTC signaling in the application layer (MondoPsicologi)
+- The application backend already exists and can issue signed JWT tokens
+- The STT cloud provider supports Italian and English (configurable)
+- The LLM cloud provider supports prompts in Italian and English (configurable)
+- Participants have modern web browsers with WebRTC support
+- Internet connection has sufficient bandwidth for bidirectional audio streams + stream toward Bot Recorder
+- The professional is familiar with web interfaces for viewing and editing documents
 
 ## Out of Scope
 
-- Analisi emotiva automatica del tono di voce o contenuto
-- Diagnosi cliniche automatiche o suggerimenti terapeutici
-- Accesso del paziente alla trascrizione o alla minuta
-- Registrazione video della sessione
-- Integrazione con sistemi di cartelle cliniche elettroniche (EHR)
-- Riconoscimento vocale per comandi durante la sessione
-- Traduzione automatica in tempo reale
-- Analisi sentiment in tempo reale durante la sessione
+- Automatic emotional tone analysis of voice or content
+- Automatic clinical diagnoses or therapeutic suggestions
+- Patient access to transcription or minutes
+- Video recording of the session
+- Integration with electronic health record (EHR) systems
+- Voice recognition for commands during the session
+- Real-time automatic translation
+- Real-time sentiment analysis during the session

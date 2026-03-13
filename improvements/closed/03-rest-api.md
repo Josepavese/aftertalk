@@ -1,44 +1,44 @@
-# Improvement: REST API — Moderna, Sicura, Organizzata
+# Improvement: REST API — Modern, Secure, Organized
 
-## Verdetto Avvocato del Diavolo
+## Devil's Advocate Verdict
 
-**L'asserzione "REST API ben organizzate, moderne, semplici e sicure" è PARZIALMENTE vera.**
+**The claim "well-organized, modern, simple and secure REST API" is PARTIALLY true.**
 
-La struttura di base è corretta (chi router, v1 prefix, handler separati, OpenAPI spec). Ma mancano componenti critici per la sicurezza e la completezza produttiva.
+The basic structure is correct (chi router, v1 prefix, separate handlers, OpenAPI spec). But critical security and completeness components are missing for production readiness.
 
 ---
 
-## Gaps Identificati
+## Identified Gaps
 
-### 1. CORS Wildcard — Insicuro in Produzione
+### 1. CORS Wildcard — Insecure in Production
 
-**Problema**: CORS è configurato con `Access-Control-Allow-Origin: *` — accetta richieste da qualsiasi origine.
+**Problem**: CORS is configured with `Access-Control-Allow-Origin: *` — accepts requests from any origin.
 
 ```go
-// internal/api/middleware/middleware.go (presumibilmente)
-// o server.go:101
+// internal/api/middleware/middleware.go
+// or server.go:101
 cors.Handler(cors.Options{
-    AllowedOrigins: []string{"*"},  // ← INSICURO
+    AllowedOrigins: []string{"*"},  // ← INSECURE
     AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
     AllowedHeaders: []string{"*"},
 })
 ```
 
-**Impatto**: In produzione, qualsiasi sito web può fare richieste autenticate all'API se l'utente ha un API key valida nel browser. Abilita attacchi CSRF cross-origin.
+**Impact**: In production, any website can make authenticated API requests if the user has a valid API key in the browser. Enables cross-origin CSRF attacks.
 
-**Fix Richiesto**:
+**Required Fix**:
 ```yaml
 # config.yaml
 api:
   cors:
     allowed_origins:
-      - "https://app.miosito.com"
+      - "https://app.mysite.com"
       - "http://localhost:3000"  # dev only
     allow_credentials: true
 ```
 
 ```go
-// server.go — CORS configurabile
+// server.go — configurable CORS
 cors.Handler(cors.Options{
     AllowedOrigins: cfg.API.CORS.AllowedOrigins,
     AllowCredentials: cfg.API.CORS.AllowCredentials,
@@ -47,50 +47,50 @@ cors.Handler(cors.Options{
 
 ---
 
-### 2. Nessun Rate Limiting
+### 2. No Rate Limiting
 
-**Problema**: Non esiste nessuna protezione contro:
-- Brute force sull'API key
-- DoS via molte richieste simultanee
-- Abuso del POST /test/start (crea sessioni illimitate)
+**Problem**: There is no protection against:
+- Brute force on the API key
+- DoS via many concurrent requests
+- Abuse of POST /test/start (creates unlimited sessions)
 
-Manca completamente qualsiasi forma di throttling.
+Any form of throttling is completely absent.
 
-**Fix Richiesto**:
+**Required Fix**:
 ```go
-// Aggiungere middleware rate limiter (golang.org/x/time/rate o go-chi/httprate)
+// Add rate limiter middleware (golang.org/x/time/rate or go-chi/httprate)
 import "github.com/go-chi/httprate"
 
 r.Use(httprate.LimitByIP(100, 1*time.Minute))  // 100 req/min per IP
 
-// Rate limite specifico per endpoint costosi
+// Specific rate limit for expensive endpoints
 r.With(httprate.LimitByIP(10, 1*time.Minute)).Post("/v1/sessions", ...)
 ```
 
 ---
 
-### 3. `/demo/config` Espone API Key — Vulnerabilità Critica
+### 3. `/demo/config` Exposes API Key — Critical Vulnerability
 
-**Problema**: L'endpoint `/demo/config` è pubblico (no auth) e restituisce l'API key del server.
+**Problem**: The `/demo/config` endpoint is public (no auth) and returns the server API key.
 
 ```go
 // internal/api/server.go
 r.Get("/demo/config", func(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(map[string]interface{}{
-        "api_key":             cfg.API.Key,  // ← API KEY ESPOSTA PUBBLICAMENTE
+        "api_key":             cfg.API.Key,  // ← API KEY PUBLICLY EXPOSED
         "templates":           cfg.Templates,
         "default_template_id": defaultTemplateID,
     })
 })
 ```
 
-**Impatto**: Chiunque possa accedere all'URL del server può ottenere l'API key e fare chiamate autenticate all'intera API. Questo è accettabile in demo locale, **non in produzione**.
+**Impact**: Anyone with access to the server URL can obtain the API key and make authenticated calls to the entire API. Acceptable for local demo, **not in production**.
 
-**Fix Richiesto**:
+**Required Fix**:
 ```go
-// Separare i due concern:
+// Separate the two concerns:
 
-// 1. Endpoint pubblico — solo metadata pubblici
+// 1. Public endpoint — only public metadata
 r.Get("/v1/config", func(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(map[string]interface{}{
         "templates":           cfg.Templates,
@@ -99,57 +99,57 @@ r.Get("/v1/config", func(w http.ResponseWriter, r *http.Request) {
     })
 })
 
-// 2. Config demo locale — solo se DEMO_MODE=true (env var)
+// 2. Local demo config — only if DEMO_MODE=true (env var)
 if cfg.Demo.Enabled {
     r.Get("/demo/config", func(...) {
-        // Può includere api_key solo in modalità demo esplicita
+        // Can include api_key only in explicit demo mode
     })
 }
 ```
 
 ---
 
-### 4. `/test/start` Non Protetto — Può Creare Sessioni Arbitrarie
+### 4. `/test/start` Unprotected — Can Create Arbitrary Sessions
 
-**Problema**: `POST /test/start` crea sessioni senza autenticazione. Chiunque può creare sessioni sul server.
+**Problem**: `POST /test/start` creates sessions without authentication. Anyone can create sessions on the server.
 
 ```go
-// Endpoint pubblico che crea sessioni:
+// Public endpoint that creates sessions:
 r.Post("/test/start", func(...) {
-    // Crea session + participants + token
-    // Nessuna auth richiesta
+    // Creates session + participants + token
+    // No auth required
 })
 ```
 
-**Fix Richiesto**: Questo endpoint dovrebbe o:
-1. Richiedere autenticazione (API key)
-2. Essere rimosso dalla produzione e disponibile solo con `--dev` flag
-3. Avere un limite di sessioni attive per IP
+**Required Fix**: This endpoint should either:
+1. Require authentication (API key)
+2. Be removed from production and available only with `--dev` flag
+3. Have a limit of active sessions per IP
 
 ---
 
-### 5. Nessuna Input Validation Strutturata
+### 5. No Structured Input Validation
 
-**Problema**: La validazione degli input è ad-hoc, inconsistente tra gli handler.
+**Problem**: Input validation is ad-hoc and inconsistent across handlers.
 
-**Esempi di validazione mancante**:
+**Examples of missing validation**:
 
 ```go
-// handler/session.go — presumibilmente:
-// Non verifica che participant_count corrisponda a len(participants)
-// Non verifica che i roles siano validi per il template scelto
-// Non verifica che user_id non sia vuoto
-// Non ha limiti sulla lunghezza di stringhe (user_id da 1MB?)
+// handler/session.go — presumably:
+// Does not verify that participant_count matches len(participants)
+// Does not verify that roles are valid for the chosen template
+// Does not verify that user_id is not empty
+// Has no limits on string lengths (1MB user_id?)
 ```
 
 ```go
 // handler/minutes.go:
-// PUT /v1/minutes/{id} — accetta qualsiasi JSON, nessuna validazione del formato sections
+// PUT /v1/minutes/{id} — accepts any JSON, no validation of sections format
 ```
 
-**Fix Richiesto**: Validazione centralizzata con libreria:
+**Required Fix**: Centralized validation with a library:
 ```go
-// Opzione: github.com/go-playground/validator/v10
+// Option: github.com/go-playground/validator/v10
 type CreateSessionRequest struct {
     ParticipantCount int           `json:"participant_count" validate:"required,min=2,max=10"`
     TemplateID       string        `json:"template_id"       validate:"omitempty,max=64"`
@@ -164,25 +164,25 @@ type Participant struct {
 
 ---
 
-### 6. Formato Errori Inconsistente
+### 6. Inconsistent Error Format
 
-**Problema**: Gli handler restituiscono errori in formati diversi:
+**Problem**: Handlers return errors in different formats:
 
 ```go
-// Alcuni handler:
+// Some handlers:
 http.Error(w, "Session ID required", http.StatusBadRequest)
-// → plain text, non JSON
+// → plain text, not JSON
 
-// Altri:
+// Others:
 json.NewEncoder(w).Encode(map[string]string{"error": msg})
 // → JSON
 
-// La spec OpenAPI dichiara:
+// The OpenAPI spec declares:
 // ErrorResponse: {error: string}
-// Ma alcuni endpoint restituiscono plain text
+// But some endpoints return plain text
 ```
 
-**Fix Richiesto**: Centralizzare il formato errore:
+**Required Fix**: Centralize the error format:
 ```go
 // internal/api/response/response.go
 func Error(w http.ResponseWriter, status int, msg string) {
@@ -191,55 +191,55 @@ func Error(w http.ResponseWriter, status int, msg string) {
     json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-// Tutti gli handler usano:
+// All handlers use:
 response.Error(w, http.StatusBadRequest, "Session ID required")
 ```
 
 ---
 
-### 7. OpenAPI Spec Non Sincronizzata con il Codice
+### 7. OpenAPI Spec Out of Sync with Code
 
-**Problema**: Esiste `specs/contracts/api.yaml` (OpenAPI 3.0.3) ma:
-- Non è generata dal codice, è scritta a mano
-- Può andare out-of-sync con gli handler reali
-- Non esiste nessun test che validi la conformità
-- I server dichiarati puntano a `api.aftertalk.io` ma il server gira su porta 8080
+**Problem**: `specs/contracts/api.yaml` (OpenAPI 3.0.3) exists but:
+- It is not generated from code, it is hand-written
+- It can go out-of-sync with real handlers
+- There are no tests validating conformance
+- Declared servers point to `api.aftertalk.io` but the server runs on port 8080
 
 ```yaml
 # specs/contracts/api.yaml
 servers:
-  - url: https://api.aftertalk.io/v1    # ← dominio inesistente
-  - url: http://localhost:3000/v1        # ← porta sbagliata (usa 8080)
+  - url: https://api.aftertalk.io/v1    # ← non-existent domain
+  - url: http://localhost:3000/v1        # ← wrong port (uses 8080)
 ```
 
-**Fix Richiesto**:
-1. Serving automatico della spec: `GET /v1/openapi.yaml` → serve il file
-2. Swagger UI embedded: `GET /docs` → interfaccia interattiva
-3. Test di conformità: `go test` verifica che ogni route dichiarata nella spec esista nel router
-4. Generazione automatica (lungo termine): `swaggo/swag` o `ogen/ogen`
+**Required Fix**:
+1. Automatic spec serving: `GET /v1/openapi.yaml` → serve the file
+2. Embedded Swagger UI: `GET /docs` → interactive interface
+3. Conformance tests: `go test` verifies that every route declared in the spec exists in the router
+4. Automatic generation (long term): `swaggo/swag` or `ogen/ogen`
 
 ---
 
-### 8. Nessun Endpoint per Listing Sessions
+### 8. No Session Listing Endpoint
 
-**Problema**: Non esiste `GET /v1/sessions` (lista sessioni). Un'applicazione client non può mostrare lo storico delle sessioni.
+**Problem**: `GET /v1/sessions` (session list) does not exist. A client application cannot display session history.
 
-**Endpoints mancanti nell'API**:
-| Endpoint | Uso | Priorità |
+**Missing API endpoints**:
+| Endpoint | Use | Priority |
 |---|---|---|
-| `GET /v1/sessions` | Lista sessioni (con filtri, paginazione) | Alta |
-| `GET /v1/sessions/{id}/status` | Polling status elaborazione | Media |
-| `DELETE /v1/sessions/{id}` | Cancellazione sessione (GDPR) | Alta |
-| `GET /v1/transcriptions/{id}` | Singola trascrizione per ID | Media |
-| `DELETE /v1/minutes/{id}` | Cancellazione minuta (GDPR) | Media |
+| `GET /v1/sessions` | List sessions (with filters, pagination) | High |
+| `GET /v1/sessions/{id}/status` | Processing status polling | Medium |
+| `DELETE /v1/sessions/{id}` | Delete session (GDPR) | High |
+| `GET /v1/transcriptions/{id}` | Single transcription by ID | Medium |
+| `DELETE /v1/minutes/{id}` | Delete minutes (GDPR) | Medium |
 
 ---
 
-### 9. Nessuna Paginazione
+### 9. No Pagination
 
-**Problema**: `GET /v1/transcriptions?session_id=...` restituisce tutte le trascrizioni senza limite. Una sessione lunga può avere centinaia di segmenti → risposta potenzialmente huge.
+**Problem**: `GET /v1/transcriptions?session_id=...` returns all transcriptions without a limit. A long session can have hundreds of segments → potentially huge response.
 
-**Fix Richiesto**:
+**Required Fix**:
 ```
 GET /v1/transcriptions?session_id=xxx&limit=50&offset=0
 GET /v1/sessions?status=completed&limit=20&page=2&sort=created_at:desc
@@ -247,71 +247,71 @@ GET /v1/sessions?status=completed&limit=20&page=2&sort=created_at:desc
 
 ---
 
-### 10. Nessun Meccanismo di Autenticazione Multi-Tenant
+### 10. No Multi-Tenant Authentication Mechanism
 
-**Problema**: L'API ha un singolo API key globale. Non è possibile:
-- Avere più applicazioni client con chiavi diverse
-- Revocare una singola chiave
-- Tracciare quale client ha fatto quale richiesta
+**Problem**: The API has a single global API key. It is not possible to:
+- Have multiple client applications with different keys
+- Revoke a single key
+- Track which client made which request
 
-**Fix Richiesto**: API key management:
+**Required Fix**: API key management:
 ```
-POST /v1/api-keys        → Crea nuova API key (richiede master key)
-GET  /v1/api-keys        → Lista API keys
-DELETE /v1/api-keys/{id} → Revoca API key
+POST /v1/api-keys        → Create new API key (requires master key)
+GET  /v1/api-keys        → List API keys
+DELETE /v1/api-keys/{id} → Revoke API key
 ```
 
 ---
 
-## Matrice di Conformità "Moderna e Sicura"
+## "Modern and Secure" Compliance Matrix
 
-| Caratteristica | Stato | Note |
+| Feature | Status | Notes |
 |---|---|---|
-| Versionamento (`/v1/`) | ✅ Presente | — |
-| Bearer Token Auth | ✅ Presente | Ma singola chiave globale |
-| JWT per WebRTC | ✅ Presente | — |
-| CORS | ⚠️ Wildcard | Insicuro in produzione |
-| Rate Limiting | ❌ Assente | — |
-| Input Validation | ⚠️ Parziale | Ad-hoc, inconsistente |
-| Error Format Consistente | ⚠️ Parziale | Mix JSON/plain text |
-| OpenAPI Spec | ⚠️ Presente ma stale | Non sincronizzata, server sbagliati |
-| Swagger UI | ❌ Assente | — |
-| Paginazione | ❌ Assente | — |
-| `/demo/config` sicuro | ❌ Espone API key | Critico |
-| `/test/start` protetto | ❌ Pubblico | Crea sessioni senza auth |
-| GDPR endpoints | ❌ Assenti | No DELETE session/minutes |
-| Logging richieste | ✅ Presente | Zap middleware |
-| Request ID | ✅ Presente | `X-Request-ID` |
-| Timeout globale | ✅ Presente | 60s |
-| Recovery (panic) | ✅ Presente | — |
+| Versioning (`/v1/`) | ✅ Present | — |
+| Bearer Token Auth | ✅ Present | Single global key |
+| JWT for WebRTC | ✅ Present | — |
+| CORS | ⚠️ Wildcard | Insecure in production |
+| Rate Limiting | ❌ Absent | — |
+| Input Validation | ⚠️ Partial | Ad-hoc, inconsistent |
+| Consistent Error Format | ⚠️ Partial | Mix JSON/plain text |
+| OpenAPI Spec | ⚠️ Present but stale | Out of sync, wrong servers |
+| Swagger UI | ❌ Absent | — |
+| Pagination | ❌ Absent | — |
+| `/demo/config` secure | ❌ Exposes API key | Critical |
+| `/test/start` protected | ❌ Public | Creates sessions without auth |
+| GDPR endpoints | ❌ Absent | No DELETE session/minutes |
+| Request logging | ✅ Present | Zap middleware |
+| Request ID | ✅ Present | `X-Request-ID` |
+| Global timeout | ✅ Present | 60s |
+| Recovery (panic) | ✅ Present | — |
 
 ---
 
-## Priorità di Intervento
+## Intervention Priority
 
-| # | Gap | Impatto | Effort | Priorità |
-|---|-----|---------|--------|----------|
-| 3 | `/demo/config` espone API key | Critico | Basso | **Critica** |
-| 4 | `/test/start` non protetto | Alto | Basso | **Alta** |
-| 2 | Nessun rate limiting | Alto | Medio | **Alta** |
-| 6 | Errori inconsistenti (già package presente) | Medio | Basso | **Alta** |
-| 1 | CORS wildcard | Alto | Basso | **Alta** |
-| 5 | Input validation | Medio | Medio | **Media** |
-| 8 | Endpoints mancanti (listing, delete) | Medio | Medio | **Media** |
-| 7 | OpenAPI stale + no Swagger UI | Basso | Medio | **Media** |
-| 9 | Nessuna paginazione | Medio | Medio | **Media** |
-| 10 | Single API key | Basso | Alto | **Bassa** |
+| # | Gap | Impact | Effort | Priority |
+|---|-----|--------|--------|----------|
+| 3 | `/demo/config` exposes API key | Critical | Low | **Critical** |
+| 4 | `/test/start` unprotected | High | Low | **High** |
+| 2 | No rate limiting | High | Medium | **High** |
+| 6 | Inconsistent errors (response package already exists) | Medium | Low | **High** |
+| 1 | CORS wildcard | High | Low | **High** |
+| 5 | Input validation | Medium | Medium | **Medium** |
+| 8 | Missing endpoints (listing, delete) | Medium | Medium | **Medium** |
+| 7 | Stale OpenAPI + no Swagger UI | Low | Medium | **Medium** |
+| 9 | No pagination | Medium | Medium | **Medium** |
+| 10 | Single API key | Low | High | **Low** |
 
 ---
 
-## Passi di Implementazione
+## Implementation Steps
 
-### Step 1 — Fix Sicurezza Critica (2h)
+### Step 1 — Critical Security Fix (2h)
 
 ```go
-// 1. Rimuovere api_key da /demo/config
-// 2. Aggiungere flag cfg.Demo.Enabled per controllare l'endpoint
-// 3. Proteggere /test/start con API key o limitarlo a localhost
+// 1. Remove api_key from /demo/config
+// 2. Add cfg.Demo.Enabled flag to control the endpoint
+// 3. Protect /test/start with API key or restrict to localhost
 ```
 
 ### Step 2 — Rate Limiting (1h)
@@ -325,7 +325,7 @@ r.Use(httprate.LimitByIP(100, time.Minute))
 r.With(httprate.LimitByIP(10, time.Minute)).Post("/v1/sessions", ...)
 ```
 
-### Step 3 — CORS Configurabile (1h)
+### Step 3 — Configurable CORS (1h)
 
 ```yaml
 # config.yaml
@@ -334,13 +334,13 @@ api:
     allowed_origins: ["*"]  # default dev, override in prod
 ```
 
-### Step 4 — Error Response Unificata (1h)
+### Step 4 — Unified Error Response (1h)
 
-Usare `internal/api/response/` package già esistente (se c'è) o crearlo, e aggiornare tutti gli handler.
+Use the existing `internal/api/response/` package (if present) or create it, and update all handlers.
 
-### Step 5 — GET /v1/sessions + Paginazione (3-4h)
+### Step 5 — GET /v1/sessions + Pagination (3-4h)
 
-Aggiungere handler e query SQL con `LIMIT/OFFSET`.
+Add handler and SQL query with `LIMIT/OFFSET`.
 
 ### Step 6 — Swagger UI (2h)
 

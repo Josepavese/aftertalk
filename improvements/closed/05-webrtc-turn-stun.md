@@ -1,41 +1,41 @@
-# Improvement 05: WebRTC TURN/STUN — Piano Omnicomprensivo
+# Improvement 05: WebRTC TURN/STUN — Comprehensive Plan
 
-## Obiettivo
+## Objective
 
-Rendere aftertalk completamente self-contained per WebRTC in qualsiasi rete:
-LAN, WAN, NAT simmetrico, corporate firewall, Docker, Kubernetes.
-Zero dipendenze esterne per la connettività WebRTC.
+Make aftertalk completely self-contained for WebRTC on any network:
+LAN, WAN, symmetric NAT, corporate firewall, Docker, Kubernetes.
+Zero external dependencies for WebRTC connectivity.
 
 ---
 
-## Stato Attuale
+## Current State
 
-| Componente | Stato |
+| Component | Status |
 |---|---|
-| `WebRTCConfig.ICEServers` in config.go | ✅ Già presente |
-| ICEServers passati a botServer e peer | ✅ Già presente |
-| Default STUN Google hardcoded in config.go | ⚠️ Configurabile ma default fisso |
-| TURN server embedded | ❌ Assente |
-| ICE servers esposti via API (SSOT) | ❌ Assente (solo `api_key` in `/demo/config`) |
-| Credenziali TURN nel JS SDK | ❌ Hardcoded STUN in test-ui |
-| Sicurezza TURN (credenziali time-limited) | ❌ Assente |
+| `WebRTCConfig.ICEServers` in config.go | ✅ Already present |
+| ICEServers passed to botServer and peer | ✅ Already present |
+| Default Google STUN hardcoded in config.go | ⚠️ Configurable but fixed default |
+| Embedded TURN server | ❌ Absent |
+| ICE servers exposed via API (SSOT) | ❌ Absent (only `api_key` in `/demo/config`) |
+| TURN credentials in JS SDK | ❌ Hardcoded STUN in test-ui |
+| TURN security (time-limited credentials) | ❌ Absent |
 
 ---
 
-## Architettura Proposta
+## Proposed Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  config.yaml (SSOT)                                         │
 │  webrtc:                                                     │
-│    ice_servers: [...]          ← configurabile              │
+│    ice_servers: [...]          ← configurable               │
 │    turn:                                                     │
 │      enabled: true             ← embedded TURN              │
 │      listen_addr: 0.0.0.0:3478                              │
-│      public_ip: 1.2.3.4        ← rilevabile auto           │
+│      public_ip: 1.2.3.4        ← auto-detectable           │
 │      realm: aftertalk                                       │
 │      auth_secret: <random>     ← HMAC time-limited          │
-│      auth_ttl: 86400           ← 24h validità              │
+│      auth_ttl: 86400           ← 24h validity               │
 └────────────────────────┬────────────────────────────────────┘
                          │
            ┌─────────────┼──────────────┐
@@ -51,14 +51,14 @@ Zero dipendenze esterne per la connettività WebRTC.
            │               │────────────────►│
            │                                 │
            ◄─────── TURN relay ──────────────►
-              (quando STUN non basta)
+              (when STUN is not enough)
 ```
 
 ---
 
-## Componenti da Implementare
+## Components to Implement
 
-### 1. Config SSOT — `WebRTCConfig` estesa
+### 1. SSOT Config — Extended `WebRTCConfig`
 
 **File**: `internal/config/config.go`
 
@@ -80,14 +80,14 @@ type TURNServerConfig struct {
     PublicIP   string           `koanf:"public_ip"`    // "" = auto-detect
     Realm      string           `koanf:"realm"`        // "aftertalk"
     AuthSecret string           `koanf:"auth_secret"`  // HMAC shared secret
-    AuthTTL    int              `koanf:"auth_ttl"`     // secondi (default 86400)
-    // Protocolli
+    AuthTTL    int              `koanf:"auth_ttl"`     // seconds (default 86400)
+    // Protocols
     EnableUDP  bool             `koanf:"enable_udp"`   // default true
     EnableTCP  bool             `koanf:"enable_tcp"`   // default true
 }
 ```
 
-**Default sensati** (in `DefaultConfig()`):
+**Sensible defaults** (in `DefaultConfig()`):
 ```go
 WebRTC: WebRTCConfig{
     ICEServers: []ICEServerConfig{
@@ -106,13 +106,13 @@ WebRTC: WebRTCConfig{
 
 ---
 
-### 2. TURN Server Embedded — PAL
+### 2. Embedded TURN Server — PAL
 
 **File**: `internal/bot/webrtc/turn.go`
 
 ```go
 // TURNServer wraps pion/turn/v4 with lifecycle management.
-// Implements PAL: Business logic consuma solo StartTURNServer().
+// Implements PAL: business logic only consumes StartTURNServer().
 type TURNServer struct {
     server *turn.Server
     cfg    config.TURNServerConfig
@@ -123,21 +123,21 @@ func (s *TURNServer) Close() error
 func (s *TURNServer) Addr() string
 ```
 
-**Autenticazione**: HMAC time-based (RFC 5389 long-term credentials):
+**Authentication**: HMAC time-based (RFC 5389 long-term credentials):
 ```
-username = "<timestamp>:<user>"    // timestamp = Unix scadenza
+username = "<timestamp>:<user>"    // timestamp = Unix expiry
 password = base64(HMAC-SHA1(secret, username))
 ```
-Questo è il meccanismo usato da Twilio, Xirsys, coturn — è lo standard de facto.
+This is the mechanism used by Twilio, Xirsys, coturn — it is the de facto standard.
 
-**Auto-detect public IP**: se `PublicIP` è vuoto, chiamata a `api.ipify.org` una sola volta all'avvio.
+**Auto-detect public IP**: if `PublicIP` is empty, a single call to `api.ipify.org` at startup.
 
 ---
 
-### 3. REST API — Nuovo Endpoint `/v1/rtc-config`
+### 3. REST API — New Endpoint `/v1/rtc-config`
 
 **Endpoint**: `GET /v1/rtc-config`
-**Auth**: Bearer token (API key) — le credenziali TURN sono sensibili
+**Auth**: Bearer token (API key) — TURN credentials are sensitive
 **Response**:
 ```json
 {
@@ -153,10 +153,10 @@ Questo è il meccanismo usato da Twilio, Xirsys, coturn — è lo standard de fa
 }
 ```
 
-Le credenziali TURN sono **generate on-the-fly** a ogni richiesta (time-limited).
-Il campo `ttl` indica al client quando richiederle di nuovo.
+TURN credentials are **generated on-the-fly** on each request (time-limited).
+The `ttl` field tells the client when to refresh them.
 
-**`/demo/config`** (pubblico): espone solo STUN (nessuna credenziale TURN):
+**`/demo/config`** (public): only exposes STUN (no TURN credentials):
 ```json
 {
   "api_key": "...",
@@ -167,91 +167,91 @@ Il campo `ttl` indica al client quando richiederle di nuovo.
 
 ---
 
-### 4. SSOT nel JS SDK / test-ui
+### 4. SSOT in JS SDK / test-ui
 
-Il test-ui (e futuro SDK) legge i server ICE dall'API invece di averli hardcoded:
+The test-ui (and future SDK) reads ICE servers from the API instead of hardcoding them:
 
 ```javascript
-// Prima (hardcoded in test-ui):
+// Before (hardcoded in test-ui):
 const pc = new RTCPeerConnection({
     iceServers: [{urls: ['stun:stun.l.google.com:19302']}]  // ← hardcoded
 });
 
-// Dopo (SSOT via API):
+// After (SSOT via API):
 const rtcConfig = await client.getRTCConfig();  // GET /v1/rtc-config
 const pc = new RTCPeerConnection({
-    iceServers: rtcConfig.ice_servers  // ← dal server, con TURN se abilitato
+    iceServers: rtcConfig.ice_servers  // ← from server, with TURN if enabled
 });
 ```
 
 ---
 
-### 5. Sicurezza
+### 5. Security
 
-| Aspetto | Soluzione |
+| Aspect | Solution |
 |---|---|
-| Credenziali TURN non esposte pubblicamente | `/v1/rtc-config` richiede API key |
-| Credenziali time-limited | HMAC username con timestamp di scadenza |
-| TURN non relay tutto il traffico | pion/turn autentica ogni sessione |
-| Brute force TURN | Rate limiting su `/v1/rtc-config` |
-| public_ip auto-detect | Singola chiamata all'avvio, non a ogni request |
+| TURN credentials not publicly exposed | `/v1/rtc-config` requires API key |
+| Time-limited credentials | HMAC username with expiry timestamp |
+| TURN does not relay all traffic | pion/turn authenticates every session |
+| TURN brute force | Rate limiting on `/v1/rtc-config` |
+| public_ip auto-detect | Single call at startup, not per request |
 
 ---
 
 ### 6. Installer (SSOT)
 
-`install.sh` aggiunge la sezione `webrtc:` alla config generata:
+`install.sh` adds the `webrtc:` section to the generated config:
 ```yaml
 webrtc:
   ice_servers:
     - urls: ["stun:stun.l.google.com:19302"]
   turn:
-    enabled: false          # Abilitare se serve NAT traversal
+    enabled: false          # Enable if NAT traversal is needed
     listen_addr: "0.0.0.0:3478"
-    public_ip: ""           # Lasciare vuoto per auto-detect
+    public_ip: ""           # Leave empty for auto-detect
     realm: "aftertalk"
-    auth_secret: "<RANDOM_32>"   # Generato dall'installer
+    auth_secret: "<RANDOM_32>"   # Generated by installer
     auth_ttl: 86400
     enable_udp: true
     enable_tcp: true
 ```
 
-L'installer genera `auth_secret` con lo stesso meccanismo dell'API key (32 chars random).
+The installer generates `auth_secret` using the same mechanism as the API key (32 random chars).
 
 ---
 
-### 7. Documentazione Operativa
+### 7. Operational Documentation
 
-**Quando abilitare TURN**:
-- `aftertalk status` mostra se TURN è attivo
-- Log all'avvio: `TURN server listening on UDP/TCP :3478 (public: 1.2.3.4)`
-- Firewall: aprire porta 3478 UDP+TCP
+**When to enable TURN**:
+- `aftertalk status` shows whether TURN is active
+- Startup log: `TURN server listening on UDP/TCP :3478 (public: 1.2.3.4)`
+- Firewall: open port 3478 UDP+TCP
 
-**Porta TURN configurabile** — non hardcoded 3478.
+**Configurable TURN port** — not hardcoded to 3478.
 
 ---
 
-## File Coinvolti
+## Files Involved
 
-| File | Modifica |
+| File | Change |
 |---|---|
-| `internal/config/config.go` | Aggiungere `TURNServerConfig` |
-| `internal/bot/webrtc/turn.go` | **Nuovo** — TURN server embedded |
-| `internal/bot/webrtc/peer.go` | Nessuna modifica (già legge ICEServers) |
-| `internal/api/server.go` | Aggiungere route `GET /v1/rtc-config` |
-| `internal/api/handler/rtc.go` | **Nuovo** — handler per rtc-config |
-| `cmd/aftertalk/main.go` | Avviare TURN se enabled, iniettare ICE servers aggiornati |
-| `cmd/test-ui/index.html` | Leggere ICE servers da `/v1/rtc-config` |
-| `scripts/install.sh` | Aggiungere sezione webrtc in config generata |
+| `internal/config/config.go` | Add `TURNServerConfig` |
+| `internal/bot/webrtc/turn.go` | **New** — embedded TURN server |
+| `internal/bot/webrtc/peer.go` | No change (already reads ICEServers) |
+| `internal/api/server.go` | Add route `GET /v1/rtc-config` |
+| `internal/api/handler/rtc.go` | **New** — handler for rtc-config |
+| `cmd/aftertalk/main.go` | Start TURN if enabled, inject updated ICE servers |
+| `cmd/test-ui/index.html` | Read ICE servers from `/v1/rtc-config` |
+| `scripts/install.sh` | Add webrtc section in generated config |
 
 ---
 
-## Ordine di Implementazione
+## Implementation Order
 
-1. **Config** — aggiungere `TURNServerConfig` (5 min)
+1. **Config** — add `TURNServerConfig` (5 min)
 2. **TURN server** — `internal/bot/webrtc/turn.go` (30 min)
-3. **main.go** — avvio TURN + aggiornamento ICEServers con entry TURN (15 min)
-4. **Handler** — `GET /v1/rtc-config` con generazione credenziali HMAC (15 min)
-5. **test-ui** — leggere ICE servers dall'API (10 min)
-6. **installer** — sezione webrtc in config.yaml (10 min)
-7. **Test** — unit test HMAC generation + integrazione (20 min)
+3. **main.go** — TURN startup + ICEServers update with TURN entry (15 min)
+4. **Handler** — `GET /v1/rtc-config` with HMAC credential generation (15 min)
+5. **test-ui** — read ICE servers from API (10 min)
+6. **installer** — webrtc section in config.yaml (10 min)
+7. **Tests** — unit test HMAC generation + integration (20 min)

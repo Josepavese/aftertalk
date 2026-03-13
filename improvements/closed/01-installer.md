@@ -1,32 +1,32 @@
 # Improvement: Installer — SSOT & PAL Compliance
 
-## Verdetto Avvocato del Diavolo
+## Devil's Advocate Verdict
 
-**L'asserzione "semplice installer totalmente configurabile in SSOT scritto con approccio PAL" è PARZIALMENTE vera.**
+**The claim "simple, fully configurable installer written with SSOT/PAL approach" is PARTIALLY true.**
 
-Il sistema è funzionale e impressionante nella portata, ma presenta lacune strutturali rispetto ai principi dichiarati.
+The system is functional and impressive in scope, but has structural gaps relative to the declared principles.
 
 ---
 
-## Gaps Identificati
+## Identified Gaps
 
-### 1. Violazione SSOT — Valori Hardcoded nel Codice Go
+### 1. SSOT Violation — Hardcoded Values in Go Code
 
-**Problema**: La `config.yaml` è il SSOT dichiarato, ma esistono valori hardcoded sparsi nel codice che dovrebbero provenire dalla config.
+**Problem**: `config.yaml` is the declared SSOT, but hardcoded values are scattered in the code that should come from the config.
 
-| Valore Hardcoded | File | Riga | Dovrebbe Stare In |
+| Hardcoded Value | File | Line | Should Be In |
 |---|---|---|---|
 | `stun:stun.l.google.com:19302` | `internal/bot/webrtc/peer.go:37` | 37 | `config.yaml → webrtc.stun_servers` |
-| Timeout WebSocket `30s` | `internal/bot/webrtc/signaling.go` | varie | `config.yaml → webrtc.timeout` |
-| Chunk size default `15s` | `internal/core/session/service.go` | varie | già in config ma non sempre rispettato |
-| `chunkSizeMs = 15000` | `internal/bot/webrtc/peer.go` | costante | `config.yaml → processing.chunk_size_ms` |
-| `buffer = 100` (transcription chan) | `internal/core/session/service.go` | varie | `config.yaml → processing.buffer_size` |
+| WebSocket timeout `30s` | `internal/bot/webrtc/signaling.go` | various | `config.yaml → webrtc.timeout` |
+| Default chunk size `15s` | `internal/core/session/service.go` | various | already in config but not always respected |
+| `chunkSizeMs = 15000` | `internal/bot/webrtc/peer.go` | constant | `config.yaml → processing.chunk_size_ms` |
+| `buffer = 100` (transcription chan) | `internal/core/session/service.go` | various | `config.yaml → processing.buffer_size` |
 | `MaxRetries: 3` LLM | `internal/core/minutes/service.go:39` | 39 | `config.yaml → llm.retry.max_retries` |
-| Timeout minutes generation | main.go | costanti | `config.yaml → processing.timeouts` |
+| Minutes generation timeout | main.go | constants | `config.yaml → processing.timeouts` |
 
-**Fix Richiesto**:
+**Required Fix**:
 ```yaml
-# config.yaml — aggiungere sezione:
+# config.yaml — add section:
 webrtc:
   stun_servers:
     - stun:stun.l.google.com:19302
@@ -44,10 +44,10 @@ processing:
 
 ---
 
-### 2. Violazione PAL — Installer Non Modulare
+### 2. PAL Violation — Non-Modular Installer
 
-**Problema**: `install.sh` è un file monolitico di 413 righe che mescola responsabilità:
-- Platform detection (già estratta parzialmente in `_platform.sh`, ma non completamente)
+**Problem**: `install.sh` is a monolithic 413-line file mixing responsibilities:
+- Platform detection (partially extracted to `_platform.sh`, but not completely)
 - Go installation logic
 - Python/pip management
 - Ollama management
@@ -55,9 +55,9 @@ processing:
 - Config generation
 - CLI wrapper generation
 
-**Violazione PAL**: Il "Logic Layer" (cosa installare) è mescolato con il "Provider Layer" (come installarlo su ogni OS).
+**PAL Violation**: The "Logic Layer" (what to install) is mixed with the "Provider Layer" (how to install it on each OS).
 
-**Fix Richiesto**: Separare in moduli distinti:
+**Required Fix**: Separate into distinct modules:
 
 ```
 scripts/
@@ -76,85 +76,85 @@ scripts/
 
 ---
 
-### 3. Mancanza SSOT — Versioning Installer vs Codice
+### 3. Missing SSOT — Installer vs Code Versioning
 
-**Problema**: La versione hardcoded nell'installer (`Aftertalk Installer v1.0`) non è sincronizzata con nessun file di versione nel progetto.
+**Problem**: The version hardcoded in the installer (`Aftertalk Installer v1.0`) is not synchronized with any version file in the project.
 
 ```bash
 # install.sh:85
 echo "  ║     Aftertalk Installer v1.0      ║"
 ```
 
-Non esiste un `VERSION` file, né un `version.go`, né un campo in `go.mod` che faccia da SSOT per la versione. La versione esiste solo nella stringa del banner.
+There is no `VERSION` file, no `version.go`, and no field in `go.mod` serving as SSOT for the version. The version exists only in the banner string.
 
-**Fix Richiesto**:
+**Required Fix**:
 ```
-# Creare /version.txt (o leggere da git tag)
+# Create /version.txt (or read from git tag)
 1.0.0
 
-# install.sh legge da questo file o da git tag:
+# install.sh reads from this file or git tag:
 VERSION=$(cat "$AFTERTALK_SRC/version.txt" 2>/dev/null || git -C "$AFTERTALK_SRC" describe --tags 2>/dev/null || echo "dev")
 ```
 
 ---
 
-### 4. Mancanza SSOT — Defaults Duplicati tra Installer e Config Struct Go
+### 4. Missing SSOT — Duplicated Defaults Between Installer and Go Config Struct
 
-**Problema**: I valori default esistono in **due posti**:
-1. `scripts/install.sh` (genera `config.yaml` con defaults hardcoded)
-2. `internal/config/config.go` (struct Go con tag `default:...` via koanf)
+**Problem**: Default values exist in **two places**:
+1. `scripts/install.sh` (generates `config.yaml` with hardcoded defaults)
+2. `internal/config/config.go` (Go struct with `default:...` tags via koanf)
 
-Se si cambia un default nel codice Go, l'installer non lo saprà e genererà un `config.yaml` con il vecchio valore.
+If a default changes in the Go code, the installer will not know and will generate a `config.yaml` with the old value.
 
-**Esempio concreto**:
+**Concrete example**:
 ```bash
 # install.sh:230
 processing:
-  chunkSizeMs: 15000   # hardcoded nell'installer
+  chunkSizeMs: 15000   # hardcoded in installer
 ```
 ```go
-// config.go — se un giorno cambia a 30000:
+// config.go — if it ever changes to 30000:
 type ProcessingConfig struct {
     ChunkSizeMs int `koanf:"chunkSizeMs" default:"30000"`
 }
 ```
 
-**Fix Richiesto**: L'installer dovrebbe generare la config con i defaults estratti dal binario stesso:
+**Required Fix**: The installer should generate the config with defaults extracted from the binary itself:
 ```bash
-# Dopo la build del binario:
+# After building the binary:
 "$AFTERTALK_BIN/aftertalk-server" --dump-config-defaults > "$CONFIG_FILE"
 ```
-Questo richiede un flag `--dump-config-defaults` nel server Go che emette YAML con tutti i valori default.
+This requires a `--dump-config-defaults` flag in the Go server that outputs YAML with all default values.
 
 ---
 
-### 5. Installer Windows Incompleto (PAL non bilanciata)
+### 5. Incomplete Windows Installer (Unbalanced PAL)
 
-**Problema**: `install.ps1` esiste ma manca di parità funzionale con `install.sh`:
-- Non gestisce `aftertalk update`
-- Il processo management (PID files) usa approcci diversi tra Unix e Windows
-- Non è testato in CI
-- Manca `install.bat` come entry point (l'utente Windows finale non usa PowerShell direttamente)
+**Problem**: `install.ps1` exists but lacks functional parity with `install.sh`:
+- Does not handle `aftertalk update`
+- Process management (PID files) uses different approaches between Unix and Windows
+- Not tested in CI
+- Missing `install.bat` as entry point (end-user Windows users don't use PowerShell directly)
 
-**Fix Richiesto**:
-- Entry point `install.bat` che lancia `install.ps1` correttamente
-- Parità completa comandi CLI (`start`, `stop`, `status`, `update`, `logs`)
-- Test CI per Windows (GitHub Actions `windows-latest`)
+**Required Fix**:
+- `install.bat` entry point that launches `install.ps1` correctly
+- Full CLI command parity (`start`, `stop`, `status`, `update`, `logs`)
+- CI tests for Windows (GitHub Actions `windows-latest`)
 
 ---
 
-### 6. Nessuna Verifica Integrità dell'Installer
+### 6. No Installer Integrity Verification
 
-**Problema**: Il pattern `curl -fsSL ... | bash` è insicuro senza verifica della firma.
+**Problem**: The `curl -fsSL ... | bash` pattern is insecure without signature verification.
 
 ```bash
-# Pattern attuale — vulnerabile a MITM:
+# Current pattern — vulnerable to MITM:
 curl -fsSL https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.sh | bash
 ```
 
-**Fix Richiesto**:
+**Required Fix**:
 ```bash
-# Pattern sicuro con verifica SHA256:
+# Secure pattern with SHA256 verification:
 curl -fsSL https://releases.aftertalk.io/install.sh -o install.sh
 curl -fsSL https://releases.aftertalk.io/install.sh.sha256 -o install.sh.sha256
 sha256sum --check install.sh.sha256
@@ -163,57 +163,57 @@ bash install.sh
 
 ---
 
-### 7. aftertalk CLI — Nessun Meccanismo di Health Recovery
+### 7. aftertalk CLI — No Health Recovery Mechanism
 
-**Problema**: Il comando `aftertalk start` avvia i processi ma non li monitora. Se whisper_server crasha dopo l'avvio, nessuno lo rileva.
+**Problem**: The `aftertalk start` command starts processes but does not monitor them. If whisper_server crashes after startup, nobody detects it.
 
-**Fix Richiesto**: Sistema di supervisione dei processi:
-- Integrazione con `systemd` (Linux) o `launchd` (macOS) per auto-restart
-- Su Windows: Windows Service via NSSM o Task Scheduler
-- Oppure: supervisord-style watchdog nel CLI wrapper
-
----
-
-## Priorità di Intervento
-
-| # | Gap | Impatto | Effort | Priorità |
-|---|-----|---------|--------|----------|
-| 1 | STUN hardcoded nel Go | Medio | Basso | **Alta** |
-| 4 | Defaults duplicati installer/Go | Alto | Medio | **Alta** |
-| 2 | Installer non modulare | Medio | Medio | **Media** |
-| 3 | Versioning mancante | Basso | Basso | **Media** |
-| 7 | Nessun health recovery | Alto | Alto | **Media** |
-| 5 | Windows incompleto | Medio | Alto | **Bassa** |
-| 6 | Sicurezza installer | Basso | Medio | **Bassa** |
+**Required Fix**: Process supervision system:
+- Integration with `systemd` (Linux) or `launchd` (macOS) for auto-restart
+- On Windows: Windows Service via NSSM or Task Scheduler
+- Or: supervisord-style watchdog in the CLI wrapper
 
 ---
 
-## Passi di Implementazione
+## Intervention Priority
 
-### Step 1 — Esternalizzare STUN in config (1-2h)
+| # | Gap | Impact | Effort | Priority |
+|---|-----|--------|--------|----------|
+| 1 | STUN hardcoded in Go | Medium | Low | **High** |
+| 4 | Duplicated installer/Go defaults | High | Medium | **High** |
+| 2 | Non-modular installer | Medium | Medium | **Medium** |
+| 3 | Missing versioning | Low | Low | **Medium** |
+| 7 | No health recovery | High | High | **Medium** |
+| 5 | Incomplete Windows | Medium | High | **Low** |
+| 6 | Installer security | Low | Medium | **Low** |
 
-1. Aggiungere `WebRTCConfig` struct a `internal/config/config.go`
-2. Aggiungere sezione `webrtc:` a config.yaml template nell'installer
-3. Leggere STUN servers in `peer.go` da `cfg.WebRTC.STUNServers`
-4. Test: verificare che WebRTC funzioni con STUN servers custom
+---
 
-### Step 2 — Aggiungere `--dump-config-defaults` (2-3h)
+## Implementation Steps
 
-1. Aggiungere flag `--dump-defaults` al main.go
-2. Quando attivo: stampare YAML con tutti i valori default da koanf e uscire
-3. Modificare installer: dopo build, eseguire `aftertalk-server --dump-defaults > config.yaml`
-4. Rimuovere blocco heredoc config da install.sh
+### Step 1 — Externalize STUN to config (1-2h)
+
+1. Add `WebRTCConfig` struct to `internal/config/config.go`
+2. Add `webrtc:` section to config.yaml template in installer
+3. Read STUN servers in `peer.go` from `cfg.WebRTC.STUNServers`
+4. Test: verify WebRTC works with custom STUN servers
+
+### Step 2 — Add `--dump-config-defaults` (2-3h)
+
+1. Add `--dump-defaults` flag to main.go
+2. When active: print YAML with all default values from koanf and exit
+3. Update installer: after build, run `aftertalk-server --dump-defaults > config.yaml`
+4. Remove config heredoc block from install.sh
 
 ### Step 3 — VERSION file (30min)
 
-1. Creare `/version.txt` con valore corrente
-2. Leggere in install.sh: `VERSION=$(cat "$AFTERTALK_SRC/version.txt")`
-3. Leggere in main.go: `go:embed version.txt`
-4. Esporre in `/v1/health` response: `{"status":"ok","version":"1.0.0"}`
+1. Create `/version.txt` with current value
+2. Read in install.sh: `VERSION=$(cat "$AFTERTALK_SRC/version.txt")`
+3. Read in main.go: `go:embed version.txt`
+4. Expose in `/v1/health` response: `{"status":"ok","version":"1.0.0"}`
 
-### Step 4 — Modularizzare install.sh (3-4h)
+### Step 4 — Modularize install.sh (3-4h)
 
-1. Estrarre ogni blocco funzionale in `scripts/providers/_*.sh`
-2. Ogni provider ha: `check_<tool>()`, `install_<tool>()`, `version_<tool>()`
-3. `install.sh` diventa orchestratore puro che source i provider
-4. Aggiungere test unitari shell (bats framework)
+1. Extract each functional block into `scripts/providers/_*.sh`
+2. Each provider has: `check_<tool>()`, `install_<tool>()`, `version_<tool>()`
+3. `install.sh` becomes a pure orchestrator that sources the providers
+4. Add shell unit tests (bats framework)

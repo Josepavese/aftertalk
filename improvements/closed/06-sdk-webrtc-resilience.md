@@ -1,39 +1,39 @@
 # Improvement 06 — SDK WebRTC Resilience
 
-## Verdetto Avvocato del Diavolo
+## Devil's Advocate Verdict
 
-**L'asserzione "SDK robusto e resiliente" è PARZIALMENTE FALSA per il layer WebRTC.**
+**The claim "SDK is robust and resilient" is PARTIALLY FALSE for the WebRTC layer.**
 
-Il layer HTTP + MinutesPoller sono effettivamente robusti. Il layer WebRTC ha 4 bug reali e 1 gap architetturale che rendono la connessione fragile in produzione.
+The HTTP + MinutesPoller layer is genuinely robust. The WebRTC layer has 4 real bugs and 1 architectural gap that make the connection fragile in production.
 
 ---
 
-## Bug e Gap Documentati
+## Documented Bugs and Gaps
 
-### BUG 1 — Memory Leak: Listener Accumulation su WS Reconnect
+### BUG 1 — Memory Leak: Listener Accumulation on WS Reconnect
 
-**File**: `sdk/src/webrtc/signaling.ts`, riga 100-101
-**Gravità**: Alta — memory leak + behavior duplicato
+**File**: `sdk/src/webrtc/signaling.ts`, line 100-101
+**Severity**: High — memory leak + duplicated behavior
 
 ```typescript
-// connect() chiamato ad ogni reconnect:
-this.ws.addEventListener('message', this.onMessage);  // NON once
-this.ws.addEventListener('close', this.onClose);       // NON once
+// connect() called on every reconnect:
+this.ws.addEventListener('message', this.onMessage);  // NOT once
+this.ws.addEventListener('close', this.onClose);       // NOT once
 ```
 
-Al 3° reconnect esistono **3 handler `message`** e **3 handler `close`** attivi.
-Ogni messaggio ricevuto viene processato 3 volte. Il backoff riceve `onClose` 3 volte,
-avviando 3 timer paralleli.
+After the 3rd reconnect there are **3 active `message` handlers** and **3 active `close` handlers**.
+Every received message is processed 3 times. The backoff receives `onClose` 3 times,
+starting 3 parallel timers.
 
-**Fix**: rimuovere i listener dal vecchio WS prima di crearne uno nuovo, e registrare
-`message`/`close` con cleanup esplicito.
+**Fix**: remove listeners from the old WS before creating a new one, and register
+`message`/`close` with explicit cleanup.
 
 ---
 
-### BUG 2 — ICE `disconnected` Trattato Come Terminale
+### BUG 2 — ICE `disconnected` Treated as Terminal
 
-**File**: `sdk/src/webrtc/connection.ts`, riga 145
-**Gravità**: Alta — falsi positivi di disconnessione
+**File**: `sdk/src/webrtc/connection.ts`, line 145
+**Severity**: High — false positive disconnections
 
 ```typescript
 } else if (state === 'disconnected' || state === 'closed') {
@@ -41,100 +41,99 @@ avviando 3 timer paralleli.
 }
 ```
 
-La [spec WebRTC W3C](https://www.w3.org/TR/webrtc/#rtciceconnectionstate-enum) specifica:
+The [W3C WebRTC spec](https://www.w3.org/TR/webrtc/#rtciceconnectionstate-enum) specifies:
 > `disconnected`: "One or more components is running in a failed state **but there is
 > a chance that the ICE agent will recover**."
 
-Il browser ha un timer interno (tipicamente 5s) dopo il quale può tornare a `connected`
-autonomamente (es. cambio WiFi → 4G, jitter momentaneo). Emettere `disconnected`
-immediatamente interrompe la sessione per una condizione transiente.
+The browser has an internal timer (typically 5s) after which it may return to `connected`
+on its own (e.g. WiFi → 4G switch, momentary jitter). Emitting `disconnected`
+immediately terminates the session for a transient condition.
 
-**Fix**: attendere la transizione a `failed` prima di emettere `disconnected`.
-Usare un timer di grazia di 5s su `disconnected`.
+**Fix**: wait for transition to `failed` before emitting `disconnected`.
+Use a 5s grace timer on `disconnected`.
 
 ---
 
-### BUG 3 — Nessun ICE Restart su `failed`
+### BUG 3 — No ICE Restart on `failed`
 
-**File**: `sdk/src/webrtc/connection.ts`, riga 143-144
-**Gravità**: Alta — nessun recovery automatico da ICE failure
+**File**: `sdk/src/webrtc/connection.ts`, line 143-144
+**Severity**: High — no automatic recovery from ICE failure
 
 ```typescript
 } else if (state === 'failed') {
   this.emit('error', new AftertalkError('webrtc_ice_failed', ...));
-  // ← si ferma qui
+  // ← stops here
 }
 ```
 
-Quando ICE entra in `failed`, la recovery corretta è:
-1. `pc.restartIce()` — segnala al browser di raccogliere nuovi candidati
-2. Creare un nuovo offer con `{ iceRestart: true }`
-3. Inviare il nuovo offer via signaling
-4. Attendere il nuovo answer
+When ICE enters `failed`, the correct recovery is:
+1. `pc.restartIce()` — signals the browser to gather new candidates
+2. Create a new offer with `{ iceRestart: true }`
+3. Send the new offer via signaling
+4. Wait for the new answer
 
-Senza questo, qualsiasi interruzione di rete > ~30s porta alla perdita permanente
-dell'audio, richiedendo un reload manuale.
+Without this, any network interruption > ~30s leads to permanent audio loss,
+requiring a manual reload.
 
-**Fix**: implementare `attemptICERestart()` con max retry configurabile (default 3).
+**Fix**: implement `attemptICERestart()` with configurable max retries (default 3).
 
 ---
 
-### BUG 4 — Signaling Reconnect Non Rinegozia la PeerConnection
+### BUG 4 — Signaling Reconnect Does Not Renegotiate the PeerConnection
 
-**File**: `sdk/src/webrtc/connection.ts`, riga 88-90
-**Gravità**: Media — silent audio failure post-reconnect
+**File**: `sdk/src/webrtc/connection.ts`, line 88-90
+**Severity**: Medium — silent audio failure post-reconnect
 
 ```typescript
 this.signaling.on('disconnected', (reason) => this.emit('disconnected', reason));
 this.signaling.on('reconnecting', (attempt) => this.emit('signaling-reconnecting', attempt));
 ```
 
-Quando il WS si riconnette (dopo `reconnecting`), il `SignalingClient` emette `connected`
-ma `WebRTCConnection` non ascolta quel evento. Se durante la disconnessione WS la
-PeerConnection ha perso ICE, non viene inviato nessun nuovo offer → l'audio rimane
-muto senza errori visibili.
+When the WS reconnects (after `reconnecting`), `SignalingClient` emits `connected`
+but `WebRTCConnection` does not listen to that event. If during the WS disconnection
+the PeerConnection lost ICE, no new offer is sent → audio remains silent without visible errors.
 
-**Fix**: ascoltare `SignalingClient.on('connected')` in `WebRTCConnection` e verificare
-lo stato ICE. Se è `failed` o `disconnected`, avviare ICE restart.
+**Fix**: listen to `SignalingClient.on('connected')` in `WebRTCConnection` and check
+ICE state. If it is `failed` or `disconnected`, trigger ICE restart.
 
 ---
 
-### GAP 5 — Token Expiry su Reconnect Non Gestita
+### GAP 5 — Token Expiry on Reconnect Not Handled
 
-**File**: `sdk/src/webrtc/signaling.ts`, riga 80
-**Gravità**: Media — loop silenzioso di 401 fino a max tentativi
+**File**: `sdk/src/webrtc/signaling.ts`, line 80
+**Severity**: Medium — silent 401 loop until max attempts
 
 ```typescript
 const wsUrl = `${this.url}?token=${encodeURIComponent(this.token)}`;
 ```
 
-Il token JWT viene fissato al costruttore e riusato ad ogni reconnect. Con un JWT
-a TTL breve (es. 1h), dopo la scadenza ogni tentativo riceve 401/403 e viene
-interpretato come errore di rete → backoff → nuovo tentativo → ancora 401.
-L'utente non vede mai un errore `unauthorized` esplicito.
+The JWT token is fixed at construction and reused on every reconnect. With a short
+TTL JWT (e.g. 1h), after expiry every attempt receives 401/403 and is interpreted
+as a network error → backoff → new attempt → 401 again.
+The user never sees an explicit `unauthorized` error.
 
-**Fix**: accettare un callback `tokenProvider: () => string | Promise<string>`
-opzionale nel costruttore. Se presente, viene invocato ad ogni tentativo di connessione.
+**Fix**: accept an optional `tokenProvider: () => string | Promise<string>` callback
+in the constructor. If present, it is invoked on every connection attempt.
 
 ---
 
-## Architettura del Fix
+## Fix Architecture
 
-### SignalingClient — modifiche
+### SignalingClient — changes
 
 ```typescript
 export interface SignalingClientOptions {
   url: string;
   token: string;
   maxReconnectAttempts?: number;
-  // NUOVO: callback per token refresh
+  // NEW: callback for token refresh
   tokenProvider?: () => string | Promise<string>;
-  // NUOVO: jitter sul backoff (0-1, default 0.3)
+  // NEW: jitter on backoff (0-1, default 0.3)
   backoffJitter?: number;
 }
 ```
 
-**Cleanup listener**:
+**Listener cleanup**:
 ```typescript
 private attachListeners(ws: WebSocket): void {
   ws.addEventListener('message', this.onMessage);
@@ -146,7 +145,7 @@ private detachListeners(ws: WebSocket): void {
   ws.removeEventListener('close', this.onClose);
 }
 
-// In connect(), prima di creare il nuovo WS:
+// In connect(), before creating the new WS:
 if (this.ws) {
   this.detachListeners(this.ws);
 }
@@ -162,7 +161,7 @@ private async resolveToken(): Promise<string> {
 }
 ```
 
-**Backoff con jitter**:
+**Backoff with jitter**:
 ```typescript
 private backoffDelay(): number {
   const base = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30_000);
@@ -173,15 +172,15 @@ private backoffDelay(): number {
 
 ---
 
-### WebRTCConnection — modifiche
+### WebRTCConnection — changes
 
-**Grazia su `disconnected`**:
+**Grace on `disconnected`**:
 ```typescript
 private iceDisconnectedTimer?: ReturnType<typeof setTimeout>;
 
 // In oniceconnectionstatechange:
 if (state === 'disconnected') {
-  // Aspetta 5s: potrebbe riconnettersi da solo
+  // Wait 5s: might self-recover
   this.iceDisconnectedTimer = setTimeout(() => {
     if (this.pc?.iceConnectionState === 'disconnected') {
       this.attemptICERestart();
@@ -215,7 +214,7 @@ private async attemptICERestart(): Promise<void> {
 }
 ```
 
-**Rinegoziazione post-signaling-reconnect**:
+**Renegotiation post-signaling-reconnect**:
 ```typescript
 this.signaling.on('connected', async () => {
   const iceState = this.pc?.iceConnectionState;
@@ -227,7 +226,7 @@ this.signaling.on('connected', async () => {
 
 ---
 
-## Test da Aggiungere
+## Tests to Add
 
 ```typescript
 // signaling.test.ts
@@ -246,45 +245,45 @@ it('stops after maxIceRestarts attempts')
 
 ---
 
-## Nuovi Tipi Pubblici
+## New Public Types
 
 ```typescript
-// WebRTCConfig (esteso)
+// WebRTCConfig (extended)
 export interface WebRTCConfig {
   signalingUrl?: string;
   iceServers?: ICEServer[];
   maxReconnectAttempts?: number;
   audioConstraints?: MediaTrackConstraints;
-  // NUOVI:
+  // NEW:
   tokenProvider?: () => string | Promise<string>;
   backoffJitter?: number;
   iceDisconnectedGraceMs?: number;  // default 5000
   maxIceRestarts?: number;           // default 3
 }
 
-// Nuovo evento in ConnectionEventMap:
+// New event in ConnectionEventMap:
 'ice-restarting': [attempt: number];
 ```
 
 ---
 
-## Impatto e Compatibilità
+## Impact and Compatibility
 
-- **Breaking changes**: nessuno — tutti i nuovi parametri sono opzionali
-- **Behavior change**: `disconnected` emesso con 5s di ritardo su ICE `disconnected`
-  (breaking per chi usa il timeout del browser come trigger) → documentare
-- **Nuovi eventi**: `ice-restarting` non breaking (additive)
+- **Breaking changes**: none — all new parameters are optional
+- **Behavior change**: `disconnected` emitted with 5s delay on ICE `disconnected`
+  (breaking for anyone using the browser timeout as a trigger) → document
+- **New events**: `ice-restarting` is non-breaking (additive)
 
 ---
 
-## Priorità di Implementazione
+## Implementation Priority
 
-| # | Task | Effort | Priorità |
+| # | Task | Effort | Priority |
 |---|---|---|---|
-| 1 | Fix listener accumulation in SignalingClient | Basso (30min) | **Critica** |
-| 2 | ICE `disconnected` grace timer | Basso (20min) | **Alta** |
-| 3 | ICE restart su `failed` | Medio (1h) | **Alta** |
-| 4 | Rinegoziazione post-signaling-reconnect | Basso (30min) | **Alta** |
-| 5 | Token provider callback | Basso (30min) | **Media** |
-| 6 | Backoff jitter | Basso (15min) | **Bassa** |
-| 7 | Test per tutti i fix | Medio (2h) | **Alta** |
+| 1 | Fix listener accumulation in SignalingClient | Low (30min) | **Critical** |
+| 2 | ICE `disconnected` grace timer | Low (20min) | **High** |
+| 3 | ICE restart on `failed` | Medium (1h) | **High** |
+| 4 | Renegotiation post-signaling-reconnect | Low (30min) | **High** |
+| 5 | Token provider callback | Low (30min) | **Medium** |
+| 6 | Backoff jitter | Low (15min) | **Low** |
+| 7 | Tests for all fixes | Medium (2h) | **High** |
