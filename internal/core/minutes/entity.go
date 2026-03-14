@@ -19,23 +19,23 @@ const (
 // (e.g. "themes", "contents_reported") to the raw JSON value for that section.
 // Citations are always present as a typed slice.
 type Minutes struct {
+	GeneratedAt time.Time                  `json:"generated_at"`
+	Sections    map[string]json.RawMessage `json:"sections"`
+	DeliveredAt *time.Time                 `json:"delivered_at,omitempty"`
 	ID          string                     `json:"id"`
 	SessionID   string                     `json:"session_id"`
 	TemplateID  string                     `json:"template_id"`
-	Version     int                        `json:"version"`
-	Sections    map[string]json.RawMessage `json:"sections"`
-	Citations   []Citation                 `json:"citations"`
-	GeneratedAt time.Time                  `json:"generated_at"`
-	DeliveredAt *time.Time                 `json:"delivered_at,omitempty"`
 	Status      MinutesStatus              `json:"status"`
 	Provider    string                     `json:"provider"`
+	Citations   []Citation                 `json:"citations"`
+	Version     int                        `json:"version"`
 }
 
 // Citation is a verbatim quote from the transcript.
 type Citation struct {
-	TimestampMs int    `json:"timestamp_ms"`
 	Text        string `json:"text"`
 	Role        string `json:"role"`
+	TimestampMs int    `json:"timestamp_ms"`
 }
 
 // contentBlob is the JSON structure stored in the DB content column.
@@ -106,12 +106,12 @@ func (m *Minutes) UnmarshalContent(raw string) error {
 }
 
 type MinutesHistory struct {
+	EditedAt  time.Time `json:"edited_at"`
 	ID        string    `json:"id"`
 	MinutesID string    `json:"minutes_id"`
-	Version   int       `json:"version"`
 	Content   string    `json:"content"`
-	EditedAt  time.Time `json:"edited_at"`
 	EditedBy  string    `json:"edited_by,omitempty"`
+	Version   int       `json:"version"`
 }
 
 func NewMinutesHistory(id, minutesID string, version int, content string) *MinutesHistory {

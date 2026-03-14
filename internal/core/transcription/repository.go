@@ -3,11 +3,14 @@ package transcription
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/core"
 )
+
+var errTranscriptionNotFound = errors.New("transcription not found")
 
 type TranscriptionRepository struct {
 	*core.BaseRepository
@@ -72,13 +75,13 @@ func (r *TranscriptionRepository) GetByID(ctx context.Context, id string) (*Tran
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("transcription not found: %s", id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", errTranscriptionNotFound, id)
 		}
 		return nil, fmt.Errorf("failed to get transcription: %w", err)
 	}
 
-	t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	if parsed, err := time.Parse(time.RFC3339, createdAt); err == nil { t.CreatedAt = parsed }
 	if confidence.Valid {
 		t.Confidence = confidence.Float64
 	}
@@ -98,7 +101,7 @@ func (r *TranscriptionRepository) GetBySession(ctx context.Context, sessionID st
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transcriptions: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows.Close error is not actionable here
 
 	var transcriptions []*Transcription
 	for rows.Next() {
@@ -124,12 +127,16 @@ func (r *TranscriptionRepository) GetBySession(ctx context.Context, sessionID st
 			return nil, fmt.Errorf("failed to scan transcription: %w", err)
 		}
 
-		t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		if parsed, err := time.Parse(time.RFC3339, createdAt); err == nil { t.CreatedAt = parsed }
 		if confidence.Valid {
 			t.Confidence = confidence.Float64
 		}
 
 		transcriptions = append(transcriptions, &t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate transcriptions: %w", err)
 	}
 
 	return transcriptions, nil

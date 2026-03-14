@@ -4,11 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/core"
 )
+
+var errMinutesNotFound = errors.New("minutes not found")
 
 type MinutesRepository struct {
 	*core.BaseRepository
@@ -87,16 +90,19 @@ func (r *MinutesRepository) scanOne(row *sql.Row, hint string) (*Minutes, error)
 		&generatedAt, &deliveredAt, &m.Status, &m.Provider,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("minutes not found: %s", hint)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", errMinutesNotFound, hint)
 		}
 		return nil, fmt.Errorf("failed to get minutes: %w", err)
 	}
 
-	m.GeneratedAt, _ = time.Parse(time.RFC3339, generatedAt)
+	if t, err := time.Parse(time.RFC3339, generatedAt); err == nil {
+		m.GeneratedAt = t
+	}
 	if deliveredAt.Valid {
-		t, _ := time.Parse(time.RFC3339, deliveredAt.String)
-		m.DeliveredAt = &t
+		if t, err := time.Parse(time.RFC3339, deliveredAt.String); err == nil {
+			m.DeliveredAt = &t
+		}
 	}
 
 	if err := m.UnmarshalContent(content); err != nil {
@@ -126,7 +132,7 @@ func (r *MinutesRepository) GetHistory(ctx context.Context, minutesID string) ([
 	if err != nil {
 		return nil, fmt.Errorf("failed to get minutes history: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows.Close error is not actionable here
 
 	var history []*MinutesHistory
 	for rows.Next() {
@@ -137,18 +143,27 @@ func (r *MinutesRepository) GetHistory(ctx context.Context, minutesID string) ([
 		if err := rows.Scan(&h.ID, &h.MinutesID, &h.Version, &h.Content, &editedAt, &editedBy); err != nil {
 			return nil, fmt.Errorf("failed to scan minutes history: %w", err)
 		}
-		h.EditedAt, _ = time.Parse(time.RFC3339, editedAt)
+		if t, parseErr := time.Parse(time.RFC3339, editedAt); parseErr == nil {
+			h.EditedAt = t
+		}
 		if editedBy.Valid {
 			h.EditedBy = editedBy.String
 		}
 		history = append(history, &h)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate minutes history: %w", err)
+	}
+
 	return history, nil
 }
 
 // snapshotJSON serializes a Minutes to JSON for history storage.
 func snapshotJSON(m *Minutes) string {
-	b, _ := json.Marshal(m)
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
 	return string(b)
 }
 

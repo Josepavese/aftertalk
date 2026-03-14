@@ -3,10 +3,17 @@ package session
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/core"
+)
+
+var (
+	errAudioStreamNotFound   = errors.New("audio stream not found for participant")
+	errSessionNotFound       = errors.New("session not found")
+	errParticipantNotFoundJTI = errors.New("participant not found with jti")
 )
 
 type SessionRepository struct {
@@ -69,19 +76,22 @@ func (r *SessionRepository) GetByID(ctx context.Context, id string) (*Session, e
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("session not found: %s", id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", errSessionNotFound, id)
 		}
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
 	session.Status = SessionStatus(status.String)
 	if createdAt.Valid {
-		session.CreatedAt, _ = time.Parse(time.RFC3339, createdAt.String)
+		if t, err := time.Parse(time.RFC3339, createdAt.String); err == nil {
+			session.CreatedAt = t
+		}
 	}
 	if endedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, endedAt.String)
-		session.EndedAt = &t
+		if t, err := time.Parse(time.RFC3339, endedAt.String); err == nil {
+			session.EndedAt = &t
+		}
 	}
 	if templateID.Valid {
 		session.TemplateID = templateID.String
@@ -182,23 +192,27 @@ func (r *SessionRepository) GetParticipantByJTI(ctx context.Context, jti string)
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("participant not found with jti: %s", jti)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", errParticipantNotFoundJTI, jti)
 		}
 		return nil, fmt.Errorf("failed to get participant: %w", err)
 	}
 
 	if tokenExpiresAt.Valid {
-		participant.TokenExpiresAt, _ = time.Parse(time.RFC3339, tokenExpiresAt.String)
+		if t, err := time.Parse(time.RFC3339, tokenExpiresAt.String); err == nil {
+			participant.TokenExpiresAt = t
+		}
 	}
 	participant.TokenUsed = tokenUsed == 1
 	if connectedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, connectedAt.String)
-		participant.ConnectedAt = &t
+		if t, err := time.Parse(time.RFC3339, connectedAt.String); err == nil {
+			participant.ConnectedAt = &t
+		}
 	}
 	if disconnectedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, disconnectedAt.String)
-		participant.DisconnectedAt = &t
+		if t, err := time.Parse(time.RFC3339, disconnectedAt.String); err == nil {
+			participant.DisconnectedAt = &t
+		}
 	}
 
 	return &participant, nil
@@ -215,9 +229,10 @@ func (r *SessionRepository) GetParticipantsBySession(ctx context.Context, sessio
 	if err != nil {
 		return nil, fmt.Errorf("failed to get participants: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows.Close error is not actionable here
 
 	var participants []*Participant
+
 	for rows.Next() {
 		var participant Participant
 		var tokenExpiresAt, connectedAt, disconnectedAt sql.NullString
@@ -240,19 +255,29 @@ func (r *SessionRepository) GetParticipantsBySession(ctx context.Context, sessio
 		}
 
 		if tokenExpiresAt.Valid {
-			participant.TokenExpiresAt, _ = time.Parse(time.RFC3339, tokenExpiresAt.String)
+			if t, err := time.Parse(time.RFC3339, tokenExpiresAt.String); err == nil {
+				participant.TokenExpiresAt = t
+			}
 		}
+
 		participant.TokenUsed = tokenUsed == 1
+
 		if connectedAt.Valid {
-			t, _ := time.Parse(time.RFC3339, connectedAt.String)
-			participant.ConnectedAt = &t
+			if t, err := time.Parse(time.RFC3339, connectedAt.String); err == nil {
+				participant.ConnectedAt = &t
+			}
 		}
 		if disconnectedAt.Valid {
-			t, _ := time.Parse(time.RFC3339, disconnectedAt.String)
-			participant.DisconnectedAt = &t
+			if t, err := time.Parse(time.RFC3339, disconnectedAt.String); err == nil {
+				participant.DisconnectedAt = &t
+			}
 		}
 
 		participants = append(participants, &participant)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate participants: %w", err)
 	}
 
 	return participants, nil
@@ -347,18 +372,21 @@ func (r *SessionRepository) GetAudioStreamByParticipant(ctx context.Context, par
 	)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("audio stream not found for participant: %s", participantID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", errAudioStreamNotFound, participantID)
 		}
 		return nil, fmt.Errorf("failed to get audio stream: %w", err)
 	}
 
 	if startedAt.Valid {
-		stream.StartedAt, _ = time.Parse(time.RFC3339, startedAt.String)
+		if t, err := time.Parse(time.RFC3339, startedAt.String); err == nil {
+			stream.StartedAt = t
+		}
 	}
 	if endedAt.Valid {
-		t, _ := time.Parse(time.RFC3339, endedAt.String)
-		stream.EndedAt = &t
+		if t, err := time.Parse(time.RFC3339, endedAt.String); err == nil {
+			stream.EndedAt = &t
+		}
 	}
 
 	return &stream, nil
@@ -416,9 +444,10 @@ func (r *SessionRepository) List(ctx context.Context, status string, limit, offs
 	if err != nil {
 		return nil, 0, fmt.Errorf("list sessions: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows.Close error is not actionable here
 
 	var sessions []*Session
+
 	for rows.Next() {
 		var s Session
 		var statusStr, createdAt, endedAt sql.NullString
@@ -428,11 +457,14 @@ func (r *SessionRepository) List(ctx context.Context, status string, limit, offs
 		}
 		s.Status = SessionStatus(statusStr.String)
 		if createdAt.Valid {
-			s.CreatedAt, _ = time.Parse(time.RFC3339, createdAt.String)
+			if t, err := time.Parse(time.RFC3339, createdAt.String); err == nil {
+				s.CreatedAt = t
+			}
 		}
 		if endedAt.Valid {
-			t, _ := time.Parse(time.RFC3339, endedAt.String)
-			s.EndedAt = &t
+			if t, err := time.Parse(time.RFC3339, endedAt.String); err == nil {
+				s.EndedAt = &t
+			}
 		}
 		if templateID.Valid {
 			s.TemplateID = templateID.String
@@ -442,7 +474,12 @@ func (r *SessionRepository) List(ctx context.Context, status string, limit, offs
 		}
 		sessions = append(sessions, &s)
 	}
-	return sessions, total, rows.Err()
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate sessions: %w", err)
+	}
+
+	return sessions, total, nil
 }
 
 // Delete removes a session and its related data (participants, audio_streams).

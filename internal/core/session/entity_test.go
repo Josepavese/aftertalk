@@ -211,14 +211,14 @@ func TestParticipantIsTokenValid(t *testing.T) {
 	usedToken.Connect()
 
 	tests := []struct {
-		name        string
 		participant *Participant
+		name        string
 		expected    bool
 	}{
-		{"Valid token", NewParticipant("test-id", "session-id", "user-id", "participant", "token-jti", validTokenExpiresAt), true},
-		{"Expired token", NewParticipant("test-id", "session-id", "user-id", "participant", "token-jti", expiredTokenExpiresAt), false},
-		{"Used token", usedToken, false},
-		{"Zero expiration", NewParticipant("test-id", "session-id", "user-id", "participant", "token-jti", time.Time{}), false},
+		{name: "Valid token", participant: NewParticipant("test-id", "session-id", "user-id", "participant", "token-jti", validTokenExpiresAt), expected: true},
+		{name: "Expired token", participant: NewParticipant("test-id", "session-id", "user-id", "participant", "token-jti", expiredTokenExpiresAt), expected: false},
+		{name: "Used token", participant: usedToken, expected: false},
+		{name: "Zero expiration", participant: NewParticipant("test-id", "session-id", "user-id", "participant", "token-jti", time.Time{}), expected: false},
 	}
 
 	for _, tt := range tests {

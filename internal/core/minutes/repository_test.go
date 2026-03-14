@@ -17,7 +17,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 	db, err := sql.Open("sqlite", ":memory:")
 	require.NoError(t, err)
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(context.Background(), `
 		CREATE TABLE minutes (
 			id TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL UNIQUE,
@@ -239,7 +239,7 @@ func TestMinutesRepositoryGetHistoryEmpty(t *testing.T) {
 	ctx := context.Background()
 	histories, err := repo.GetHistory(ctx, "minutes-no-histories")
 	require.NoError(t, err)
-	assert.Len(t, histories, 0)
+	assert.Empty(t, histories)
 
 	db.Close()
 }
