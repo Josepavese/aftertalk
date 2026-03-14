@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/flowup/aftertalk/internal/version"
+	"github.com/Josepavese/aftertalk/internal/version"
 	"github.com/go-chi/render"
 )
 

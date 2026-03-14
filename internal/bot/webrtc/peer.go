@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/logging"
 	pionice "github.com/pion/ice/v4"
 	"github.com/pion/webrtc/v4"
 )

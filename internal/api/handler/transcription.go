@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/flowup/aftertalk/internal/core/transcription"
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/core/transcription"
+	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 )

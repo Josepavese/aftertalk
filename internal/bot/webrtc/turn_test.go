@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

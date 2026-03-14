@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/storage/cache"
-	"github.com/flowup/aftertalk/pkg/jwt"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/storage/cache"
+	"github.com/Josepavese/aftertalk/pkg/jwt"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )

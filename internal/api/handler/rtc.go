@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/flowup/aftertalk/internal/bot/webrtc"
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/bot/webrtc"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 // RTCConfigHandler serves GET /v1/rtc-config.

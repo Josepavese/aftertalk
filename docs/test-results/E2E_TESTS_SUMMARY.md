@@ -156,7 +156,7 @@ A shell script that:
 - **Testify**: For assertions and mocking
 
 ### Go Modules
-- `github.com/flowup/aftertalk/internal/*` - Internal packages
+- `github.com/Josepavese/aftertalk/internal/*` - Internal packages
 - `github.com/stretchr/testify` - Testing utilities
 - `github.com/gorilla/websocket` - WebSocket client
 

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/logging"
-	"github.com/flowup/aftertalk/pkg/audio"
+	"github.com/Josepavese/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/pkg/audio"
 )
 
 // AWSSTTProvider transcribes audio using Amazon Transcribe Streaming REST API.

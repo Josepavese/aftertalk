@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowup/aftertalk/internal/ai/stt"
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/ai/stt"
+	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/google/uuid"
 )
 

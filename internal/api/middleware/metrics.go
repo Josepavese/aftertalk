@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/metrics"
+	"github.com/Josepavese/aftertalk/internal/metrics"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )

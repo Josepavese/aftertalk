@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/core/session"
+	"github.com/Josepavese/aftertalk/internal/core/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"

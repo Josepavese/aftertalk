@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/flowup/aftertalk/internal/core/transcription"
+	"github.com/Josepavese/aftertalk/internal/core/transcription"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

@@ -3,11 +3,11 @@ package api
 import (
 	"context"
 
-	"github.com/flowup/aftertalk/internal/ai/stt"
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/core/minutes"
-	"github.com/flowup/aftertalk/internal/core/session"
-	"github.com/flowup/aftertalk/internal/core/transcription"
+	"github.com/Josepavese/aftertalk/internal/ai/stt"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/core/minutes"
+	"github.com/Josepavese/aftertalk/internal/core/session"
+	"github.com/Josepavese/aftertalk/internal/core/transcription"
 )
 
 // TranscriptionAdapter adapts transcription.Service to session.TranscriptionServiceInterface.

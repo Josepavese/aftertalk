@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/api/handler"
-	custommiddleware "github.com/flowup/aftertalk/internal/api/middleware"
-	"github.com/flowup/aftertalk/internal/api/response"
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/core/session"
+	"github.com/Josepavese/aftertalk/internal/api/handler"
+	custommiddleware "github.com/Josepavese/aftertalk/internal/api/middleware"
+	"github.com/Josepavese/aftertalk/internal/api/response"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/core/session"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )

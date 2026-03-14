@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/flowup/aftertalk/internal/core"
-	"github.com/flowup/aftertalk/internal/storage/sqlite"
+	_ "github.com/Josepavese/aftertalk/internal/core"
+	"github.com/Josepavese/aftertalk/internal/storage/sqlite"
 )
 
 var pprofServer *http.Server

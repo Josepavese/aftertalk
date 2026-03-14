@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/ai/llm"
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/logging"
-	"github.com/flowup/aftertalk/pkg/webhook"
+	"github.com/Josepavese/aftertalk/internal/ai/llm"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/pkg/webhook"
 	"github.com/google/uuid"
 )
 

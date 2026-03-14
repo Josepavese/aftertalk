@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 // StubSTTProvider is the no-op provider used when no real STT is configured.

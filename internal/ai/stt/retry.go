@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 type RetryConfig struct {

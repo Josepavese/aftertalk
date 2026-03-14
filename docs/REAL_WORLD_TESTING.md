@@ -178,7 +178,7 @@ runcmd:
   - export PATH=$PATH:/usr/local/go/bin
   
   # Clone repository
-  - git clone https://github.com/flowup/aftertalk.git /opt/aftertalk
+  - git clone https://github.com/Josepavese/aftertalk.git /opt/aftertalk
   - cd /opt/aftertalk
   
   # Build application

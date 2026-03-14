@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/flowup/aftertalk/internal/ai/llm"
+	"github.com/Josepavese/aftertalk/internal/ai/llm"
 )
 
 func TestLLMProviderInterface(t *testing.T) {

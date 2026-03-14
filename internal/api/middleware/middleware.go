@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 func APIKey(apiKey string) func(http.Handler) http.Handler {

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	webrtcpkg "github.com/flowup/aftertalk/internal/bot/webrtc"
-	"github.com/flowup/aftertalk/internal/config"
+	webrtcpkg "github.com/Josepavese/aftertalk/internal/bot/webrtc"
+	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

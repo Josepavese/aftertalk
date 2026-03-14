@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/flowup/aftertalk/internal/ai/llm"
-	"github.com/flowup/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/ai/llm"
+	"github.com/Josepavese/aftertalk/internal/config"
 )
 
 var therapyTemplate = config.TemplateConfig{

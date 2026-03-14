@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/ai/stt"
+	"github.com/Josepavese/aftertalk/internal/ai/stt"
 )
 
 func TestDefaultRetryConfig(t *testing.T) {

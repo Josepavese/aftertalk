@@ -11,8 +11,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/logging"
-	"github.com/flowup/aftertalk/pkg/audio"
+	"github.com/Josepavese/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/pkg/audio"
 )
 
 // WhisperLocalProvider calls a locally-running faster-whisper-server (or any

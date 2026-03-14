@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/logging"
-	"github.com/flowup/aftertalk/pkg/audio"
+	"github.com/Josepavese/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/pkg/audio"
 )
 
 // AzureSTTProvider transcribes audio using Azure Cognitive Services Speech REST API.

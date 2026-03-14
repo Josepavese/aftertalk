@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/flowup/aftertalk/internal/ai/stt"
+	"github.com/Josepavese/aftertalk/internal/ai/stt"
 )
 
 type MockSTTProvider struct {
