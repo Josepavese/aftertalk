@@ -10,7 +10,7 @@ import (
 
 	ollamaapi "github.com/ollama/ollama/api"
 
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 // OllamaProvider calls a locally-running Ollama instance via the official Go client.

@@ -11,8 +11,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/logging"
-	"github.com/flowup/aftertalk/pkg/audio"
+	"github.com/Josepavese/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/pkg/audio"
 )
 
 // GoogleSTTProvider transcribes audio using the Google Cloud Speech-to-Text REST API v1.

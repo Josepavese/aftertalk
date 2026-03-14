@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 

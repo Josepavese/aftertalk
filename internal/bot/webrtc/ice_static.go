@@ -3,7 +3,7 @@ package webrtc
 import (
 	"context"
 
-	"github.com/flowup/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/config"
 )
 
 // StaticProvider returns the ICE servers verbatim from the config file.

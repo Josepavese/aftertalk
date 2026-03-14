@@ -3,12 +3,12 @@ package api
 import (
 	"net/http"
 
-	"github.com/flowup/aftertalk/internal/bot/webrtc"
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/core/session"
-	"github.com/flowup/aftertalk/internal/logging"
-	"github.com/flowup/aftertalk/internal/storage/cache"
-	"github.com/flowup/aftertalk/pkg/jwt"
+	"github.com/Josepavese/aftertalk/internal/bot/webrtc"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/core/session"
+	"github.com/Josepavese/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/storage/cache"
+	"github.com/Josepavese/aftertalk/pkg/jwt"
 )
 
 type BotServer struct {

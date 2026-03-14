@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 )

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/pion/turn/v4"
 )
 

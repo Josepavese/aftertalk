@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 // ICEServer is the normalised wire format understood by RTCPeerConnection.

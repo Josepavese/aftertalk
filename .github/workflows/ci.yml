@@ -200,7 +200,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: flowup/aftertalk
+          images: Josepavese/aftertalk
           tags: |
             type=ref,event=branch
             type=ref,event=pr

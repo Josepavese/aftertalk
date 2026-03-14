@@ -1,4 +1,4 @@
-module github.com/flowup/aftertalk
+module github.com/Josepavese/aftertalk
 
 go 1.25.7
 

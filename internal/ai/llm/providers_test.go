@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/ai/llm"
-	"github.com/flowup/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/ai/llm"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 func init() {

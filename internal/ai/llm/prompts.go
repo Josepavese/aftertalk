@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/flowup/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/config"
 )
 
 // GenerateMinutesPrompt builds a dynamic LLM prompt from the given template.

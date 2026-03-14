@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flowup/aftertalk/internal/core"
+	"github.com/Josepavese/aftertalk/internal/core"
 )
 
 type MinutesRepository struct {

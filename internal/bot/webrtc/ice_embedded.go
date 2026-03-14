@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flowup/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/config"
 )
 
 // EmbeddedProvider generates TURN credentials for the in-process pion/turn server

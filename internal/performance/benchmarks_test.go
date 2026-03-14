@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/flowup/aftertalk/internal/core"
-	"github.com/flowup/aftertalk/internal/core/minutes"
-	"github.com/flowup/aftertalk/internal/core/session"
-	"github.com/flowup/aftertalk/internal/core/transcription"
-	"github.com/flowup/aftertalk/internal/config"
-	"github.com/flowup/aftertalk/internal/storage/cache"
-	"github.com/flowup/aftertalk/internal/storage/sqlite"
-	"github.com/flowup/aftertalk/pkg/jwt"
+	_ "github.com/Josepavese/aftertalk/internal/core"
+	"github.com/Josepavese/aftertalk/internal/core/minutes"
+	"github.com/Josepavese/aftertalk/internal/core/session"
+	"github.com/Josepavese/aftertalk/internal/core/transcription"
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/storage/cache"
+	"github.com/Josepavese/aftertalk/internal/storage/sqlite"
+	"github.com/Josepavese/aftertalk/pkg/jwt"
 )
 
 var testDBPath string
