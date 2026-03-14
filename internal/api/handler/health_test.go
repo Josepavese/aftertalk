@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHealthCheck(t *testing.T) {
@@ -19,7 +20,7 @@ func TestHealthCheck(t *testing.T) {
 
 	var response map[string]string
 	err := json.Unmarshal(rec.Body.Bytes(), &response)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "ok", response["status"])
 }
 
@@ -33,6 +34,6 @@ func TestReadyCheck(t *testing.T) {
 
 	var response map[string]string
 	err := json.Unmarshal(rec.Body.Bytes(), &response)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "ready", response["status"])
 }

@@ -35,8 +35,8 @@ func MetricsMiddleware(next http.Handler) http.Handler {
 
 func RateLimit(requestsPerMinute int) func(http.Handler) http.Handler {
 	type client struct {
-		count     int
 		lastCheck time.Time
+		count     int
 	}
 
 	var mu sync.Mutex

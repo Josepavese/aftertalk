@@ -42,10 +42,10 @@ func (h *SessionHandler) Routes() chi.Router {
 }
 
 type CreateSessionRequest struct {
-	ParticipantCount int                  `json:"participant_count"`
-	Participants     []ParticipantRequest `json:"participants"`
 	TemplateID       string               `json:"template_id,omitempty"`
 	Metadata         string               `json:"metadata,omitempty"`
+	Participants     []ParticipantRequest `json:"participants"`
+	ParticipantCount int                  `json:"participant_count"`
 }
 
 type ParticipantRequest struct {

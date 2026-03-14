@@ -21,6 +21,7 @@ func (m *MockAPIKeyChecker) CheckAPIKey(apiKey string) bool {
 
 type MockResponseRecorder struct {
 	httptest.ResponseRecorder
+
 	statusCode int
 }
 
@@ -113,7 +114,7 @@ func TestAPIKey_Middleware(t *testing.T) {
 }
 
 func TestLogging_Middleware(t *testing.T) {
-	logging.Init("info", "console") //nolint
+	logging.Init("info", "console") //nolint:errcheck
 	handler := Logging(&MockLoggingHandler{})
 
 	req := httptest.NewRequest("GET", "/test/path", nil)
@@ -121,14 +122,13 @@ func TestLogging_Middleware(t *testing.T) {
 
 	handler.ServeHTTP(rec, req)
 
-	assert.True(t, rec.Code == http.StatusOK)
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
 func TestRecovery_Middleware(t *testing.T) {
 	tests := []struct {
-		name           string
 		panicValue     interface{}
+		name           string
 		expectedStatus int
 	}{
 		{
@@ -171,10 +171,10 @@ func TestRecovery_Middleware(t *testing.T) {
 
 func TestCORS_Middleware(t *testing.T) {
 	tests := []struct {
-		name               string
-		allowedOrigins     []string
-		origin             string
 		expectedHeaders    map[string]string
+		name               string
+		origin             string
+		allowedOrigins     []string
 		expectedStatusCode int
 	}{
 		{
@@ -311,9 +311,9 @@ func TestMetricsMiddleware(t *testing.T) {
 
 func TestRateLimit_Middleware(t *testing.T) {
 	tests := []struct {
+		makeRequests      func(http.Handler) func() *MockResponseRecorder
 		name              string
 		requestsPerMinute int
-		makeRequests      func(http.Handler) func() *MockResponseRecorder
 	}{
 		{
 			name:              "Success - within rate limit",

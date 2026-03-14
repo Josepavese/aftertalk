@@ -13,6 +13,11 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+var (
+	errTestTranscriptionsNotFound = errors.New("failed to get transcriptions: not found")
+	errTestTranscriptionNotFound  = errors.New("failed to get transcription: not found")
+)
+
 type MockTranscriptionService struct {
 	mock.Mock
 }
@@ -22,7 +27,7 @@ func (m *MockTranscriptionService) GetTranscriptions(ctx context.Context, sessio
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]*transcription.Transcription), args.Error(1)
+	return args.Get(0).([]*transcription.Transcription), args.Error(1) //nolint:forcetypeassert
 }
 
 func (m *MockTranscriptionService) GetTranscriptionByID(ctx context.Context, id string) (*transcription.Transcription, error) {
@@ -30,16 +35,16 @@ func (m *MockTranscriptionService) GetTranscriptionByID(ctx context.Context, id 
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*transcription.Transcription), args.Error(1)
+	return args.Get(0).(*transcription.Transcription), args.Error(1) //nolint:forcetypeassert
 }
 
 func TestTranscriptionHandler_GetTranscriptions(t *testing.T) {
 	tests := []struct {
+		mockSetup      func(*MockTranscriptionService)
+		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
 		name           string
 		sessionID      string
-		mockSetup      func(*MockTranscriptionService)
 		expectedStatus int
-		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
 	}{
 		{
 			name:      "Success - valid session with transcriptions",
@@ -88,7 +93,7 @@ func TestTranscriptionHandler_GetTranscriptions(t *testing.T) {
 			sessionID: "non-existent",
 			mockSetup: func(m *MockTranscriptionService) {
 				m.On("GetTranscriptions", mock.Anything, "non-existent").
-					Return(nil, errors.New("failed to get transcriptions: not found"))
+					Return(nil, errTestTranscriptionsNotFound)
 			},
 			expectedStatus: http.StatusInternalServerError,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
@@ -130,11 +135,11 @@ func TestTranscriptionHandler_GetTranscriptions(t *testing.T) {
 
 func TestTranscriptionHandler_GetTranscriptionByID(t *testing.T) {
 	tests := []struct {
+		mockSetup       func(*MockTranscriptionService)
+		checkResponse   func(*testing.T, *httptest.ResponseRecorder)
 		name            string
 		transcriptionID string
-		mockSetup       func(*MockTranscriptionService)
 		expectedStatus  int
-		checkResponse   func(*testing.T, *httptest.ResponseRecorder)
 	}{
 		{
 			name:            "Success - valid transcription",
@@ -167,7 +172,7 @@ func TestTranscriptionHandler_GetTranscriptionByID(t *testing.T) {
 			transcriptionID: "non-existent",
 			mockSetup: func(m *MockTranscriptionService) {
 				m.On("GetTranscriptionByID", mock.Anything, "non-existent").
-					Return(nil, errors.New("failed to get transcription: not found"))
+					Return(nil, errTestTranscriptionNotFound)
 			},
 			expectedStatus: http.StatusNotFound,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
