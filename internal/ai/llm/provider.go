@@ -42,9 +42,9 @@ type AzureLLMConfig struct {
 
 // Citation is a verbatim quote from the transcript with a role label.
 type Citation struct {
-	TimestampMs int    `json:"timestamp_ms"`
 	Text        string `json:"text"`
 	Role        string `json:"role"`
+	TimestampMs int    `json:"timestamp_ms"`
 }
 
 // DynamicMinutesResponse is the flexible LLM output for any template.

@@ -98,11 +98,20 @@ func TestTranscriptionSegment(t *testing.T) {
 	if segment.ID != "seg1" {
 		t.Errorf("ID mismatch: got %s, want %s", segment.ID, "seg1")
 	}
+	if segment.SessionID != "session1" {
+		t.Errorf("SessionID mismatch: got %s, want %s", segment.SessionID, "session1")
+	}
+	if segment.Role != "user" {
+		t.Errorf("Role mismatch: got %s, want %s", segment.Role, "user")
+	}
 	if segment.StartMs != 1000 {
 		t.Errorf("StartMs mismatch: got %d, want %d", segment.StartMs, 1000)
 	}
 	if segment.EndMs != 2000 {
 		t.Errorf("EndMs mismatch: got %d, want %d", segment.EndMs, 2000)
+	}
+	if segment.Text != "test text" {
+		t.Errorf("Text mismatch: got %s, want %s", segment.Text, "test text")
 	}
 	if segment.Confidence != 0.95 {
 		t.Errorf("Confidence mismatch: got %f, want %f", segment.Confidence, 0.95)
@@ -121,8 +130,8 @@ func TestGoogleConfig(t *testing.T) {
 
 func TestAWSConfig(t *testing.T) {
 	cfg := stt.AWSConfig{
-		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
-		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",                         
+		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",   
 		Region:          "us-west-2",
 	}
 
@@ -226,7 +235,6 @@ func TestSTTConfigDefaults(t *testing.T) {
 	}
 }
 
-
 // validCredsPath creates a temporary credentials file and returns its path.
 func validCredsPath(t *testing.T) string {
 	t.Helper()
@@ -240,8 +248,8 @@ func validCredsPath(t *testing.T) string {
 
 func TestSTTProviderWithEmptyData(t *testing.T) {
 	tests := []struct {
-		name     string
 		provider stt.STTProvider
+		name     string
 		expected bool
 	}{
 		{

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -15,6 +16,8 @@ import (
 	"github.com/Josepavese/aftertalk/pkg/audio"
 )
 
+var errWhisperServerError = errors.New("whisper-local: server error")
+
 // WhisperLocalProvider calls a locally-running faster-whisper-server (or any
 // OpenAI-compatible /v1/audio/transcriptions endpoint) that returns word/segment
 // level timestamps. This avoids any cloud dependency and works entirely on CPU.
@@ -23,8 +26,8 @@ import (
 //   - faster-whisper-server: docker run -p 9000:9000 fedirz/faster-whisper-server
 //   - whisper.cpp: ./server --port 9000
 type WhisperLocalProvider struct {
-	cfg    WhisperLocalConfig
 	client *http.Client
+	cfg    WhisperLocalConfig
 }
 
 func NewWhisperLocalProvider(cfg WhisperLocalConfig) *WhisperLocalProvider {
@@ -47,9 +50,9 @@ func (p *WhisperLocalProvider) IsAvailable() bool {
 type whisperVerboseResponse struct {
 	Text     string           `json:"text"`
 	Language string           `json:"language"`
-	Duration float64          `json:"duration"`
 	Words    []whisperWord    `json:"words"`
 	Segments []whisperSegment `json:"segments"`
+	Duration float64          `json:"duration"`
 }
 
 type whisperWord struct {
@@ -60,20 +63,20 @@ type whisperWord struct {
 }
 
 type whisperSegment struct {
-	ID               int         `json:"id"`
-	Start            float64     `json:"start"`
-	End              float64     `json:"end"`
-	Text             string      `json:"text"`
-	AvgLogprob       float64     `json:"avg_logprob"`
-	NoSpeechProb     float64     `json:"no_speech_prob"`
-	Words            []whisperWord `json:"words"`
+	Text         string        `json:"text"`
+	Words        []whisperWord `json:"words"`
+	ID           int           `json:"id"`
+	Start        float64       `json:"start"`
+	End          float64       `json:"end"`
+	AvgLogprob   float64       `json:"avg_logprob"`
+	NoSpeechProb float64       `json:"no_speech_prob"`
 }
 
 func (p *WhisperLocalProvider) Transcribe(ctx context.Context, audioData *AudioData) (*TranscriptionResult, error) {
 	logging.Infof("WhisperLocal: transcribing session=%s participant=%s pcm_bytes=%d frames=%d",
 		audioData.SessionID, audioData.ParticipantID, len(audioData.Data), len(audioData.Frames))
 
-	body, contentType, err := p.buildMultipartBody(audioData)
+	body, contentType, err := p.buildMultipartBody(ctx, audioData)
 	if err != nil {
 		return nil, fmt.Errorf("whisper-local: build request: %w", err)
 	}
@@ -97,8 +100,11 @@ func (p *WhisperLocalProvider) Transcribe(ctx context.Context, audioData *AudioD
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("whisper-local: server returned %d: %s", resp.StatusCode, string(b))
+		b, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("%w: %d (could not read body: %w)", errWhisperServerError, resp.StatusCode, readErr)
+		}
+		return nil, fmt.Errorf("%w: %d: %s", errWhisperServerError, resp.StatusCode, string(b))
 	}
 
 	var wr whisperVerboseResponse
@@ -109,7 +115,7 @@ func (p *WhisperLocalProvider) Transcribe(ctx context.Context, audioData *AudioD
 	return p.toTranscriptionResult(audioData, &wr), nil
 }
 
-func (p *WhisperLocalProvider) buildMultipartBody(audioData *AudioData) (io.Reader, string, error) {
+func (p *WhisperLocalProvider) buildMultipartBody(ctx context.Context, audioData *AudioData) (io.Reader, string, error) {
 	buf := &bytes.Buffer{}
 	w := multipart.NewWriter(buf)
 
@@ -119,14 +125,16 @@ func (p *WhisperLocalProvider) buildMultipartBody(audioData *AudioData) (io.Read
 	filename := "audio.wav"
 
 	if len(audioData.Frames) > 0 {
-		wav, err := audio.DecodeFramesToWAVffmpeg(audioData.Frames, 16000)
+		wav, err := audio.DecodeFramesToWAVffmpeg(ctx, audioData.Frames, 16000)
 		if err != nil {
 			return nil, "", fmt.Errorf("opus→wav: %w", err)
 		}
 		audioBytes = wav
 		// Debug: dump WAV to disk so we can verify audio content
 		dbgPath := fmt.Sprintf("/tmp/aftertalk_debug_%s.wav", audioData.SessionID)
-		_ = os.WriteFile(dbgPath, wav, 0644)
+		if writeErr := os.WriteFile(dbgPath, wav, 0600); writeErr != nil {
+			logging.Warnf("WhisperLocal: could not write debug WAV: %v", writeErr)
+		}
 		logging.Infof("WhisperLocal: wav_bytes=%d frames_decoded=%d debug_wav=%s", len(wav), len(audioData.Frames), dbgPath)
 	} else {
 		audioBytes = audioData.Data
@@ -144,20 +152,30 @@ func (p *WhisperLocalProvider) buildMultipartBody(audioData *AudioData) (io.Read
 	if model == "" {
 		model = "Systran/faster-whisper-large-v3"
 	}
-	_ = w.WriteField("model", model)
+	if err := w.WriteField("model", model); err != nil {
+		return nil, "", fmt.Errorf("whisper-local: write model field: %w", err)
+	}
 
 	responseFormat := p.cfg.ResponseFormat
 	if responseFormat == "" {
 		responseFormat = "verbose_json"
 	}
-	_ = w.WriteField("response_format", responseFormat)
+	if err := w.WriteField("response_format", responseFormat); err != nil {
+		return nil, "", fmt.Errorf("whisper-local: write response_format field: %w", err)
+	}
 
 	// timestamp_granularities[]: request both word and segment timestamps
-	_ = w.WriteField("timestamp_granularities[]", "word")
-	_ = w.WriteField("timestamp_granularities[]", "segment")
+	if err := w.WriteField("timestamp_granularities[]", "word"); err != nil {
+		return nil, "", fmt.Errorf("whisper-local: write timestamp_granularities field: %w", err)
+	}
+	if err := w.WriteField("timestamp_granularities[]", "segment"); err != nil {
+		return nil, "", fmt.Errorf("whisper-local: write timestamp_granularities field: %w", err)
+	}
 
 	if p.cfg.Language != "" {
-		_ = w.WriteField("language", p.cfg.Language)
+		if err := w.WriteField("language", p.cfg.Language); err != nil {
+			return nil, "", fmt.Errorf("whisper-local: write language field: %w", err)
+		}
 	}
 
 	if err := w.Close(); err != nil {

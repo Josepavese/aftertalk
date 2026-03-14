@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,11 @@ import (
 	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
+var (
+	errNoResponseOpenAI    = errors.New("no response from OpenAI")
+	errNoResponseAnthropic = errors.New("no response from Anthropic")
+	errNoResponseAzure     = errors.New("no response from Azure OpenAI")
+)
 
 type OpenAIProvider struct {
 	apiKey  string
@@ -45,8 +51,12 @@ func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, e
 		"response_format": map[string]string{"type": "json_object"},
 	}
 
-	jsonBody, _ := json.Marshal(reqBody)
-	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -67,7 +77,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, e
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("OpenAI API error: %s", string(body))
+		return "", fmt.Errorf("OpenAI API error: %s", string(body)) //nolint:err113 // dynamic error with status body
 	}
 
 	var response struct {
@@ -83,7 +93,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, e
 	}
 
 	if len(response.Choices) == 0 {
-		return "", fmt.Errorf("no response from OpenAI")
+		return "", errNoResponseOpenAI
 	}
 
 	return response.Choices[0].Message.Content, nil
@@ -127,15 +137,19 @@ func (p *AnthropicProvider) Generate(ctx context.Context, prompt string) (string
 		},
 	}
 
-	jsonBody, _ := json.Marshal(reqBody)
-	req, err := http.NewRequestWithContext(ctx, "POST", p.baseURL+"/v1/messages", bytes.NewBuffer(jsonBody))
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/v1/messages", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", p.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("X-Api-Key", p.apiKey)
+	req.Header.Set("Anthropic-Version", "2023-06-01")
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
@@ -150,7 +164,7 @@ func (p *AnthropicProvider) Generate(ctx context.Context, prompt string) (string
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Anthropic API error: %s", string(body))
+		return "", fmt.Errorf("anthropic API error: %s", string(body)) //nolint:err113 // dynamic error with status body
 	}
 
 	var response struct {
@@ -164,7 +178,7 @@ func (p *AnthropicProvider) Generate(ctx context.Context, prompt string) (string
 	}
 
 	if len(response.Content) == 0 {
-		return "", fmt.Errorf("no response from Anthropic")
+		return "", errNoResponseAnthropic
 	}
 
 	return response.Content[0].Text, nil
@@ -202,15 +216,19 @@ func (p *AzureOpenAIProvider) Generate(ctx context.Context, prompt string) (stri
 		},
 	}
 
-	jsonBody, _ := json.Marshal(reqBody)
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
 	url := fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=2023-05-15", p.endpoint, p.deployment)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", p.apiKey)
+	req.Header.Set("Api-Key", p.apiKey)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
@@ -225,7 +243,7 @@ func (p *AzureOpenAIProvider) Generate(ctx context.Context, prompt string) (stri
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Azure OpenAI API error: %s", string(body))
+		return "", fmt.Errorf("azure OpenAI API error: %s", string(body)) //nolint:err113 // dynamic error with status body
 	}
 
 	var response struct {
@@ -241,7 +259,7 @@ func (p *AzureOpenAIProvider) Generate(ctx context.Context, prompt string) (stri
 	}
 
 	if len(response.Choices) == 0 {
-		return "", fmt.Errorf("no response from Azure OpenAI")
+		return "", errNoResponseAzure
 	}
 
 	return response.Choices[0].Message.Content, nil
@@ -264,15 +282,15 @@ func NewStubLLMProvider() *StubLLMProvider {
 	return &StubLLMProvider{}
 }
 
-func (p *StubLLMProvider) Generate(_ context.Context, prompt string) (string, error) {
+func (p *StubLLMProvider) Generate(_ context.Context, prompt string) (string, error) { //nolint:gocognit // stub parsing logic
 	logging.Warnf("LLM stub: building minutes from transcript\n--- PROMPT ---\n%s\n--- END PROMPT ---", prompt)
 
 	// Extract transcript lines between "TRANSCRIPT:\n" and "\n\nGenerate"
 	transcript := ""
 	if start := strings.Index(prompt, "TRANSCRIPT:\n"); start != -1 {
 		rest := prompt[start+len("TRANSCRIPT:\n"):]
-		if end := strings.Index(rest, "\n\nGenerate"); end != -1 {
-			transcript = strings.TrimSpace(rest[:end])
+		if cut, _, found := strings.Cut(rest, "\n\nGenerate"); found {
+			transcript = strings.TrimSpace(cut)
 		} else {
 			transcript = strings.TrimSpace(rest)
 		}
@@ -284,15 +302,15 @@ func (p *StubLLMProvider) Generate(_ context.Context, prompt string) (string, er
 		Timestamp int    `json:"timestamp"`
 	}
 	type citation struct {
-		TimestampMs int    `json:"timestamp_ms"`
 		Text        string `json:"text"`
 		Role        string `json:"role"`
+		TimestampMs int    `json:"timestamp_ms"`
 	}
 
 	var contents []entry
 	var citations []citation
 
-	for _, line := range strings.Split(transcript, "\n") {
+	for line := range strings.SplitSeq(transcript, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -325,13 +343,12 @@ func (p *StubLLMProvider) Generate(_ context.Context, prompt string) (string, er
 	sections := make(map[string]interface{})
 	if start := strings.Index(prompt, "\"sections\": {\n"); start != -1 {
 		rest := prompt[start+len("\"sections\": {\n"):]
-		if end := strings.Index(rest, "\n  }"); end != -1 {
-			for _, line := range strings.Split(rest[:end], "\n") {
+		if schemaBody, _, found := strings.Cut(rest, "\n  }"); found {
+			for line := range strings.SplitSeq(schemaBody, "\n") {
 				line = strings.TrimSpace(line)
 				if strings.HasPrefix(line, "\"") {
-					if colonIdx := strings.Index(line, "\": "); colonIdx != -1 {
-						key := line[1:colonIdx]
-						sections[key] = []interface{}{}
+					if before, _, ok := strings.Cut(line[1:], "\": "); ok {
+						sections[before] = []interface{}{}
 					}
 				}
 			}
@@ -354,7 +371,7 @@ func (p *StubLLMProvider) Generate(_ context.Context, prompt string) (string, er
 
 	out, err := json.Marshal(result)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to marshal stub result: %w", err)
 	}
 	return string(out), nil
 }
@@ -363,7 +380,7 @@ func (p *StubLLMProvider) Name() string      { return "stub" }
 func (p *StubLLMProvider) IsAvailable() bool { return true }
 
 // NewProvider selects and returns the LLM provider based on cfg.
-// Falls back to StubLLMProvider when provider name is empty or unrecognised.
+// Falls back to StubLLMProvider when provider name is empty or unrecognized.
 func NewProvider(cfg *LLMConfig) (LLMProvider, error) {
 	switch cfg.Provider {
 	case "openai":
@@ -377,6 +394,6 @@ func NewProvider(cfg *LLMConfig) (LLMProvider, error) {
 	case "", "stub":
 		return NewStubLLMProvider(), nil
 	default:
-		return nil, fmt.Errorf("unsupported LLM provider: %s", cfg.Provider)
+		return nil, fmt.Errorf("unsupported LLM provider: %s", cfg.Provider) //nolint:err113 // dynamic error needed for provider name
 	}
 }

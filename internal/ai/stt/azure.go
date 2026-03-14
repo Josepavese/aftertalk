@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,11 @@ import (
 
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/pkg/audio"
+)
+
+var (
+	errAzureMissingKeyOrRegion = errors.New("azure stt: missing key or region")
+	errAzureServerError        = errors.New("azure stt: server error")
 )
 
 // AzureSTTProvider transcribes audio using Azure Cognitive Services Speech REST API.
@@ -44,15 +50,15 @@ func (p *AzureSTTProvider) IsAvailable() bool {
 type azureSpeechResponse struct {
 	RecognitionStatus string             `json:"RecognitionStatus"`
 	DisplayText       string             `json:"DisplayText"`
-	Duration          int64              `json:"Duration"` // in 100-nanosecond units
-	Offset            int64              `json:"Offset"`
 	NBest             []azureSpeechNBest `json:"NBest"`
+	Duration          int64              `json:"Duration"`
+	Offset            int64              `json:"Offset"`
 }
 
 type azureSpeechNBest struct {
-	Confidence float64         `json:"Confidence"`
 	Display    string          `json:"Display"`
 	Words      []azureWordInfo `json:"Words"`
+	Confidence float64         `json:"Confidence"`
 }
 
 type azureWordInfo struct {
@@ -63,14 +69,14 @@ type azureWordInfo struct {
 
 func (p *AzureSTTProvider) Transcribe(ctx context.Context, audioData *AudioData) (*TranscriptionResult, error) {
 	if !p.IsAvailable() {
-		return nil, fmt.Errorf("azure stt: missing key or region")
+		return nil, errAzureMissingKeyOrRegion
 	}
 	logging.Infof("Azure Speech: session=%s participant=%s", audioData.SessionID, audioData.ParticipantID)
 
 	var wav []byte
 	if len(audioData.Frames) > 0 {
 		var err error
-		wav, err = audio.DecodeFramesToWAVffmpeg(audioData.Frames, 16000)
+		wav, err = audio.DecodeFramesToWAVffmpeg(ctx, audioData.Frames, 16000)
 		if err != nil {
 			return nil, fmt.Errorf("azure stt: opus→wav: %w", err)
 		}
@@ -107,7 +113,7 @@ func (p *AzureSTTProvider) Transcribe(ctx context.Context, audioData *AudioData)
 		return nil, fmt.Errorf("azure stt: read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("azure stt: server returned %d: %s", resp.StatusCode, string(respBytes))
+		return nil, fmt.Errorf("%w: %d: %s", errAzureServerError, resp.StatusCode, string(respBytes))
 	}
 
 	var aResp azureSpeechResponse
@@ -134,7 +140,7 @@ func (p *AzureSTTProvider) toTranscriptionResult(audioData *AudioData, aResp *az
 			return result
 		}
 
-		startMs := int(aResp.Offset / 10_000)   // 100-ns → ms
+		startMs := int(aResp.Offset / 10_000) // 100-ns → ms
 		endMs := startMs + int(aResp.Duration/10_000)
 
 		// Refine from word-level timestamps if present.

@@ -22,8 +22,8 @@ type STTProvider interface {
 }
 
 type TranscriptionResult struct {
-	Segments []*TranscriptionSegment
 	Provider string
+	Segments []*TranscriptionSegment
 	Duration int
 }
 
@@ -31,9 +31,9 @@ type TranscriptionSegment struct {
 	ID         string
 	SessionID  string
 	Role       string
+	Text       string
 	StartMs    int
 	EndMs      int
-	Text       string
 	Confidence float64
 }
 

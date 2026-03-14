@@ -11,6 +11,7 @@ import (
 
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 	"github.com/Josepavese/aftertalk/internal/logging"
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -64,8 +65,9 @@ func TestGoogleSTTProvider_Transcribe(t *testing.T) {
 		"type": "service_account", "client_email": "test@proj.iam.gserviceaccount.com",
 		"private_key": fakeRSAPrivateKeyPEM, "token_uri": srv.URL + "/token",
 	}
-	b, _ := json.Marshal(sa)
-	os.WriteFile(credPath, b, 0600) //nolint:errcheck
+	b, err := json.Marshal(sa)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(credPath, b, 0600))
 
 	p := stt.NewGoogleSTTProvider(credPath)
 	p.SetSpeechEndpoint(srv.URL + "/speech:recognize")

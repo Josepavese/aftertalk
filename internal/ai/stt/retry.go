@@ -25,9 +25,9 @@ func DefaultRetryConfig() *RetryConfig {
 }
 
 type TranscriptionError struct {
+	Cause    error
 	Provider string
 	Message  string
-	Cause    error
 }
 
 func (e *TranscriptionError) Error() string {

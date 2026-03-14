@@ -10,12 +10,20 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+)
+
+var (
+	errGoogleAuthTokenEndpoint = errors.New("token endpoint error")
+	errGoogleAuthEmptyToken    = errors.New("empty access_token in response")
+	errGoogleAuthDecodePEM     = errors.New("failed to decode PEM block from private key")
+	errGoogleAuthNotRSA        = errors.New("private key is not RSA")
 )
 
 // signServiceAccountJWT signs a JWT with the service account private key and
@@ -25,7 +33,7 @@ func signServiceAccountJWT(ctx context.Context, client *http.Client, sa *googleS
 	now := time.Now().Unix()
 	tokenURI := sa.TokenURI
 	if tokenURI == "" {
-		tokenURI = "https://oauth2.googleapis.com/token"
+		tokenURI = "https://oauth2.googleapis.com/token" //nolint:gosec // G101 false positive: public OAuth endpoint URL, not a credential
 	}
 
 	header := base64url(mustJSON(map[string]string{"alg": "RS256", "typ": "JWT"}))
@@ -69,9 +77,12 @@ func signServiceAccountJWT(ctx context.Context, client *http.Client, sa *googleS
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("token response read: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("%w: %d: %s", errGoogleAuthTokenEndpoint, resp.StatusCode, string(body))
 	}
 
 	var tokenResp struct {
@@ -81,7 +92,7 @@ func signServiceAccountJWT(ctx context.Context, client *http.Client, sa *googleS
 		return "", fmt.Errorf("decode token response: %w", err)
 	}
 	if tokenResp.AccessToken == "" {
-		return "", fmt.Errorf("empty access_token in response: %s", string(body))
+		return "", fmt.Errorf("%w: %s", errGoogleAuthEmptyToken, string(body))
 	}
 	return tokenResp.AccessToken, nil
 }
@@ -105,7 +116,7 @@ func parseRSAPrivateKey(pemKey string) (*rsa.PrivateKey, error) {
 		block, _ = pem.Decode([]byte(strings.ReplaceAll(pemKey, `\n`, "\n")))
 	}
 	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block from private key")
+		return nil, errGoogleAuthDecodePEM
 	}
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
@@ -113,7 +124,7 @@ func parseRSAPrivateKey(pemKey string) (*rsa.PrivateKey, error) {
 	}
 	rsaKey, ok := key.(*rsa.PrivateKey)
 	if !ok {
-		return nil, fmt.Errorf("private key is not RSA (got %T)", key)
+		return nil, fmt.Errorf("%w (got %T)", errGoogleAuthNotRSA, key)
 	}
 	return rsaKey, nil
 }
