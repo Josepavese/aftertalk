@@ -1,47 +1,47 @@
 # Configuration
 
-La configurazione viene caricata in ordine (il successivo sovrascrive):
-1. Valori di default (`config.Default()`)
-2. File YAML (se specificato con `--config config.yaml`)
-3. Variabili d'ambiente con prefisso `AFTERTALK_`
+Configuration is loaded in order (each subsequent source overrides the previous):
+1. Default values (`config.Default()`)
+2. YAML file (if specified with `--config config.yaml`)
+3. Environment variables with prefix `AFTERTALK_`
 
-Env key convention: `AFTERTALK_` + percorso koanf con `_` al posto di `.`
-Es: `webhook.pull_base_url` → `AFTERTALK_WEBHOOK_PULL_BASE_URL`
+Env key convention: `AFTERTALK_` + koanf path with `_` instead of `.`
+Example: `webhook.pull_base_url` → `AFTERTALK_WEBHOOK_PULL_BASE_URL`
 
-> **Validazione**: il server non parte se `JWT_SECRET` o `API_KEY` sono ai valori di default.
+> **Validation**: the server will not start if `JWT_SECRET` or `API_KEY` are at their default values.
 
 ---
 
 ## Database
 
-| Chiave env | YAML | Default | Note |
+| Env key | YAML | Default | Notes |
 |---|---|---|---|
-| `AFTERTALK_DATABASE_PATH` | `database.path` | `./aftertalk.db` | Path del file SQLite |
+| `AFTERTALK_DATABASE_PATH` | `database.path` | `./aftertalk.db` | SQLite file path |
 
 ---
 
 ## HTTP
 
-| Chiave env | YAML | Default |
+| Env key | YAML | Default |
 |---|---|---|
 | `AFTERTALK_HTTP_PORT` | `http.port` | `8080` |
 | `AFTERTALK_HTTP_HOST` | `http.host` | `0.0.0.0` |
 
 ---
 
-## Sicurezza
+## Security
 
 ### JWT
-| Chiave env | YAML | Default | Note |
+| Env key | YAML | Default | Notes |
 |---|---|---|---|
-| `AFTERTALK_JWT_SECRET` | `jwt.secret` | *(nessuno)* | **Obbligatorio**, min 32 char |
+| `AFTERTALK_JWT_SECRET` | `jwt.secret` | *(none)* | **Required**, min 32 chars |
 | `AFTERTALK_JWT_ISSUER` | `jwt.issuer` | `aftertalk` | |
-| `AFTERTALK_JWT_EXPIRATION` | `jwt.expiration` | `2h` | Formato Go: `2h`, `30m` |
+| `AFTERTALK_JWT_EXPIRATION` | `jwt.expiration` | `2h` | Go duration: `2h`, `30m` |
 
 ### API Key
-| Chiave env | YAML | Default | Note |
+| Env key | YAML | Default | Notes |
 |---|---|---|---|
-| `AFTERTALK_API_KEY` | `api.key` | *(nessuno)* | **Obbligatorio** in produzione |
+| `AFTERTALK_API_KEY` | `api.key` | *(none)* | **Required** in production |
 
 ### CORS
 ```yaml
@@ -65,7 +65,7 @@ api:
 
 ## STT (Speech-to-Text)
 
-| Chiave env | YAML | Default | Valori |
+| Env key | YAML | Default | Values |
 |---|---|---|---|
 | `AFTERTALK_STT_PROVIDER` | `stt.provider` | `google` | `google`, `aws`, `azure`, `whisper-local`, `stub` |
 
@@ -96,29 +96,29 @@ stt:
     region: eastus
 ```
 
-### Whisper locale
+### Local Whisper
 ```yaml
 stt:
   provider: whisper-local
   whisper_local:
-    url: http://localhost:9000   # obbligatorio
+    url: http://localhost:9000   # required
     model: base
-    language: it
+    language: en
     response_format: verbose_json
 ```
 
-### Stub (nessuna trascrizione reale)
+### Stub (no real transcription)
 ```yaml
 stt:
   provider: stub
 ```
-Restituisce un segmento placeholder `[stub: Xms di audio da role]`. Utile per sviluppo.
+Returns a placeholder segment `[stub: Xms of audio from role]`. Useful for development.
 
 ---
 
 ## LLM (Minutes Generation)
 
-| Chiave env | YAML | Default | Valori |
+| Env key | YAML | Default | Values |
 |---|---|---|---|
 | `AFTERTALK_LLM_PROVIDER` | `llm.provider` | `openai` | `openai`, `anthropic`, `azure`, `ollama`, `stub` |
 
@@ -128,7 +128,7 @@ llm:
   provider: openai
   openai:
     api_key: sk-...
-    model: gpt-4o          # raccomandato; gpt-4 funziona
+    model: gpt-4o          # recommended; gpt-4 works too
 ```
 
 ### Anthropic
@@ -139,7 +139,7 @@ llm:
     api_key: sk-ant-...
     model: claude-sonnet-4-6
 ```
-> Nota: il provider Anthropic usa `anthropic-version: 2023-06-01` hardcoded.
+> Note: the Anthropic provider uses `anthropic-version: 2023-06-01` hardcoded.
 
 ### Azure OpenAI
 ```yaml
@@ -151,7 +151,7 @@ llm:
     deployment: gpt-4
 ```
 
-### Ollama (locale)
+### Ollama (local)
 ```yaml
 llm:
   provider: ollama
@@ -165,24 +165,24 @@ llm:
 llm:
   provider: stub
 ```
-Genera minuta sintetica dal testo della trascrizione senza chiamate API.
-> Nota: lo Stub è ottimizzato per il template `therapy`. Per altri template le sezioni potrebbero non corrispondere.
+Generates a synthetic summary from the transcription text without API calls.
+> Note: the Stub is optimized for the `therapy` template. For other templates, sections may not match.
 
 ---
 
 ## Webhook
 
-Vedere [webhook.md](webhook.md) per la documentazione completa.
+See [webhook.md](webhook.md) for full documentation.
 
 ```yaml
 webhook:
   url: https://your-app.example.com/webhook
   timeout: 30s
-  mode: push           # "push" (default) o "notify_pull"
-  secret: ""           # HMAC secret per notify_pull
-  token_ttl: 1h        # TTL token pull
-  pull_base_url: ""    # URL pubblico di aftertalk per notify_pull
-  delete_on_pull: null # default true per notify_pull
+  mode: push           # "push" (default) or "notify_pull"
+  secret: ""           # HMAC secret for notify_pull
+  token_ttl: 1h        # pull token TTL
+  pull_base_url: ""    # public Aftertalk URL for notify_pull
+  delete_on_pull: null # default true for notify_pull
 ```
 
 ---
@@ -199,10 +199,10 @@ processing:
   llm_initial_backoff: 1s
   llm_max_backoff: 10s
   transcription_queue_size: 100
-  chunk_size_ms: 15000      # dimensione chunk audio per trascrizione (ms)
+  chunk_size_ms: 15000      # audio chunk size for transcription (ms)
 ```
 
-`chunk_size_ms` controlla ogni quanti ms di audio accumulato viene triggerata la trascrizione. Il VAD (Voice Activity Detection) può triggerare prima in caso di silenzio prolungato.
+`chunk_size_ms` controls how many ms of accumulated audio triggers a transcription. VAD (Voice Activity Detection) may trigger earlier on extended silence.
 
 ---
 
@@ -222,7 +222,7 @@ webrtc:
   turn:
     enabled: true
     listen_addr: "0.0.0.0:3478"
-    public_ip: ""        # auto-detect se vuoto
+    public_ip: ""        # auto-detect if empty
     realm: aftertalk
     auth_ttl: 86400
     enable_udp: true
@@ -278,12 +278,12 @@ retention:
 
 ```yaml
 demo:
-  enabled: false   # NEVER true in produzione — espone l'API key in /demo/config
+  enabled: false   # NEVER true in production — exposes the API key at /demo/config
 ```
 
 ---
 
-## Ottenere il config YAML di default
+## Get the default YAML config
 
 ```bash
 ./bin/aftertalk --dump-defaults > config.yaml

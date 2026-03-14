@@ -1,32 +1,32 @@
 # Aftertalk Wiki
 
-Documentazione operativa verificata sul codice sorgente.
+Operational documentation verified against source code.
 
-## Indice
+## Table of Contents
 
-| Pagina | Contenuto |
+| Page | Contents |
 |---|---|
-| [installation.md](installation.md) | Requisiti, installer, primo avvio |
-| [configuration.md](configuration.md) | Tutti i parametri di configurazione con default reali |
-| [rest-api.md](rest-api.md) | Ogni endpoint con esempi curl completi |
+| [installation.md](installation.md) | Requirements, installer, first run |
+| [configuration.md](configuration.md) | All configuration parameters with real defaults |
+| [rest-api.md](rest-api.md) | Every endpoint with complete curl examples |
 | [sdk.md](sdk.md) | TypeScript SDK: quickstart, WebRTC, polling |
-| [webhook.md](webhook.md) | Push vs notify_pull, verifica HMAC, esempi |
-| [templates.md](templates.md) | Template di sessione: built-in e custom |
-| [architecture.md](architecture.md) | Flussi interni, pipeline audio→minuta |
+| [webhook.md](webhook.md) | Push vs notify_pull, HMAC verification, examples |
+| [templates.md](templates.md) | Session templates: built-in and custom |
+| [architecture.md](architecture.md) | Internal flows, audio→minutes pipeline |
 
 ---
 
-## In 30 secondi
+## In 30 seconds
 
 ```bash
-# Installa
+# Install
 curl -fsSL https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.sh | bash
 
-# Configura (copia il template)
-cp .env.example .env && nano .env   # cambia JWT_SECRET, API_KEY, LLM_PROVIDER
+# Configure (copy template)
+cp .env.example .env && nano .env   # set JWT_SECRET, API_KEY, LLM_PROVIDER
 
-# Avvia
+# Start
 ./bin/aftertalk
 ```
 
-La UI demo è disponibile su `http://localhost:8080` se `AFTERTALK_DEMO_ENABLED=true`.
+The demo UI is available at `http://localhost:8080` if `AFTERTALK_DEMO_ENABLED=true`.

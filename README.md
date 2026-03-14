@@ -1,14 +1,14 @@
 # Aftertalk Core
 
-**Core AI agnostico per generazione automatica di minute di conversazioni WebRTC**
+**AI-agnostic core for automatic meeting minutes generation from WebRTC conversations**
 
 ## Overview
 
-Aftertalk è un modulo Go che intercetta audio da sessioni WebRTC, trascrive automaticamente le conversazioni e genera minute strutturate usando AI.
+Aftertalk is a Go module that intercepts audio from WebRTC sessions, automatically transcribes conversations, and generates structured minutes using AI.
 
-**Architettura**: Monolite modulare in Go con internal packages per separazione delle responsabilità.
+**Architecture**: Modular monolith in Go with internal packages for separation of concerns.
 
-**Target**: 200+ sessioni concorrenti, <100ms latenza acquisizione audio, <5min generazione minuta.
+**Target**: 200+ concurrent sessions, <100ms audio capture latency, <5min minutes generation.
 
 ## Quick Start
 
@@ -23,7 +23,7 @@ Aftertalk è un modulo Go che intercetta audio da sessioni WebRTC, trascrive aut
 
 ```bash
 # Clone repository
-git clone https://github.com/flowup/aftertalk.git
+git clone https://github.com/Josepavese/aftertalk.git
 cd aftertalk
 
 # Copy environment variables

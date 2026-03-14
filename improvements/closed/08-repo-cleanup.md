@@ -1,99 +1,99 @@
 # 08 — Repository Cleanup: World-Class Standards
 
-## Obiettivo
+## Objective
 
-Trasformare il repo da "ben ingegnerizzato ma disordinato" a "repo di riferimento maniacalmente ordinato".
-Ogni file deve avere una ragione d'essere, ogni directory un confine chiaro, ogni convenzione applicata uniformemente.
+Transform the repo from "well-engineered but messy" to "maniacally clean reference repository".
+Every file must have a reason to exist, every directory a clear boundary, every convention applied uniformly.
 
 ---
 
-## Analisi: Problemi Identificati
+## Analysis: Identified Problems
 
-### CRITICI — Build artifacts & .gitignore incompleto
+### CRITICAL — Build artifacts & incomplete .gitignore
 
-| File/Dir | Problema | Fix |
+| File/Dir | Problem | Fix |
 |---|---|---|
-| `/aftertalk` (27MB binary) | Binario committato nella root | Add `/aftertalk` to .gitignore |
-| `coverage.out` | Coverage report committato | Add `coverage.out`, `coverage.html`, `*.out` to .gitignore |
-| `.claude/` | IDE settings non ignorati (untracked) | Add `.claude/` to .gitignore |
+| `/aftertalk` (27MB binary) | Binary committed to root | Add `/aftertalk` to .gitignore |
+| `coverage.out` | Coverage report committed | Add `coverage.out`, `coverage.html`, `*.out` to .gitignore |
+| `.claude/` | IDE settings not ignored (untracked) | Add `.claude/` to .gitignore |
 
-### ALTI — Struttura directory e organizzazione test
+### HIGH — Directory structure and test organization
 
-| Problema | Dettaglio | Fix |
+| Problem | Detail | Fix |
 |---|---|---|
-| Test AI in directory separata | `internal/ai/stt/tests/` e `internal/ai/llm/tests/` usano pattern diverso dal resto del progetto | Spostare i test nella directory del package |
-| Directory orfane annidate | `internal/ai/stt/internal/ai/stt/_test` e `internal/ai/llm/internal/ai/llm/_test` | Eliminare |
-| Cartella `migrations/` inutilizzata | Due file `.sql` non usati (le migrazioni sono inline in `main.go`) | Eliminare |
-| File di riepilogo test alla root | `E2E_TESTS_SUMMARY.md`, `TEST_SUMMARY.md`, `TESTING_SUMMARY.md`, `INTEGRATION_TESTS_SUMMARY.md`, `PERFORMANCE_TEST_SUMMARY.md` clutter la root | Spostare in `docs/` |
-| Due cartelle doc | `doc/` (filosofia, 2 file) e `docs/` (tecnica, 5 file) | Unificare in `docs/` |
-| `run-tests.sh`, `run_performance_tests.sh` alla root | Script di test sparsi nella root | Spostare in `scripts/` |
-| `dev.sh` alla root | Script di sviluppo nella root | Spostare in `scripts/` |
-| `aftertalk_test.yaml` alla root | Fixture di test nella root | Spostare in `testdata/` o eliminare se inutilizzata |
+| AI tests in separate directory | `internal/ai/stt/tests/` and `internal/ai/llm/tests/` use a different pattern from the rest of the project | Move tests into the package directory |
+| Nested orphan directories | `internal/ai/stt/internal/ai/stt/_test` and `internal/ai/llm/internal/ai/llm/_test` | Delete |
+| Unused `migrations/` folder | Two `.sql` files not used (migrations are inline in `main.go`) | Delete |
+| Test summary files at root | `E2E_TESTS_SUMMARY.md`, `TEST_SUMMARY.md`, `TESTING_SUMMARY.md`, `INTEGRATION_TESTS_SUMMARY.md`, `PERFORMANCE_TEST_SUMMARY.md` clutter the root | Move to `docs/` |
+| Two doc folders | `doc/` (philosophy, 2 files) and `docs/` (technical, 5 files) | Merge into `docs/` |
+| `run-tests.sh`, `run_performance_tests.sh` at root | Test scripts scattered in root | Move to `scripts/` |
+| `dev.sh` at root | Development script in root | Move to `scripts/` |
+| `aftertalk_test.yaml` at root | Test fixture in root | Move to `testdata/` or delete if unused |
 
-### MEDI — File root e convenzioni
+### MEDIUM — Root files and conventions
 
-| Problema | Dettaglio | Fix |
+| Problem | Detail | Fix |
 |---|---|---|
-| Nomi test ridondanti | `entity_transcription_test.go`, `repository_repository_test.go`, `service_service_test.go` | Rinominare a `entity_test.go`, `repository_test.go`, `service_test.go` |
-| `WORKFLOW.md` e `DEVELOPMENT_PROTOCOL.md` alla root | Documentazione di processo non standard nella root | Unire in `CONTRIBUTING.md` e spostare in root (standard) |
-| `AGENTS.md` alla root | Documentazione agente AI nella root | Spostare in `docs/` o `.agent/` |
-| `opencode.json` vuoto | File di config vuoto e inutilizzato | Eliminare |
-| Makefile con path `./e2e/run_tests.sh` inesistente | Causa errore su `make test-e2e` | Fix target o rimuovere reference |
+| Redundant test names | `entity_transcription_test.go`, `repository_repository_test.go`, `service_service_test.go` | Rename to `entity_test.go`, `repository_test.go`, `service_test.go` |
+| `WORKFLOW.md` and `DEVELOPMENT_PROTOCOL.md` at root | Non-standard process documentation in root | Merge into `CONTRIBUTING.md` at root (standard) |
+| `AGENTS.md` at root | AI agent documentation in root | Move to `docs/` or `.agent/` |
+| Empty `opencode.json` | Empty, unused config file | Delete |
+| Makefile with non-existent path `./e2e/run_tests.sh` | Causes error on `make test-e2e` | Fix target or remove reference |
 
-### BASSI — Standard di progetto mancanti
+### LOW — Missing project standards
 
-| File mancante | Motivo |
+| Missing file | Reason |
 |---|---|
-| `LICENSE` | README cita MIT ma nessun file LICENSE presente |
-| `CHANGELOG.md` | Best practice per tracciare versioni e breaking changes |
-| `CONTRIBUTING.md` | Sostituisce/assorbe WORKFLOW.md e DEVELOPMENT_PROTOCOL.md |
+| `LICENSE` | README mentions MIT but no LICENSE file present |
+| `CHANGELOG.md` | Best practice for tracking versions and breaking changes |
+| `CONTRIBUTING.md` | Replaces/absorbs WORKFLOW.md and DEVELOPMENT_PROTOCOL.md |
 
 ---
 
-## Piano di Esecuzione
+## Execution Plan
 
 ### Step 1: Fix .gitignore
-Aggiungere entries mancanti per binary, coverage, IDE files.
+Add missing entries for binary, coverage, and IDE files.
 
-### Step 2: Rimozione file e directory orfane
-- Eliminare `/migrations/` (non usato)
-- Eliminare directory orfane annidate in `internal/ai/`
-- Eliminare `opencode.json` vuoto
+### Step 2: Remove orphan files and directories
+- Delete `/migrations/` (unused)
+- Delete nested orphan directories in `internal/ai/`
+- Delete empty `opencode.json`
 
-### Step 3: Consolidamento documentazione
-- Spostare `doc/*.md` → `docs/`
-- Spostare `E2E_TESTS_SUMMARY.md`, `TEST_SUMMARY.md`, `TESTING_SUMMARY.md`, `INTEGRATION_TESTS_SUMMARY.md`, `PERFORMANCE_TEST_SUMMARY.md` → `docs/`
-- Spostare `AGENTS.md` → `docs/`
-- Unire `WORKFLOW.md` + `DEVELOPMENT_PROTOCOL.md` → `CONTRIBUTING.md` (root, standard GitHub)
+### Step 3: Consolidate documentation
+- Move `doc/*.md` → `docs/`
+- Move `E2E_TESTS_SUMMARY.md`, `TEST_SUMMARY.md`, `TESTING_SUMMARY.md`, `INTEGRATION_TESTS_SUMMARY.md`, `PERFORMANCE_TEST_SUMMARY.md` → `docs/`
+- Move `AGENTS.md` → `docs/`
+- Merge `WORKFLOW.md` + `DEVELOPMENT_PROTOCOL.md` → `CONTRIBUTING.md` (root, standard GitHub)
 
-### Step 4: Riorganizzazione test AI
-- Spostare `internal/ai/stt/tests/*.go` → `internal/ai/stt/` (package `stt_test`)
-- Spostare `internal/ai/llm/tests/*.go` → `internal/ai/llm/` (package `llm_test`)
-- Eliminare directory `tests/` vuote
+### Step 4: Reorganize AI tests
+- Move `internal/ai/stt/tests/*.go` → `internal/ai/stt/` (package `stt_test`)
+- Move `internal/ai/llm/tests/*.go` → `internal/ai/llm/` (package `llm_test`)
+- Delete empty `tests/` directories
 
-### Step 5: Rinomina test files ridondanti
+### Step 5: Rename redundant test files
 - `internal/core/transcription/entity_transcription_test.go` → `entity_test.go`
 - `internal/core/transcription/repository_repository_test.go` → `repository_test.go`
 - `internal/core/transcription/service_service_test.go` → `service_test.go`
 
-### Step 6: Spostamento script alla root
+### Step 6: Move scripts from root
 - `run-tests.sh` → `scripts/run-tests.sh`
 - `run_performance_tests.sh` → `scripts/run-performance-tests.sh`
 - `dev.sh` → `scripts/dev.sh`
-- Aggiornare riferimenti in `Makefile`
+- Update references in `Makefile`
 
-### Step 7: Aggiunta file standard mancanti
-- Creare `LICENSE` (MIT)
-- Creare `CHANGELOG.md` (con versione corrente)
-- Creare `CONTRIBUTING.md` (unendo WORKFLOW + DEVELOPMENT_PROTOCOL)
+### Step 7: Add missing standard files
+- Create `LICENSE` (MIT)
+- Create `CHANGELOG.md` (with current version)
+- Create `CONTRIBUTING.md` (merging WORKFLOW + DEVELOPMENT_PROTOCOL)
 
 ### Step 8: Fix Makefile
-- Correggere `test-e2e` target (path inesistente)
-- Aggiornare path per script spostati
+- Fix `test-e2e` target (non-existent path)
+- Update paths for moved scripts
 
 ### Step 9: Fix aftertalk_test.yaml
-- Verificare se è usato da qualche test
-- Se sì, spostare in `testdata/`; se no, eliminare
+- Check if used by any test
+- If yes, move to `testdata/`; if no, delete
 
 ---
 
@@ -107,7 +107,7 @@ aftertalk/
 │   ├── aftertalk/main.go        # Entry point
 │   ├── demo/index.html          # Static demo
 │   └── test-ui/                 # Test UI (TypeScript)
-├── docs/                        # TUTTA la documentazione tecnica
+├── docs/                        # ALL technical documentation
 │   ├── AGENTS.md
 │   ├── DEPENDENCIES.md
 │   ├── PERFORMANCE_TESTING.md
@@ -122,12 +122,12 @@ aftertalk/
 │       ├── PERFORMANCE_TEST_SUMMARY.md
 │       ├── TEST_SUMMARY.md
 │       └── TESTING_SUMMARY.md
-├── improvements/                # Tracking miglioramenti
+├── improvements/                # Improvement tracking
 │   ├── closed/                  # Completati
 │   └── README.md
 ├── internal/                    # Private packages (unchanged structurally)
 ├── pkg/                         # Public packages
-├── scripts/                     # TUTTI gli script
+├── scripts/                     # ALL scripts
 │   ├── dev.sh
 │   ├── run-tests.sh
 │   ├── run-performance-tests.sh
@@ -138,16 +138,16 @@ aftertalk/
 │   ├── test_pipeline.py
 │   └── whisper_server.py
 ├── sdk/                         # TypeScript SDK
-├── specs/                       # Specifiche di progetto
-├── testdata/                    # Fixture di test condivise
+├── specs/                       # Project specifications
+├── testdata/                    # Shared test fixtures
 │   └── aftertalk_test.yaml
 ├── .env.example                 # Template configurazione
 ├── .env.test                    # Config test (tracked)
 ├── .env.test.clean              # Config test clean (tracked)
-├── .gitignore                   # Completo
+├── .gitignore                   # Complete
 ├── .golangci.yml                # Linter config
-├── CHANGELOG.md                 # History versioni ← NEW
-├── CONTRIBUTING.md              # Guida sviluppo ← NEW (merge WORKFLOW+DEV_PROTOCOL)
+├── CHANGELOG.md                 # Version history ← NEW
+├── CONTRIBUTING.md              # Development guide ← NEW (merge WORKFLOW+DEV_PROTOCOL)
 ├── docker-compose.yml
 ├── Dockerfile
 ├── go.mod
@@ -159,11 +159,11 @@ aftertalk/
 
 ---
 
-## Impatto
+## Impact
 
-- **Root**: da 27 file → 14 file (solo file standard di progetto)
-- **Documentazione**: unificata in `docs/`, nessuna duplicazione
-- **Test**: convenzione uniforme in tutto il progetto
-- **Script**: tutti in `scripts/`, Makefile pulito
-- **Artifacts**: mai committati grazie a .gitignore completo
-- **Standard GitHub**: LICENSE, CHANGELOG, CONTRIBUTING presenti
+- **Root**: from 27 files → 14 files (only standard project files)
+- **Documentation**: unified in `docs/`, no duplication
+- **Tests**: uniform convention across the entire project
+- **Scripts**: all in `scripts/`, clean Makefile
+- **Artifacts**: never committed thanks to complete .gitignore
+- **GitHub standards**: LICENSE, CHANGELOG, CONTRIBUTING present
