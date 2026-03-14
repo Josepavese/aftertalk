@@ -1,13 +1,16 @@
 package logging
 
 import (
+	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-var Logger *zap.SugaredLogger
+var errInvalidLogFormat = errors.New("invalid log format (must be 'json' or 'console')")
+
+var Logger *zap.SugaredLogger //nolint:gochecknoglobals // global logger is the standard pattern for structured logging
 
 func Init(level, format string) error {
 	var config zap.Config
@@ -20,7 +23,7 @@ func Init(level, format string) error {
 		config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	default:
 		Logger = nil
-		return fmt.Errorf("invalid log format: %s (must be 'json' or 'console')", format)
+		return fmt.Errorf("%w: %s", errInvalidLogFormat, format)
 	}
 
 	switch level {
@@ -50,7 +53,7 @@ func Init(level, format string) error {
 
 func Sync() {
 	if Logger != nil {
-		_ = Logger.Sync()
+		_ = Logger.Sync() //nolint:errcheck // Sync flushes buffered logs; error on stderr flush is not actionable
 	}
 }
 

@@ -35,22 +35,22 @@ type TemplateConfig struct {
 }
 
 type Config struct {
-	Database    DatabaseConfig
-	HTTP        HTTPConfig
-	WebSocket   WebSocketConfig
-	Logging     LoggingConfig
-	JWT         JWTConfig
-	API         APIConfig
+	WebRTC      WebRTCConfig `koanf:"webrtc"`
 	STT         STTConfig
 	LLM         LLMConfig
 	Webhook     WebhookConfig
-	Processing  ProcessingConfig
-	Session     SessionConfig
-	Retention   RetentionConfig
-	Performance PerformanceConfig
-	WebRTC      WebRTCConfig     `koanf:"webrtc"`
+	Logging     LoggingConfig
+	HTTP        HTTPConfig
+	WebSocket   WebSocketConfig
+	Database    DatabaseConfig
+	JWT         JWTConfig
 	Templates   []TemplateConfig `koanf:"templates"`
-	Demo        DemoConfig       `koanf:"demo"`
+	API         APIConfig
+	Processing  ProcessingConfig
+	Retention   RetentionConfig
+	Session     SessionConfig
+	Performance PerformanceConfig
+	Demo        DemoConfig `koanf:"demo"`
 }
 
 type DatabaseConfig struct {
@@ -58,13 +58,13 @@ type DatabaseConfig struct {
 }
 
 type HTTPConfig struct {
-	Port int    `koanf:"port"`
 	Host string `koanf:"host"`
+	Port int    `koanf:"port"`
 }
 
 type WebSocketConfig struct {
-	Port int    `koanf:"port"`
 	Host string `koanf:"host"`
+	Port int    `koanf:"port"`
 }
 
 type LoggingConfig struct {
@@ -190,24 +190,13 @@ type AzureLLMConfig struct {
 //	  secret: "<at-least-32-byte-random-string>"
 //	  pull_base_url: https://api.aftertalk.io
 type WebhookConfig struct {
-	URL     string        `koanf:"url"`
-	Timeout time.Duration `koanf:"timeout"`
-	// Mode selects the delivery strategy: "push" (default) or "notify_pull".
-	Mode string `koanf:"mode"`
-	// Secret is the HMAC-SHA256 key used to sign notification webhook payloads
-	// so the recipient can verify authenticity before making the pull request.
-	// Required (≥32 bytes) when Mode = "notify_pull".
-	Secret string `koanf:"secret"`
-	// TokenTTL is how long a retrieval token remains valid (default: 1h).
-	// Expired tokens are rejected with 404 (indistinguishable from invalid).
-	TokenTTL time.Duration `koanf:"token_ttl"`
-	// DeleteOnPull removes minutes and transcriptions from the DB after a
-	// successful pull. Defaults to true when Mode = "notify_pull".
-	DeleteOnPull *bool `koanf:"delete_on_pull"`
-	// PullBaseURL is the public base URL of this Aftertalk instance, used to
-	// build the retrieval URL sent in the notification webhook.
-	// Example: "https://api.aftertalk.io"
-	PullBaseURL string `koanf:"pull_base_url"`
+	DeleteOnPull *bool         `koanf:"delete_on_pull"`
+	URL          string        `koanf:"url"`
+	Mode         string        `koanf:"mode"`
+	Secret       string        `koanf:"secret"`
+	PullBaseURL  string        `koanf:"pull_base_url"`
+	Timeout      time.Duration `koanf:"timeout"`
+	TokenTTL     time.Duration `koanf:"token_ttl"`
 }
 
 type ProcessingConfig struct {
@@ -240,9 +229,9 @@ type PerformanceConfig struct {
 
 // ICEServerConfig defines a single ICE server (STUN or TURN).
 type ICEServerConfig struct {
+	Username   string   `koanf:"username"`
+	Credential string   `koanf:"credential"`
 	URLs       []string `koanf:"urls"`
-	Username   string   `koanf:"username"`   // required for TURN
-	Credential string   `koanf:"credential"` // required for TURN
 }
 
 // TwilioICEConfig holds credentials for the Twilio Network Traversal Service.
@@ -266,28 +255,24 @@ type MeteredICEConfig struct {
 
 // WebRTCConfig holds WebRTC-related settings.
 type WebRTCConfig struct {
-	// ICEProviderName selects the ICE credential source.
-	// Valid values: "static" (default), "embedded", "twilio", "xirsys", "metered".
-	ICEProviderName string            `koanf:"ice_provider"`
-	ICEServers      []ICEServerConfig `koanf:"ice_servers"` // used by "static" provider
-	TURN            TURNServerConfig  `koanf:"turn"`        // used by "embedded" provider
-	Twilio          TwilioICEConfig   `koanf:"twilio"`
 	Xirsys          XirsysICEConfig   `koanf:"xirsys"`
+	Twilio          TwilioICEConfig   `koanf:"twilio"`
 	Metered         MeteredICEConfig  `koanf:"metered"`
+	ICEProviderName string            `koanf:"ice_provider"`
+	ICEServers      []ICEServerConfig `koanf:"ice_servers"`
+	TURN            TURNServerConfig  `koanf:"turn"`
 }
 
 // TURNServerConfig configures the optional embedded TURN server (pion/turn).
 // When Enabled is true, aftertalk runs a TURN server on ListenAddr so that
 // clients behind symmetric NAT or strict firewalls can relay media through it.
 type TURNServerConfig struct {
-	Enabled    bool   `koanf:"enabled"`
-	ListenAddr string `koanf:"listen_addr"` // e.g. "0.0.0.0:3478"
-	PublicIP   string `koanf:"public_ip"`   // public IP to advertise; "" = auto-detect
+	ListenAddr string `koanf:"listen_addr"`
+	PublicIP   string `koanf:"public_ip"`
 	Realm      string `koanf:"realm"`
-	// AuthSecret is the HMAC-SHA1 shared secret used to generate time-limited
-	// TURN credentials (RFC 5766 REST API). If empty, a random secret is generated.
 	AuthSecret string `koanf:"auth_secret"`
-	AuthTTL    int    `koanf:"auth_ttl"` // credential lifetime in seconds (default 86400)
+	AuthTTL    int    `koanf:"auth_ttl"`
+	Enabled    bool   `koanf:"enabled"`
 	EnableUDP  bool   `koanf:"enable_udp"`
 	EnableTCP  bool   `koanf:"enable_tcp"`
 }
@@ -335,9 +320,9 @@ func Default() *Config {
 			Google: GoogleSTTConfig{
 				CredentialsPath: "creds.json",
 			},
-			AWS: AWSSTTConfig{
-				AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
-				SecretAccessKey: "secret-access-key",
+			AWS: AWSSTTConfig{ //nolint:gosec // example values for documentation only
+				AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",    
+				SecretAccessKey: "secret-access-key",        
 				Region:          "us-east-1",
 			},
 			Azure: AzureSTTConfig{
@@ -500,7 +485,7 @@ func DefaultTemplates() []TemplateConfig {
 }
 
 // DumpYAML marshals the default Config to annotated YAML suitable for use as
-// a starter config file. Returns an error only if marshalling fails (never in
+// a starter config file. Returns an error only if marshaling fails (never in
 // practice for a static struct).
 func DumpYAML() (string, error) {
 	cfg := Default()

@@ -22,7 +22,6 @@ import (
 var testDBPath string
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
 	testDBPath = "/tmp/perf_aftertalk.db"
 }
 
@@ -124,7 +123,7 @@ func runMigrations(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_processing_queue_worker ON processing_queue(worker_id);
 	`
 
-	_, err := db.Exec(migrationSQL)
+	_, err := db.ExecContext(context.Background(), migrationSQL)
 	if err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
@@ -142,7 +141,7 @@ func setupTestDB(t any) *sql.DB {
 		panic("Failed to setup test DB: " + err.Error())
 	}
 
-	if err := db.DB.Ping(); err != nil {
+	if err := db.DB.PingContext(context.Background()); err != nil {
 		panic("Failed to ping DB: " + err.Error())
 	}
 
@@ -165,7 +164,7 @@ func BenchmarkSessionCreation1000(b *testing.B) {
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
-	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
 
 	b.ResetTimer()
 
@@ -193,7 +192,7 @@ func BenchmarkSessionRetrieval(b *testing.B) {
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
-	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
 
 	b.ResetTimer()
 
@@ -350,7 +349,7 @@ func BenchmarkDatabaseInsert(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		sessionID := randString(36)
-		_, err := db.Exec(
+		_, err := db.ExecContext(context.Background(), 
 			"INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata) VALUES (?, ?, ?, ?, ?, ?)",
 			sessionID, "active", time.Now(), nil, 2, "test metadata",
 		)
@@ -365,7 +364,7 @@ func BenchmarkDatabaseSelect(b *testing.B) {
 	defer teardownTestDB()
 
 	sessionID := randString(36)
-	_, err := db.Exec(
+	_, err := db.ExecContext(context.Background(), 
 		"INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata) VALUES (?, ?, ?, ?, ?, ?)",
 		sessionID, "active", time.Now(), nil, 2, "test metadata",
 	)
@@ -377,7 +376,7 @@ func BenchmarkDatabaseSelect(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		var status, createdAt string
-		err := db.QueryRow("SELECT status, created_at FROM sessions WHERE id = ?", sessionID).Scan(&status, &createdAt)
+		err := db.QueryRowContext(context.Background(), "SELECT status, created_at FROM sessions WHERE id = ?", sessionID).Scan(&status, &createdAt)
 		if err != nil {
 			b.Fatalf("Failed to select session: %v", err)
 		}
@@ -389,7 +388,7 @@ func BenchmarkDatabaseUpdate(b *testing.B) {
 	defer teardownTestDB()
 
 	sessionID := randString(36)
-	_, err := db.Exec(
+	_, err := db.ExecContext(context.Background(), 
 		"INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata) VALUES (?, ?, ?, ?, ?, ?)",
 		sessionID, "active", time.Now(), nil, 2, "test metadata",
 	)
@@ -400,7 +399,7 @@ func BenchmarkDatabaseUpdate(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := db.Exec(
+		_, err := db.ExecContext(context.Background(), 
 			"UPDATE sessions SET status = ? WHERE id = ?",
 			"completed", sessionID,
 		)
@@ -415,7 +414,7 @@ func BenchmarkDatabaseDelete(b *testing.B) {
 	defer teardownTestDB()
 
 	sessionID := randString(36)
-	_, err := db.Exec(
+	_, err := db.ExecContext(context.Background(), 
 		"INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata) VALUES (?, ?, ?, ?, ?, ?)",
 		sessionID, "active", time.Now(), nil, 2, "test metadata",
 	)
@@ -426,7 +425,7 @@ func BenchmarkDatabaseDelete(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := db.Exec("DELETE FROM sessions WHERE id = ?", sessionID)
+		_, err := db.ExecContext(context.Background(), "DELETE FROM sessions WHERE id = ?", sessionID)
 		if err != nil {
 			b.Fatalf("Failed to delete session: %v", err)
 		}
@@ -464,7 +463,7 @@ func randString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+		b[i] = letters[rand.Intn(len(letters))] //nolint:gosec // math/rand is fine for test data generation
 	}
 	return string(b)
 }

@@ -4,14 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"math/rand"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
-	_ "github.com/Josepavese/aftertalk/internal/core"
 	"github.com/Josepavese/aftertalk/internal/config"
+	_ "github.com/Josepavese/aftertalk/internal/core"
 	"github.com/Josepavese/aftertalk/internal/core/session"
 	"github.com/Josepavese/aftertalk/internal/core/transcription"
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
@@ -22,7 +21,6 @@ import (
 var stressTestDBPath string
 
 func init() {
-	rand.Seed(time.Now().UnixNano())
 	stressTestDBPath = "/tmp/stress_aftertalk.db"
 }
 
@@ -34,7 +32,7 @@ func setupStressTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to setup stress test DB: %v", err)
 	}
 
-	if err := db.DB.Ping(); err != nil {
+	if err := db.DB.PingContext(context.Background()); err != nil {
 		t.Fatalf("Failed to ping DB: %v", err)
 	}
 
@@ -80,7 +78,7 @@ func TestLongRunningSessions24Hours(t *testing.T) {
 				select {
 				case <-ticker.C:
 					sessionID := randString(36)
-					_, err := db.Exec(
+					_, err := db.ExecContext(context.Background(), 
 						"UPDATE sessions SET participant_count = ? WHERE id = ?",
 						2, sessionID,
 					)
@@ -135,7 +133,7 @@ func TestHighFrequencySessionCreation(t *testing.T) {
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
-	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
 
 	sessionCount := sessionsPerHour * 2
 	sessionPerThread := sessionCount / threads
@@ -305,7 +303,7 @@ func TestDatabaseWALStress(t *testing.T) {
 
 					// Mix of read and write operations
 					if i%3 == 0 {
-						_, err := db.Exec(
+						_, err := db.ExecContext(context.Background(), 
 							"INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata) VALUES (?, ?, ?, ?, ?, ?)",
 							sessionID, "active", time.Now(), nil, 2, "wal stress",
 						)
@@ -315,13 +313,13 @@ func TestDatabaseWALStress(t *testing.T) {
 						}
 					} else if i%3 == 1 {
 						var status string
-						err := db.QueryRow("SELECT status FROM sessions WHERE id = ?", sessionID).Scan(&status)
+						err := db.QueryRowContext(context.Background(), "SELECT status FROM sessions WHERE id = ?", sessionID).Scan(&status)
 						if err != nil {
 							results <- err
 							return
 						}
 					} else {
-						_, err := db.Exec(
+						_, err := db.ExecContext(context.Background(), 
 							"UPDATE sessions SET status = ? WHERE id = ?",
 							"active", sessionID,
 						)

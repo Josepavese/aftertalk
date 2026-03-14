@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,22 @@ import (
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
+)
+
+var (
+	errDatabasePathRequired                = errors.New("database path is required")
+	errJWTSecretDefault                    = errors.New("JWT secret must be changed from default value")
+	errAPIKeyDefault                       = errors.New("API key must be changed from default value")
+	errJWTExpirationPositive               = errors.New("JWT expiration must be positive")
+	errWebhookURLRequired                  = errors.New("webhook URL is required")
+	errWebhookTimeoutPositive              = errors.New("webhook timeout must be positive")
+	errMaxConcurrentTranscriptionsPositive = errors.New("max concurrent transcriptions must be positive")
+	errInvalidHTTPPort                     = errors.New("invalid HTTP port")
+	errInvalidWebSocketPort                = errors.New("invalid WebSocket port")
+	errInvalidLogLevel                     = errors.New("invalid log level")
+	errInvalidLogFormat                    = errors.New("invalid log format")
+	errInvalidSTTProvider                  = errors.New("invalid STT provider")
+	errInvalidLLMProvider                  = errors.New("invalid LLM provider")
 )
 
 func Load(configPath string) (*Config, error) {
@@ -37,25 +54,25 @@ func Load(configPath string) (*Config, error) {
 	return cfg, nil
 }
 
-func validate(cfg *Config) error {
+func validate(cfg *Config) error { //nolint:gocyclo // validation function needs to check all fields
 	if cfg.Database.Path == "" {
-		return fmt.Errorf("database path is required")
+		return errDatabasePathRequired
 	}
 
 	if cfg.HTTP.Port <= 0 || cfg.HTTP.Port > 65535 {
-		return fmt.Errorf("invalid HTTP port: %d", cfg.HTTP.Port)
+		return fmt.Errorf("%w: %d", errInvalidHTTPPort, cfg.HTTP.Port)
 	}
 
 	if cfg.WebSocket.Port <= 0 || cfg.WebSocket.Port > 65535 {
-		return fmt.Errorf("invalid WebSocket port: %d", cfg.WebSocket.Port)
+		return fmt.Errorf("%w: %d", errInvalidWebSocketPort, cfg.WebSocket.Port)
 	}
 
 	if cfg.JWT.Secret == "change-this-in-production" {
-		return fmt.Errorf("JWT secret must be changed from default value")
+		return errJWTSecretDefault
 	}
 
 	if cfg.API.Key == "your-api-key-change-this-in-production" {
-		return fmt.Errorf("API key must be changed from default value")
+		return errAPIKeyDefault
 	}
 
 	validLogLevels := map[string]bool{
@@ -65,7 +82,7 @@ func validate(cfg *Config) error {
 		"error": true,
 	}
 	if !validLogLevels[cfg.Logging.Level] {
-		return fmt.Errorf("invalid log level: %s", cfg.Logging.Level)
+		return fmt.Errorf("%w: %s", errInvalidLogLevel, cfg.Logging.Level)
 	}
 
 	validLogFormats := map[string]bool{
@@ -73,7 +90,7 @@ func validate(cfg *Config) error {
 		"console": true,
 	}
 	if !validLogFormats[cfg.Logging.Format] {
-		return fmt.Errorf("invalid log format: %s", cfg.Logging.Format)
+		return fmt.Errorf("%w: %s", errInvalidLogFormat, cfg.Logging.Format)
 	}
 
 	validSTTProviders := map[string]bool{
@@ -85,7 +102,7 @@ func validate(cfg *Config) error {
 		"":              true,
 	}
 	if !validSTTProviders[cfg.STT.Provider] {
-		return fmt.Errorf("invalid STT provider: %s", cfg.STT.Provider)
+		return fmt.Errorf("%w: %s", errInvalidSTTProvider, cfg.STT.Provider)
 	}
 
 	validLLMProviders := map[string]bool{
@@ -97,23 +114,23 @@ func validate(cfg *Config) error {
 		"":          true,
 	}
 	if !validLLMProviders[cfg.LLM.Provider] {
-		return fmt.Errorf("invalid LLM provider: %s", cfg.LLM.Provider)
+		return fmt.Errorf("%w: %s", errInvalidLLMProvider, cfg.LLM.Provider)
 	}
 
 	if cfg.JWT.Expiration <= 0 {
-		return fmt.Errorf("JWT expiration must be positive")
+		return errJWTExpirationPositive
 	}
 
 	if cfg.Webhook.URL == "" {
-		return fmt.Errorf("webhook URL is required")
+		return errWebhookURLRequired
 	}
 
 	if cfg.Webhook.Timeout <= 0 {
-		return fmt.Errorf("webhook timeout must be positive")
+		return errWebhookTimeoutPositive
 	}
 
 	if cfg.Processing.MaxConcurrentTranscriptions <= 0 {
-		return fmt.Errorf("max concurrent transcriptions must be positive")
+		return errMaxConcurrentTranscriptionsPositive
 	}
 
 	return nil
