@@ -1,24 +1,60 @@
 #!/usr/bin/env bash
-# Step: Clone/update source repository and build the aftertalk binary.
-# Requires: AFTERTALK_SRC, AFTERTALK_BIN, REPO_URL (from installer environment)
+# Step: Download the pre-built aftertalk binary from GitHub Releases.
+#
+# The binary is cross-compiled by the release workflow (.github/workflows/release.yml)
+# and uploaded as an asset to https://github.com/Josepavese/aftertalk/releases.
+#
+# Requires (from installer environment):
+#   AT_OS            — "linux" or "macos"
+#   AT_ARCH          — "amd64" or "arm64"
+#   AFTERTALK_BIN    — destination directory
+#   REPO_RAW         — raw.githubusercontent.com base URL for scripts
+#
+# Optional:
+#   AFTERTALK_RELEASE — release tag to download (default: "latest")
+#                       Use "edge" for the latest master build.
 
 step_binary() {
-  header "Aftertalk source & binary"
+  header "4. Aftertalk binary"
 
-  if [[ -d "$AFTERTALK_SRC/.git" ]]; then
-    info "Updating source in $AFTERTALK_SRC..."
-    git -C "$AFTERTALK_SRC" pull --ff-only
+  local release="${AFTERTALK_RELEASE:-latest}"
+  local bin_name="aftertalk-${AT_OS}-${AT_ARCH}"
+  local dest="$AFTERTALK_BIN/aftertalk-server"
+  local url
+
+  if [[ "$release" == "latest" ]]; then
+    url="https://github.com/Josepavese/aftertalk/releases/latest/download/${bin_name}"
   else
-    info "Cloning into $AFTERTALK_SRC..."
-    mkdir -p "$(dirname "$AFTERTALK_SRC")"
-    git clone "$REPO_URL" "$AFTERTALK_SRC"
+    url="https://github.com/Josepavese/aftertalk/releases/download/${release}/${bin_name}"
   fi
 
-  info "Building aftertalk binary..."
-  (cd "$AFTERTALK_SRC" && go build -o "$AFTERTALK_BIN/aftertalk-server" ./cmd/aftertalk/)
-  success "Binary: $AFTERTALK_BIN/aftertalk-server"
+  mkdir -p "$AFTERTALK_BIN"
 
-  cp "$AFTERTALK_SRC/scripts/whisper_server.py" "$AFTERTALK_BIN/whisper_server.py"
+  info "Downloading aftertalk-server (${AT_OS}/${AT_ARCH}, release: ${release})..."
+  if curl -fL --progress-bar "$url" -o "$dest"; then
+    chmod +x "$dest"
+    success "Binary: $dest"
+  else
+    die "Failed to download binary.
+  URL: $url
+  Make sure a release exists at https://github.com/Josepavese/aftertalk/releases
+  or set AFTERTALK_RELEASE=edge to use the latest master build."
+  fi
+
+  # whisper_server.py is a Python script — download from release assets
+  # (it was uploaded alongside the binaries by the release workflow).
+  local whisper_url
+  if [[ "$release" == "latest" ]]; then
+    whisper_url="https://github.com/Josepavese/aftertalk/releases/latest/download/whisper_server.py"
+  else
+    whisper_url="https://github.com/Josepavese/aftertalk/releases/download/${release}/whisper_server.py"
+  fi
+
+  info "Downloading whisper_server.py..."
+  if ! curl -fsSL "$whisper_url" -o "$AFTERTALK_BIN/whisper_server.py" 2>/dev/null; then
+    # Fallback: fetch directly from source if release asset is missing
+    curl -fsSL "${REPO_RAW}/scripts/whisper_server.py" -o "$AFTERTALK_BIN/whisper_server.py"
+  fi
   chmod +x "$AFTERTALK_BIN/whisper_server.py"
   success "Whisper server: $AFTERTALK_BIN/whisper_server.py"
 }

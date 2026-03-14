@@ -5,12 +5,13 @@
 #   irm https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.ps1 | iex
 #
 # Environment overrides (set before running):
-#   $env:AFTERTALK_HOME   install directory (default: %LOCALAPPDATA%\aftertalk)
-#   $env:WHISPER_MODEL    faster-whisper model (default: base)
-#   $env:WHISPER_LANGUAGE transcription language e.g. "it" (default: auto)
-#   $env:OLLAMA_MODEL     LLM model (default: qwen3:4b)
-#   $env:SKIP_OLLAMA      set to "1" to skip Ollama
-#   $env:SKIP_WHISPER     set to "1" to skip Whisper
+#   $env:AFTERTALK_HOME     install directory (default: %LOCALAPPDATA%\aftertalk)
+#   $env:AFTERTALK_RELEASE  GitHub release to download (default: latest, use "edge" for master builds)
+#   $env:WHISPER_MODEL      faster-whisper model (default: base)
+#   $env:WHISPER_LANGUAGE   transcription language e.g. "it" (default: auto)
+#   $env:OLLAMA_MODEL       LLM model (default: qwen3:4b)
+#   $env:SKIP_OLLAMA        set to "1" to skip Ollama
+#   $env:SKIP_WHISPER       set to "1" to skip Whisper
 # ============================================================================
 #Requires -Version 5.1
 $ErrorActionPreference = "Stop"
@@ -21,18 +22,16 @@ $AT_ARCH = if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") { "amd64" } else { "arm6
 
 # ── Configuration ──────────────────────────────────────────────────────────
 $AFTERTALK_HOME    = if ($env:AFTERTALK_HOME) { $env:AFTERTALK_HOME } else { Join-Path $env:LOCALAPPDATA "aftertalk" }
+$AFTERTALK_RELEASE = if ($env:AFTERTALK_RELEASE) { $env:AFTERTALK_RELEASE } else { "latest" }
 $WHISPER_MODEL     = if ($env:WHISPER_MODEL) { $env:WHISPER_MODEL } else { "base" }
 $WHISPER_LANGUAGE  = if ($env:WHISPER_LANGUAGE) { $env:WHISPER_LANGUAGE } else { "" }
 $OLLAMA_MODEL      = if ($env:OLLAMA_MODEL) { $env:OLLAMA_MODEL } else { "qwen3:4b" }
-$REPO_URL          = "https://github.com/Josepavese/aftertalk.git"
-$GO_MIN            = [version]"1.22"
 
 $BIN_DIR    = Join-Path $AFTERTALK_HOME "bin"
 $DATA_DIR   = Join-Path $AFTERTALK_HOME "data"
 $LOGS_DIR   = Join-Path $AFTERTALK_HOME "logs"
 $CONFIG_DIR = Join-Path $AFTERTALK_HOME "config"
 $MODELS_DIR = Join-Path $AFTERTALK_HOME "models\whisper"
-$SRC_DIR    = Join-Path $AFTERTALK_HOME "src"
 
 function Write-Header { param($msg) Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 function Write-OK     { param($msg) Write-Host "  [OK] $msg" -ForegroundColor Green }
@@ -42,7 +41,7 @@ function Write-Fail   { param($msg) Write-Host "  [X]  $msg" -ForegroundColor Re
 
 Write-Host @"
   ╔═══════════════════════════════════╗
-  ║     Aftertalk Installer v1.0      ║
+  ║   Aftertalk Installer $AFTERTALK_RELEASE
   ║  AI meeting minutes, local-first  ║
   ╚═══════════════════════════════════╝
 "@ -ForegroundColor Green
@@ -70,12 +69,6 @@ function Install-Tool {
   }
 }
 
-# git
-if (-not (Get-Command git -EA SilentlyContinue)) {
-  Install-Tool "Git" "Git.Git" "git" "git"
-}
-Write-OK "git: $(git --version)"
-
 # python3
 $PYTHON = Get-Command python -EA SilentlyContinue | Select-Object -ExpandProperty Source
 if (-not $PYTHON) {
@@ -95,31 +88,6 @@ if (-not (Get-Command ffmpeg -EA SilentlyContinue)) {
   Install-Tool "ffmpeg" "Gyan.FFmpeg" "ffmpeg" "ffmpeg"
 }
 Write-OK "ffmpeg: installed"
-
-# Go
-$need_go = $true
-if (Get-Command go -EA SilentlyContinue) {
-  $go_ver_str = (go version) -replace "go version go", "" -replace " .*", ""
-  if ([version]$go_ver_str -ge $GO_MIN) {
-    $need_go = $false
-    Write-OK "go: $go_ver_str"
-  } else {
-    Write-Warn "Go $go_ver_str < $GO_MIN — upgrading"
-  }
-}
-if ($need_go) {
-  $GO_LATEST = "1.23.4"
-  $msi = "go${GO_LATEST}.windows-${AT_ARCH}.msi"
-  $url = "https://go.dev/dl/$msi"
-  $tmp = Join-Path $env:TEMP $msi
-  Write-Info "Downloading Go $GO_LATEST..."
-  Invoke-WebRequest $url -OutFile $tmp
-  Start-Process msiexec -Wait -ArgumentList "/i `"$tmp`" /quiet /norestart"
-  Remove-Item $tmp
-  $env:PATH = "C:\Program Files\Go\bin;" + $env:PATH
-  [Environment]::SetEnvironmentVariable("PATH", $env:PATH, "User")
-  Write-OK "go: $(go version)"
-}
 
 # ── 2. faster-whisper ─────────────────────────────────────────────────────
 if ($env:SKIP_WHISPER -ne "1") {
@@ -159,34 +127,45 @@ if ($env:SKIP_OLLAMA -ne "1") {
   Write-OK "model: $OLLAMA_MODEL ready"
 }
 
-# ── 4. Source & binary ────────────────────────────────────────────────────
-Write-Header "4. Aftertalk source & binary"
-if (Test-Path (Join-Path $SRC_DIR ".git")) {
-  Write-Info "Updating source..."
-  git -C $SRC_DIR pull --ff-only
-} else {
-  Write-Info "Cloning source..."
-  New-Item -ItemType Directory -Path (Split-Path $SRC_DIR) -Force | Out-Null
-  git clone $REPO_URL $SRC_DIR
-}
-
-Write-Info "Building binary..."
-Push-Location $SRC_DIR
-go build -o (Join-Path $BIN_DIR "aftertalk-server.exe") .\cmd\aftertalk\
-Pop-Location
-Write-OK "Binary: $BIN_DIR\aftertalk-server.exe"
-
-Copy-Item (Join-Path $SRC_DIR "scripts\whisper_server.py") (Join-Path $BIN_DIR "whisper_server.py") -Force
-Write-OK "Whisper server: $BIN_DIR\whisper_server.py"
-
-# ── 5. Directories ────────────────────────────────────────────────────────
-Write-Header "5. Home: $AFTERTALK_HOME"
+# ── 4. Directories ────────────────────────────────────────────────────────
+Write-Header "4. Home: $AFTERTALK_HOME"
 foreach ($d in @($BIN_DIR, $DATA_DIR, $LOGS_DIR, $CONFIG_DIR, $MODELS_DIR)) {
   New-Item -ItemType Directory -Path $d -Force | Out-Null
 }
 Write-OK "Directories created"
 
+# ── 5. Binary download ────────────────────────────────────────────────────
+Write-Header "5. Aftertalk binary ($AT_OS/$AT_ARCH, release: $AFTERTALK_RELEASE)"
+
+$BIN_NAME = "aftertalk-${AT_OS}-${AT_ARCH}.exe"
+if ($AFTERTALK_RELEASE -eq "latest") {
+  $BIN_URL     = "https://github.com/Josepavese/aftertalk/releases/latest/download/$BIN_NAME"
+  $WHISPER_URL = "https://github.com/Josepavese/aftertalk/releases/latest/download/whisper_server.py"
+} else {
+  $BIN_URL     = "https://github.com/Josepavese/aftertalk/releases/download/$AFTERTALK_RELEASE/$BIN_NAME"
+  $WHISPER_URL = "https://github.com/Josepavese/aftertalk/releases/download/$AFTERTALK_RELEASE/whisper_server.py"
+}
+
+Write-Info "Downloading aftertalk-server.exe..."
+try {
+  Invoke-WebRequest $BIN_URL -OutFile (Join-Path $BIN_DIR "aftertalk-server.exe")
+  Write-OK "Binary: $BIN_DIR\aftertalk-server.exe"
+} catch {
+  Write-Fail "Failed to download binary from $BIN_URL`nCheck https://github.com/Josepavese/aftertalk/releases or set AFTERTALK_RELEASE=edge"
+}
+
+Write-Info "Downloading whisper_server.py..."
+try {
+  Invoke-WebRequest $WHISPER_URL -OutFile (Join-Path $BIN_DIR "whisper_server.py")
+} catch {
+  # Fallback to raw source
+  Invoke-WebRequest "https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/whisper_server.py" `
+    -OutFile (Join-Path $BIN_DIR "whisper_server.py")
+}
+Write-OK "Whisper server: $BIN_DIR\whisper_server.py"
+
 # ── 6. Config ─────────────────────────────────────────────────────────────
+Write-Header "6. Configuration"
 $CONFIG_FILE = Join-Path $CONFIG_DIR "config.yaml"
 if (-not (Test-Path $CONFIG_FILE)) {
   $api_key    = -join ((65..90 + 97..122 + 48..57) | Get-Random -Count 32 | % { [char]$_ })
@@ -235,8 +214,8 @@ processing:
   Write-Warn "Config exists, skipping"
 }
 
-# ── 7. CLI wrapper (start.bat + start.ps1) ────────────────────────────────
-Write-Header "6. CLI command"
+# ── 7. CLI wrapper ────────────────────────────────────────────────────────
+Write-Header "7. CLI command"
 
 $START_BAT = Join-Path $BIN_DIR "aftertalk.bat"
 @"
@@ -311,11 +290,22 @@ switch ($Command) {
   "status"  { Show-Status }
   "update"  {
     Stop-Stack
-    git -C (Join-Path $HOME_DIR "src") pull --ff-only
-    Push-Location (Join-Path $HOME_DIR "src")
-    go build -o (Join-Path $BIN "aftertalk-server.exe") .\cmd\aftertalk\
-    Pop-Location
-    Copy-Item (Join-Path $HOME_DIR "src\scripts\whisper_server.py") (Join-Path $BIN "whisper_server.py") -Force
+    $rel  = if ($env:AFTERTALK_RELEASE) { $env:AFTERTALK_RELEASE } else { "latest" }
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") { "amd64" } else { "arm64" }
+    $name = "aftertalk-windows-${arch}.exe"
+    $binUrl = if ($rel -eq "latest") {
+      "https://github.com/Josepavese/aftertalk/releases/latest/download/$name"
+    } else {
+      "https://github.com/Josepavese/aftertalk/releases/download/$rel/$name"
+    }
+    $whUrl = if ($rel -eq "latest") {
+      "https://github.com/Josepavese/aftertalk/releases/latest/download/whisper_server.py"
+    } else {
+      "https://github.com/Josepavese/aftertalk/releases/download/$rel/whisper_server.py"
+    }
+    Write-Host "Downloading update (release: $rel)..."
+    Invoke-WebRequest $binUrl -OutFile (Join-Path $BIN "aftertalk-server.exe")
+    try { Invoke-WebRequest $whUrl -OutFile (Join-Path $BIN "whisper_server.py") } catch {}
     Write-Host "Updated. Run 'aftertalk start'."
   }
   default { Write-Host "Usage: aftertalk {start|stop|restart|status|update}" }

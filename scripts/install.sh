@@ -12,18 +12,18 @@
 #   offline             Skip Whisper + Ollama; use stub providers (no AI output)
 #
 # Environment overrides:
-#   AFTERTALK_HOME   install directory (default: ~/.aftertalk)
-#   WHISPER_MODEL    faster-whisper model (default: base)
-#   WHISPER_LANGUAGE transcription language, e.g. "it" (default: auto)
-#   OLLAMA_MODEL     LLM model to pull (default: qwen3:4b)
-#   SKIP_OLLAMA      set to 1 to skip Ollama install
-#   SKIP_WHISPER     set to 1 to skip Whisper server setup
+#   AFTERTALK_HOME     install directory (default: ~/.aftertalk)
+#   AFTERTALK_RELEASE  GitHub release to download (default: latest, use "edge" for master builds)
+#   WHISPER_MODEL      faster-whisper model (default: base)
+#   WHISPER_LANGUAGE   transcription language, e.g. "it" (default: auto)
+#   OLLAMA_MODEL       LLM model to pull (default: qwen3:4b)
+#   SKIP_OLLAMA        set to 1 to skip Ollama install
+#   SKIP_WHISPER       set to 1 to skip Whisper server setup
 # ============================================================================
 set -euo pipefail
 
 REPO_RAW="https://raw.githubusercontent.com/Josepavese/aftertalk/master"
-REPO_URL="https://github.com/Josepavese/aftertalk.git"
-export GO_MIN_VERSION="1.22"
+export AFTERTALK_RELEASE="${AFTERTALK_RELEASE:-latest}"
 export WHISPER_MODEL="${WHISPER_MODEL:-base}"
 export WHISPER_LANGUAGE="${WHISPER_LANGUAGE:-}"
 export OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:4b}"
@@ -100,12 +100,9 @@ export AFTERTALK_DATA="$AFTERTALK_HOME/data"
 export AFTERTALK_LOGS="$AFTERTALK_HOME/logs"
 export AFTERTALK_CONFIG="$AFTERTALK_HOME/config"
 export AFTERTALK_MODELS="$AFTERTALK_HOME/models/whisper"
-export AFTERTALK_SRC="$AFTERTALK_HOME/src"
 export CLI_LINK="/usr/local/bin/aftertalk"
 
-# Read version from SSOT (internal/version/version.txt).
-_VERSION_FILE="$_SCRIPT_DIR/../internal/version/version.txt"
-AT_VERSION="$([[ -f "$_VERSION_FILE" ]] && tr -d '[:space:]' < "$_VERSION_FILE" || echo 'dev')"
+AT_VERSION="$AFTERTALK_RELEASE"
 
 echo -e "${BOLD}${GREEN}"
 printf "  ╔═══════════════════════════════════╗\n"
@@ -119,7 +116,6 @@ info "Mode: $INSTALL_MODE"
 
 # ── Load providers ────────────────────────────────────────────────────────────
 _source_module "providers/_python.sh"
-_source_module "providers/_go.sh"
 _source_module "providers/_whisper.sh"
 _source_module "providers/_ollama.sh"
 
@@ -131,12 +127,6 @@ _source_module "steps/_cli.sh"
 # ── 1. Prerequisites ──────────────────────────────────────────────────────────
 header "1. Prerequisites"
 
-# git (used by step_binary; minimal dep, always needed)
-if ! command -v git &>/dev/null; then
-  install_pkg "git" git git git git git
-fi
-success "git: $(git --version | head -1)"
-
 # ffmpeg (optional but useful for audio diagnostics)
 if ! command -v ffmpeg &>/dev/null; then
   warn "ffmpeg not found — installing (used for audio diagnostics)"
@@ -145,7 +135,6 @@ fi
 success "ffmpeg: $(ffmpeg -version 2>&1 | head -1 | awk '{print $3}')"
 
 ensure_python   # providers/_python.sh  → sets $PYTHON
-ensure_go       # providers/_go.sh
 
 # ── 2. Whisper ────────────────────────────────────────────────────────────────
 ensure_whisper  # providers/_whisper.sh
