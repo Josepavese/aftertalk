@@ -57,15 +57,16 @@ func buildSchemaExample(tmpl config.TemplateConfig) string {
 		if i == len(tmpl.Sections)-1 {
 			comma = ""
 		}
+
 		switch sec.Type {
 		case "string_list":
-			sb.WriteString(fmt.Sprintf("    %q: [\"item 1\", \"item 2\"]%s\n", sec.Key, comma))
+			fmt.Fprintf(&sb, "    %q: [\"item 1\", \"item 2\"]%s\n", sec.Key, comma)
 		case "content_items":
-			sb.WriteString(fmt.Sprintf("    %q: [{\"text\": \"synthesized point\", \"timestamp\": 0}]%s\n", sec.Key, comma))
+			fmt.Fprintf(&sb, "    %q: [{\"text\": \"synthesized point\", \"timestamp\": 0}]%s\n", sec.Key, comma)
 		case "progress":
-			sb.WriteString(fmt.Sprintf("    %q: {\"progress\": [\"progress item\"], \"issues\": [\"issue\"]}%s\n", sec.Key, comma))
+			fmt.Fprintf(&sb, "    %q: {\"progress\": [\"progress item\"], \"issues\": [\"issue\"]}%s\n", sec.Key, comma)
 		default:
-			sb.WriteString(fmt.Sprintf("    %q: []%s\n", sec.Key, comma))
+			fmt.Fprintf(&sb, "    %q: []%s\n", sec.Key, comma)
 		}
 	}
 
@@ -81,9 +82,9 @@ func buildSchemaExample(tmpl config.TemplateConfig) string {
 func buildSectionRules(tmpl config.TemplateConfig) string {
 	var sb strings.Builder
 	for _, sec := range tmpl.Sections {
-		sb.WriteString(fmt.Sprintf("- sections.%s: %s\n", sec.Key, sec.Description))
+		fmt.Fprintf(&sb, "- sections.%s: %s\n", sec.Key, sec.Description)
 	}
-	sb.WriteString(fmt.Sprintf("- citations.role must be one of: %s\n", formatRoleKeys(tmpl.Roles)))
+	fmt.Fprintf(&sb, "- citations.role must be one of: %s\n", formatRoleKeys(tmpl.Roles))
 	return sb.String()
 }
 

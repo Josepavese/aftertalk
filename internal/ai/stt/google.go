@@ -5,14 +5,21 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/pkg/audio"
+)
+
+var (
+	errGoogleServerError   = errors.New("google stt: server error")
+	errGoogleNoCredentials = errors.New("no Google credentials path configured and GOOGLE_APPLICATION_CREDENTIALS not set")
 )
 
 // GoogleSTTProvider transcribes audio using the Google Cloud Speech-to-Text REST API v1.
@@ -49,19 +56,19 @@ func (p *GoogleSTTProvider) IsAvailable() bool {
 
 // googleRecognizeRequest is the body for POST https://speech.googleapis.com/v1/speech:recognize
 type googleRecognizeRequest struct {
-	Config googleRecognitionConfig `json:"config"`
 	Audio  googleRecognitionAudio  `json:"audio"`
+	Config googleRecognitionConfig `json:"config"`
 }
 
 type googleRecognitionConfig struct {
-	Encoding                            string   `json:"encoding"`
-	SampleRateHertz                     int      `json:"sampleRateHertz"`
-	LanguageCode                        string   `json:"languageCode"`
-	EnableWordTimeOffsets               bool     `json:"enableWordTimeOffsets"`
-	EnableAutomaticPunctuation          bool     `json:"enableAutomaticPunctuation"`
-	Model                               string   `json:"model,omitempty"`
-	AudioChannelCount                   int      `json:"audioChannelCount,omitempty"`
-	AlternativeLanguageCodes            []string `json:"alternativeLanguageCodes,omitempty"`
+	Encoding                   string   `json:"encoding"`
+	LanguageCode               string   `json:"languageCode"`
+	Model                      string   `json:"model,omitempty"`
+	AlternativeLanguageCodes   []string `json:"alternativeLanguageCodes,omitempty"`
+	SampleRateHertz            int      `json:"sampleRateHertz"`
+	AudioChannelCount          int      `json:"audioChannelCount,omitempty"`
+	EnableWordTimeOffsets      bool     `json:"enableWordTimeOffsets"`
+	EnableAutomaticPunctuation bool     `json:"enableAutomaticPunctuation"`
 }
 
 type googleRecognitionAudio struct {
@@ -77,15 +84,15 @@ type googleSpeechRecognitionResult struct {
 }
 
 type googleSpeechRecognitionAlternative struct {
-	Transcript string            `json:"transcript"`
-	Confidence float64           `json:"confidence"`
-	Words      []googleWordInfo  `json:"words"`
+	Transcript string           `json:"transcript"`
+	Words      []googleWordInfo `json:"words"`
+	Confidence float64          `json:"confidence"`
 }
 
 type googleWordInfo struct {
-	Word        string `json:"word"`
-	StartTime   string `json:"startTime"` // e.g. "1.500s"
-	EndTime     string `json:"endTime"`   // e.g. "2.100s"
+	Word      string `json:"word"`
+	StartTime string `json:"startTime"` // e.g. "1.500s"
+	EndTime   string `json:"endTime"`   // e.g. "2.100s"
 }
 
 func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audioData *AudioData) (*TranscriptionResult, error) {
@@ -93,21 +100,17 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audioData *AudioData
 
 	// Convert Opus frames to WAV for Google (requires LINEAR16 or WEBM_OPUS).
 	var audioBytes []byte
-	encoding := "WEBM_OPUS"
-	sampleRate := 48000
+	encoding := "LINEAR16"
+	sampleRate := 16000
 
 	if len(audioData.Frames) > 0 {
-		wav, err := audio.DecodeFramesToWAVffmpeg(audioData.Frames, 16000)
+		wav, err := audio.DecodeFramesToWAVffmpeg(ctx, audioData.Frames, 16000)
 		if err != nil {
 			return nil, fmt.Errorf("google stt: opus→wav: %w", err)
 		}
 		audioBytes = wav
-		encoding = "LINEAR16"
-		sampleRate = 16000
 	} else {
 		audioBytes = audioData.Data
-		encoding = "LINEAR16"
-		sampleRate = 16000
 	}
 
 	langCode := "it-IT"
@@ -162,7 +165,7 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audioData *AudioData
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("google stt: server returned %d: %s", resp.StatusCode, string(respBytes))
+		return nil, fmt.Errorf("%w: %d: %s", errGoogleServerError, resp.StatusCode, string(respBytes))
 	}
 
 	var gResp googleRecognizeResponse
@@ -238,22 +241,23 @@ func (p *GoogleSTTProvider) getAccessToken(ctx context.Context) (string, error) 
 		credPath = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	}
 	if credPath == "" {
-		return "", fmt.Errorf("no Google credentials path configured and GOOGLE_APPLICATION_CREDENTIALS not set")
+		return "", errGoogleNoCredentials
 	}
 
-	keyBytes, err := os.ReadFile(credPath)
+	keyBytes, err := os.ReadFile(filepath.Clean(credPath))
 	if err != nil {
 		return "", fmt.Errorf("read credentials file %q: %w", credPath, err)
 	}
 
 	var sa googleServiceAccount
-	if err := json.Unmarshal(keyBytes, &sa); err != nil {
-		return "", fmt.Errorf("parse credentials file: %w", err)
+	if unmarshalErr := json.Unmarshal(keyBytes, &sa); unmarshalErr != nil {
+		return "", fmt.Errorf("parse credentials file: %w", unmarshalErr)
 	}
 
 	// Build and sign a JWT to exchange for an access token.
 	// Scope required: https://www.googleapis.com/auth/cloud-platform
-	token, err := signServiceAccountJWT(ctx, p.client, &sa,
+	var token string
+	token, err = signServiceAccountJWT(ctx, p.client, &sa,
 		"https://www.googleapis.com/auth/cloud-platform")
 	if err != nil {
 		return "", fmt.Errorf("sign JWT: %w", err)

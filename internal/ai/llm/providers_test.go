@@ -14,7 +14,7 @@ import (
 	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
-func init() {
+func init() { //nolint:gochecknoinits // test package init for logger setup
 	logging.Init("info", "console") //nolint:errcheck
 }
 
@@ -62,7 +62,7 @@ func TestOpenAIProvider_Generate_Success(t *testing.T) {
 	}`
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
+		if r.Method != http.MethodPost {
 			t.Errorf("Expected POST request, got %s", r.Method)
 		}
 		if r.URL.Path != "/v1/chat/completions" {
@@ -80,7 +80,11 @@ func TestOpenAIProvider_Generate_Success(t *testing.T) {
 			t.Errorf("Failed to decode request body: %v", err)
 		}
 
-		model := reqBody["model"].(string)
+		model, ok := reqBody["model"].(string)
+		if !ok {
+			t.Error("model field is not a string")
+			return
+		}
 		if model != "gpt-4" {
 			t.Errorf("Expected model gpt-4, got %s", model)
 		}
@@ -345,16 +349,16 @@ func TestAnthropicProvider_Generate_Success(t *testing.T) {
 	}`
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
+		if r.Method != http.MethodPost {
 			t.Errorf("Expected POST request, got %s", r.Method)
 		}
 		if r.URL.Path != "/v1/messages" {
 			t.Errorf("Expected /v1/messages, got %s", r.URL.Path)
 		}
-		if r.Header.Get("x-api-key") != "sk-ant-test-key" {
+		if r.Header.Get("X-Api-Key") != "sk-ant-test-key" {
 			t.Error("Expected x-api-key header")
 		}
-		if r.Header.Get("anthropic-version") != "2023-06-01" {
+		if r.Header.Get("Anthropic-Version") != "2023-06-01" {
 			t.Error("Expected anthropic-version header")
 		}
 
@@ -363,7 +367,11 @@ func TestAnthropicProvider_Generate_Success(t *testing.T) {
 			t.Errorf("Failed to decode request body: %v", err)
 		}
 
-		model := reqBody["model"].(string)
+		model, ok := reqBody["model"].(string)
+		if !ok {
+			t.Error("model field is not a string")
+			return
+		}
 		if model != "claude-3-opus-20240229" {
 			t.Errorf("Expected model claude-3-opus-20240229, got %s", model)
 		}
@@ -519,7 +527,7 @@ func TestAzureOpenAIProvider_Generate_Success(t *testing.T) {
 	}`
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
+		if r.Method != http.MethodPost {
 			t.Errorf("Expected POST request, got %s", r.Method)
 		}
 		if !strings.Contains(r.URL.Path, "openai/deployments/gpt-4-deployment/chat/completions") {
@@ -528,7 +536,7 @@ func TestAzureOpenAIProvider_Generate_Success(t *testing.T) {
 		if !strings.Contains(r.URL.RawQuery, "api-version=2023-05-15") {
 			t.Errorf("Expected api-version query param, got %s", r.URL.RawQuery)
 		}
-		if r.Header.Get("api-key") != "azure-key" {
+		if r.Header.Get("Api-Key") != "azure-key" {
 			t.Error("Expected api-key header")
 		}
 
@@ -697,12 +705,12 @@ func TestLLMConfig_NewProvider(t *testing.T) {
 
 func TestLLMProviderInterface_Implementation(t *testing.T) {
 	tests := []struct {
-		name     string
 		provider llm.LLMProvider
+		name     string
 	}{
-		{"OpenAI", llm.NewOpenAIProvider("test", "gpt-4")},
-		{"Anthropic", llm.NewAnthropicProvider("test", "claude-3-opus")},
-		{"Azure", llm.NewAzureOpenAIProvider("key", "endpoint", "deployment")},
+		{name: "OpenAI", provider: llm.NewOpenAIProvider("test", "gpt-4")},
+		{name: "Anthropic", provider: llm.NewAnthropicProvider("test", "claude-3-opus")},
+		{name: "Azure", provider: llm.NewAzureOpenAIProvider("key", "endpoint", "deployment")},
 	}
 
 	for _, tt := range tests {

@@ -9,6 +9,16 @@ import (
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 )
 
+var (
+	errTestAPIError        = errors.New("API error")
+	errTestOriginalError   = errors.New("original error")
+	errTestTemporaryError  = errors.New("temporary error")
+	errTestPersistentError = errors.New("persistent error")
+	errTestError1          = errors.New("error1")
+	errTestProviderError   = errors.New("error from provider 1")
+	errTestSpecificError   = errors.New("specific error")
+)
+
 func TestDefaultRetryConfig(t *testing.T) {
 	cfg := stt.DefaultRetryConfig()
 
@@ -68,17 +78,17 @@ func TestDefaultRetryConfig_Values(t *testing.T) {
 
 func TestTranscriptionError(t *testing.T) {
 	tests := []struct {
+		cause    error
 		name     string
 		provider string
 		message  string
-		cause    error
 		hasCause bool
 	}{
 		{
 			name:     "with cause",
 			provider: "google",
 			message:  "transcription failed",
-			cause:    errors.New("API error"),
+			cause:    errTestAPIError,
 			hasCause: true,
 		},
 		{
@@ -111,7 +121,7 @@ func TestTranscriptionError(t *testing.T) {
 
 			if tt.hasCause {
 				unwrapped := errors.Unwrap(err)
-				if unwrapped != tt.cause {
+				if !errors.Is(unwrapped, tt.cause) {
 					t.Errorf("Unwrapped error mismatch: got %v, want %v", unwrapped, tt.cause)
 				}
 			}
@@ -131,7 +141,7 @@ func TestTranscriptionError_Error(t *testing.T) {
 			name:        "with cause",
 			provider:    "google",
 			message:     "transcription failed",
-			cause:       errors.New("API error"),
+			cause:       errTestAPIError,
 			expectedMsg: "STT error [google]: transcription failed: API error",
 		},
 		{
@@ -156,12 +166,12 @@ func TestTranscriptionError_Error(t *testing.T) {
 }
 
 func TestTranscriptionError_Unwrap(t *testing.T) {
-	cause := errors.New("original error")
+	cause := errTestOriginalError
 	err := stt.NewTranscriptionError("google", "transcription failed", cause)
 
 	unwrapped := errors.Unwrap(err)
 
-	if unwrapped != cause {
+	if !errors.Is(unwrapped, cause) {
 		t.Errorf("Unwrap error mismatch: got %v, want %v", unwrapped, cause)
 	}
 }
@@ -192,7 +202,7 @@ func TestTranscribeWithRetry_SuccessOnFirstAttempt(t *testing.T) {
 
 func TestTranscribeWithRetry_SuccessOnRetry(t *testing.T) {
 	provider := &mockSTTProvider{
-		returnError: errors.New("temporary error"),
+		returnError: errTestTemporaryError,
 		callCount:   0,
 		maxErrors:   2,
 	}
@@ -218,7 +228,7 @@ func TestTranscribeWithRetry_SuccessOnRetry(t *testing.T) {
 
 func TestTranscribeWithRetry_FailAfterMaxRetries(t *testing.T) {
 	provider := &mockSTTProvider{
-		returnError: errors.New("persistent error"),
+		returnError: errTestPersistentError,
 		callCount:   0,
 		maxErrors:   5,
 	}
@@ -235,8 +245,8 @@ func TestTranscribeWithRetry_FailAfterMaxRetries(t *testing.T) {
 		t.Fatal("Expected error after max retries")
 	}
 
-	transcriptionErr, ok := err.(*stt.TranscriptionError)
-	if !ok {
+	var transcriptionErr *stt.TranscriptionError
+	if !errors.As(err, &transcriptionErr) {
 		t.Errorf("Expected TranscriptionError, got %T", err)
 	}
 
@@ -250,7 +260,7 @@ func TestTranscribeWithRetry_FailAfterMaxRetries(t *testing.T) {
 
 func TestTranscribeWithRetry_ContextCancellation(t *testing.T) {
 	provider := &mockSTTProvider{
-		returnError: errors.New("persistent error"),
+		returnError: errTestPersistentError,
 		callCount:   0,
 		maxErrors:   5,
 	}
@@ -270,7 +280,7 @@ func TestTranscribeWithRetry_ContextCancellation(t *testing.T) {
 
 	_, err := stt.TranscribeWithRetry(ctx, provider, audioData, cfg)
 
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Expected context cancellation error, got: %v", err)
 	}
 	if provider.callCount != 1 {
@@ -280,7 +290,7 @@ func TestTranscribeWithRetry_ContextCancellation(t *testing.T) {
 
 func TestTranscribeWithRetry_RetryDelays(t *testing.T) {
 	provider := &mockSTTProvider{
-		returnError: errors.New("temporary error"),
+		returnError: errTestTemporaryError,
 		callCount:   0,
 		maxErrors:   2,
 	}
@@ -310,7 +320,7 @@ func TestTranscribeWithRetry_RetryDelays(t *testing.T) {
 
 func TestTranscribeWithRetry_MaxDelayClamping(t *testing.T) {
 	provider := &mockSTTProvider{
-		returnError: errors.New("temporary error"),
+		returnError: errTestTemporaryError,
 		callCount:   0,
 		maxErrors:   9,
 	}
@@ -340,7 +350,7 @@ func TestTranscribeWithRetry_MaxDelayClamping(t *testing.T) {
 
 func TestTranscribeWithRetry_AllErrors(t *testing.T) {
 	provider := &mockSTTProvider{
-		returnError: errors.New("error1"),
+		returnError: errTestError1,
 		callCount:   0,
 		maxErrors:   10,
 	}
@@ -357,8 +367,8 @@ func TestTranscribeWithRetry_AllErrors(t *testing.T) {
 		t.Fatal("Expected error after all retries")
 	}
 
-	transcriptionErr, ok := err.(*stt.TranscriptionError)
-	if !ok {
+	var transcriptionErr *stt.TranscriptionError
+	if !errors.As(err, &transcriptionErr) {
 		t.Errorf("Expected TranscriptionError, got %T", err)
 	}
 
@@ -427,7 +437,7 @@ func TestTranscribeWithRetry_EmptyConfig(t *testing.T) {
 
 func TestTranscribeWithRetry_MultipleProviders(t *testing.T) {
 	provider1 := &mockSTTProvider{
-		returnError: errors.New("error from provider 1"),
+		returnError: errTestProviderError,
 		callCount:   0,
 		maxErrors:   2,
 	}
@@ -453,7 +463,7 @@ func TestTranscribeWithRetry_MultipleProviders(t *testing.T) {
 
 func TestTranscribeWithRetry_ErrorWithSpecificProvider(t *testing.T) {
 	provider := &mockSTTProvider{
-		returnError: errors.New("specific error"),
+		returnError: errTestSpecificError,
 		callCount:   0,
 		maxErrors:   10,
 	}
@@ -470,8 +480,8 @@ func TestTranscribeWithRetry_ErrorWithSpecificProvider(t *testing.T) {
 		t.Fatal("Expected error")
 	}
 
-	transcriptionErr, ok := err.(*stt.TranscriptionError)
-	if !ok {
+	var transcriptionErr *stt.TranscriptionError
+	if !errors.As(err, &transcriptionErr) {
 		t.Errorf("Expected TranscriptionError, got %T", err)
 	}
 
@@ -482,7 +492,7 @@ func TestTranscribeWithRetry_ErrorWithSpecificProvider(t *testing.T) {
 
 func TestTranscribeWithRetry_ContextBeforeFirstRetry(t *testing.T) {
 	provider := &mockSTTProvider{
-		returnError: errors.New("error1"),
+		returnError: errTestError1,
 		callCount:   0,
 		maxErrors:   10,
 	}
@@ -502,7 +512,7 @@ func TestTranscribeWithRetry_ContextBeforeFirstRetry(t *testing.T) {
 
 	_, err := stt.TranscribeWithRetry(ctx, provider, audioData, cfg)
 
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Expected context cancellation, got %v", err)
 	}
 	if provider.callCount != 1 {

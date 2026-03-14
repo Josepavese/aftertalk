@@ -2,13 +2,19 @@ package stt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
+var (
+	errWhisperURLRequired    = errors.New("whisper-local: STT_WHISPER_URL is required")
+	errUnsupportedSTTProvider = errors.New("unsupported STT provider")
+)
+
 // StubSTTProvider is the no-op provider used when no real STT is configured.
-// It returns a labelled transcription segment without calling any external API.
+// It returns a labeled transcription segment without calling any external API.
 type StubSTTProvider struct{}
 
 func NewStubSTTProvider() *StubSTTProvider {
@@ -37,7 +43,7 @@ func (p *StubSTTProvider) Name() string      { return "stub" }
 func (p *StubSTTProvider) IsAvailable() bool { return true }
 
 // NewProvider selects and returns the STT provider based on cfg.
-// Falls back to StubSTTProvider when provider name is empty or unrecognised.
+// Falls back to StubSTTProvider when provider name is empty or unrecognized.
 func NewProvider(cfg *STTConfig) (STTProvider, error) {
 	switch cfg.Provider {
 	case "google":
@@ -49,12 +55,12 @@ func NewProvider(cfg *STTConfig) (STTProvider, error) {
 	case "whisper-local":
 		p := NewWhisperLocalProvider(cfg.WhisperLocal)
 		if !p.IsAvailable() {
-			return nil, fmt.Errorf("whisper-local: STT_WHISPER_URL is required")
+			return nil, errWhisperURLRequired
 		}
 		return p, nil
 	case "", "stub":
 		return NewStubSTTProvider(), nil
 	default:
-		return nil, fmt.Errorf("unsupported STT provider: %s", cfg.Provider)
+		return nil, fmt.Errorf("%w: %s", errUnsupportedSTTProvider, cfg.Provider)
 	}
 }

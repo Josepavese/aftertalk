@@ -7,10 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,19 +20,18 @@ import (
 	"github.com/Josepavese/aftertalk/pkg/audio"
 )
 
+var errAWSMissingCredentials = errors.New("aws stt: missing credentials")
+
 // AWSSTTProvider transcribes audio using Amazon Transcribe Streaming REST API.
 // Uses AWS Signature Version 4 (no SDK required).
 // Docs: https://docs.aws.amazon.com/transcribe/latest/APIReference/
 type AWSSTTProvider struct {
+	client           *http.Client
+	endpointOverride string // override for tests
 	accessKeyID      string
 	secretAccessKey  string
 	region           string
-	client           *http.Client
-	endpointOverride string // override for tests
 }
-
-// SetEndpoint overrides the AWS Transcribe streaming endpoint. Used in tests.
-func (p *AWSSTTProvider) SetEndpoint(url string) { p.endpointOverride = url }
 
 func NewAWSSTTProvider(accessKeyID, secretAccessKey, region string) *AWSSTTProvider {
 	return &AWSSTTProvider{
@@ -41,6 +42,9 @@ func NewAWSSTTProvider(accessKeyID, secretAccessKey, region string) *AWSSTTProvi
 	}
 }
 
+// SetEndpoint overrides the AWS Transcribe streaming endpoint. Used in tests.
+func (p *AWSSTTProvider) SetEndpoint(url string) { p.endpointOverride = url }
+
 func (p *AWSSTTProvider) Name() string { return "aws" }
 
 func (p *AWSSTTProvider) IsAvailable() bool {
@@ -48,25 +52,25 @@ func (p *AWSSTTProvider) IsAvailable() bool {
 }
 
 // awsTranscribeStartJobRequest is the body for StartTranscriptionJob.
-type awsTranscribeStartJobRequest struct {
-	TranscriptionJobName string                    `json:"TranscriptionJobName"`
-	LanguageCode         string                    `json:"LanguageCode"`
-	MediaFormat          string                    `json:"MediaFormat"`
-	Media                awsTranscribeMedia        `json:"Media"`
-	Settings             awsTranscribeSettings     `json:"Settings"`
+type awsTranscribeStartJobRequest struct { //nolint:unused // kept for future batch API support
+	TranscriptionJobName string                `json:"TranscriptionJobName"`
+	LanguageCode         string                `json:"LanguageCode"`
+	MediaFormat          string                `json:"MediaFormat"`
+	Media                awsTranscribeMedia    `json:"Media"`
+	Settings             awsTranscribeSettings `json:"Settings"`
 }
 
-type awsTranscribeMedia struct {
+type awsTranscribeMedia struct { //nolint:unused // kept for future batch API support
 	MediaFileURI string `json:"MediaFileURI"`
 }
 
-type awsTranscribeSettings struct {
+type awsTranscribeSettings struct { //nolint:unused // kept for future batch API support
 	ShowSpeakerLabels bool `json:"ShowSpeakerLabels"`
 	MaxSpeakerLabels  int  `json:"MaxSpeakerLabels,omitempty"`
 }
 
 // awsTranscribeJobResponse is the response shape for GetTranscriptionJob.
-type awsTranscribeJobResponse struct {
+type awsTranscribeJobResponse struct { //nolint:unused // kept for future batch API support
 	TranscriptionJob struct {
 		TranscriptionJobStatus string `json:"TranscriptionJobStatus"`
 		Transcript             struct {
@@ -85,18 +89,18 @@ type awsTranscriptResult struct {
 		Items []struct {
 			StartTime    string `json:"start_time"`
 			EndTime      string `json:"end_time"`
+			Type         string `json:"type"`
 			Alternatives []struct {
 				Content    string `json:"content"`
 				Confidence string `json:"confidence"`
 			} `json:"alternatives"`
-			Type string `json:"type"` // "pronunciation" or "punctuation"
 		} `json:"items"`
 	} `json:"results"`
 }
 
 func (p *AWSSTTProvider) Transcribe(ctx context.Context, audioData *AudioData) (*TranscriptionResult, error) {
 	if !p.IsAvailable() {
-		return nil, fmt.Errorf("aws stt: missing credentials")
+		return nil, errAWSMissingCredentials
 	}
 	logging.Infof("AWS Transcribe: session=%s participant=%s", audioData.SessionID, audioData.ParticipantID)
 
@@ -112,7 +116,7 @@ func (p *AWSSTTProvider) Transcribe(ctx context.Context, audioData *AudioData) (
 	var wav []byte
 	if len(audioData.Frames) > 0 {
 		var err error
-		wav, err = audio.DecodeFramesToWAVffmpeg(audioData.Frames, 16000)
+		wav, err = audio.DecodeFramesToWAVffmpeg(ctx, audioData.Frames, 16000)
 		if err != nil {
 			return nil, fmt.Errorf("aws stt: opus→wav: %w", err)
 		}
@@ -131,13 +135,13 @@ func (p *AWSSTTProvider) Transcribe(ctx context.Context, audioData *AudioData) (
 		return nil, fmt.Errorf("aws stt: new request: %w", err)
 	}
 	req.Header.Set("Content-Type", "audio/wav")
-	req.Header.Set("x-amzn-transcribe-language-code", "it-IT")
-	req.Header.Set("x-amzn-transcribe-media-encoding", "pcm")
-	req.Header.Set("x-amzn-transcribe-sample-rate", "16000")
-	req.Header.Set("x-amzn-transcribe-show-speaker-label", "true")
+	req.Header.Set("X-Amzn-Transcribe-Language-Code", "it-IT")
+	req.Header.Set("X-Amzn-Transcribe-Media-Encoding", "pcm")
+	req.Header.Set("X-Amzn-Transcribe-Sample-Rate", "16000")
+	req.Header.Set("X-Amzn-Transcribe-Show-Speaker-Label", "true")
 	req.ContentLength = int64(len(wav))
 
-	if err := p.signRequest(req, wav); err != nil {
+	if err = p.signRequest(req, wav); err != nil {
 		return nil, fmt.Errorf("aws stt: sign request: %w", err)
 	}
 
@@ -152,7 +156,7 @@ func (p *AWSSTTProvider) Transcribe(ctx context.Context, audioData *AudioData) (
 		return nil, fmt.Errorf("aws stt: read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("aws stt: server returned %d: %s", resp.StatusCode, string(respBytes))
+		return nil, fmt.Errorf("aws stt: server returned %d: %s", resp.StatusCode, string(respBytes)) //nolint:err113 // dynamic error with status body
 	}
 
 	var transcript awsTranscriptResult
@@ -199,14 +203,15 @@ func (p *AWSSTTProvider) toTranscriptionResult(audioData *AudioData, t *awsTrans
 }
 
 // signRequest adds AWS Signature Version 4 headers to the request.
-func (p *AWSSTTProvider) signRequest(req *http.Request, body []byte) error {
+// Always returns nil — kept as error return for interface compatibility.
+func (p *AWSSTTProvider) signRequest(req *http.Request, body []byte) error { //nolint:unparam // error return for future use
 	service := "transcribe"
 	now := time.Now().UTC()
 	dateStamp := now.Format("20060102")
 	amzDate := now.Format("20060102T150405Z")
 
-	req.Header.Set("x-amz-date", amzDate)
-	req.Header.Set("host", req.URL.Host)
+	req.Header.Set("X-Amz-Date", amzDate)
+	req.Header.Set("Host", req.URL.Host)
 
 	// Canonical headers (sorted).
 	headers := make(map[string]string)
@@ -219,10 +224,10 @@ func (p *AWSSTTProvider) signRequest(req *http.Request, body []byte) error {
 	}
 	sort.Strings(headerKeys)
 
-	canonicalHeaders := ""
+	var canonicalHeaders strings.Builder
 	signedHeaders := ""
 	for i, k := range headerKeys {
-		canonicalHeaders += k + ":" + headers[k] + "\n"
+		canonicalHeaders.WriteString(k + ":" + headers[k] + "\n")
 		if i > 0 {
 			signedHeaders += ";"
 		}
@@ -240,7 +245,7 @@ func (p *AWSSTTProvider) signRequest(req *http.Request, body []byte) error {
 		req.Method,
 		canonicalURI,
 		canonicalQueryString,
-		canonicalHeaders,
+		canonicalHeaders.String(),
 		signedHeaders,
 		payloadHash,
 	}, "\n")
@@ -282,7 +287,9 @@ func hmacSHA256(key, data []byte) []byte {
 }
 
 func parseFloatSec(s string) float64 {
-	var f float64
-	fmt.Sscanf(s, "%f", &f)
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
 	return f
 }
