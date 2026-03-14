@@ -1,6 +1,7 @@
 package webrtc
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -12,13 +13,13 @@ import (
 
 // iceCandidatePayload matches the RTCIceCandidate object sent by browsers.
 type iceCandidatePayload struct {
-	Candidate        string  `json:"candidate"`
 	SDPMid           *string `json:"sdpMid"`
 	SDPMLineIndex    *uint16 `json:"sdpMLineIndex"`
 	UsernameFragment *string `json:"usernameFragment"`
+	Candidate        string  `json:"candidate"`
 }
 
-var upgrader = websocket.Upgrader{
+var upgrader = websocket.Upgrader{ //nolint:gochecknoglobals // package-level upgrader is idiomatic for WebSocket servers
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
@@ -32,8 +33,8 @@ type SignalingMessage struct {
 	ParticipantID string          `json:"participant_id,omitempty"`
 	Role          string          `json:"role,omitempty"`
 	SDP           string          `json:"sdp,omitempty"`
-	Candidate     json.RawMessage `json:"candidate,omitempty"`
 	Mid           string          `json:"mid,omitempty"`
+	Candidate     json.RawMessage `json:"candidate,omitempty"`
 }
 
 // connWriter wraps a WebSocket connection with a write mutex.
@@ -52,8 +53,8 @@ func (cw *connWriter) writeJSON(v interface{}) error {
 type SignalingServer struct {
 	manager       *Manager
 	connections   map[string]*websocket.Conn
-	mu            sync.RWMutex
 	validateToken func(token string) (*Claims, error)
+	mu            sync.RWMutex
 }
 
 func NewSignalingServer(manager *Manager, validateToken func(token string) (*Claims, error)) *SignalingServer {
@@ -100,12 +101,12 @@ func (s *SignalingServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 		claims.SessionID, claims.UserID, claims.Role, participantID)
 
 	cw := &connWriter{conn: conn}
-	go s.handleMessages(cw, claims.SessionID, participantID, claims.Role)
+	go s.handleMessages(cw, claims.SessionID, participantID, claims.Role) //nolint:contextcheck // goroutine must outlive the HTTP handler
 }
 
 func (s *SignalingServer) handleMessages(cw *connWriter, sessionID, participantID, role string) {
 	defer func() {
-		cw.conn.Close()
+		_ = cw.conn.Close() //nolint:errcheck // best-effort cleanup on disconnect
 		key := sessionID + ":" + participantID
 		s.mu.Lock()
 		delete(s.connections, key)
@@ -156,7 +157,7 @@ func (s *SignalingServer) handleMessage(cw *connWriter, sessionID, participantID
 func (s *SignalingServer) handleJoin(cw *connWriter, sessionID, participantID, role string) {
 	logging.Infof("Peer joining: session=%s participant=%s role=%s", sessionID, participantID, role)
 
-	peer, err := s.manager.CreatePeer(nil, sessionID, participantID, role)
+	peer, err := s.manager.CreatePeer(context.TODO(), sessionID, participantID, role)
 	if err != nil {
 		logging.Errorf("Failed to create peer: %v", err)
 		return
@@ -167,13 +168,13 @@ func (s *SignalingServer) handleJoin(cw *connWriter, sessionID, participantID, r
 		if c == nil {
 			return
 		}
-		candidateJSON, err := json.Marshal(c.ToJSON())
-		if err != nil {
+		candidateJSON, icErr := json.Marshal(c.ToJSON())
+		if icErr != nil {
 			return
 		}
 		msg := SignalingMessage{Type: "ice-candidate", Candidate: json.RawMessage(candidateJSON)}
-		if err := cw.writeJSON(msg); err != nil {
-			logging.Warnf("Failed to send ICE candidate: %v", err)
+		if icErr = cw.writeJSON(msg); icErr != nil {
+			logging.Warnf("Failed to send ICE candidate: %v", icErr)
 		}
 	})
 
@@ -203,7 +204,7 @@ func (s *SignalingServer) handleJoin(cw *connWriter, sessionID, participantID, r
 func (s *SignalingServer) handleOffer(cw *connWriter, sessionID, participantID, role, sdp string) {
 	logging.Infof("Received offer from: session=%s participant=%s", sessionID, participantID)
 
-	peer, err := s.manager.CreatePeer(nil, sessionID, participantID, role)
+	peer, err := s.manager.CreatePeer(context.TODO(), sessionID, participantID, role)
 	if err != nil {
 		logging.Errorf("Failed to create peer: %v", err)
 		return
@@ -214,13 +215,13 @@ func (s *SignalingServer) handleOffer(cw *connWriter, sessionID, participantID, 
 		if c == nil {
 			return
 		}
-		candidateJSON, err := json.Marshal(c.ToJSON())
-		if err != nil {
+		candidateJSON, icErr := json.Marshal(c.ToJSON())
+		if icErr != nil {
 			return
 		}
 		msg := SignalingMessage{Type: "ice-candidate", Candidate: json.RawMessage(candidateJSON)}
-		if err := cw.writeJSON(msg); err != nil {
-			logging.Warnf("Failed to send ICE candidate: %v", err)
+		if icErr = cw.writeJSON(msg); icErr != nil {
+			logging.Warnf("Failed to send ICE candidate: %v", icErr)
 		}
 	})
 
@@ -229,7 +230,7 @@ func (s *SignalingServer) handleOffer(cw *connWriter, sessionID, participantID, 
 		SDP:  sdp,
 	}
 
-	if err := peer.PC.SetRemoteDescription(offer); err != nil {
+	if err = peer.PC.SetRemoteDescription(offer); err != nil {
 		logging.Errorf("Failed to set remote description: %v", err)
 		return
 	}
@@ -311,10 +312,16 @@ func (s *SignalingServer) BroadcastToSession(sessionID string, msg SignalingMess
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	data, _ := json.Marshal(msg)
+	data, err := json.Marshal(msg)
+	if err != nil {
+		logging.Errorf("Failed to marshal signaling message: %v", err)
+		return
+	}
 	for key, conn := range s.connections {
 		if len(key) > len(sessionID) && key[:len(sessionID)] == sessionID {
-			conn.WriteMessage(websocket.TextMessage, data)
+			if writeErr := conn.WriteMessage(websocket.TextMessage, data); writeErr != nil {
+				logging.Warnf("Failed to broadcast to connection %s: %v", key, writeErr)
+			}
 		}
 	}
 }

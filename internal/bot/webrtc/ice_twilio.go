@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 )
+
+var errTwilioServerError = errors.New("twilio ice: server error")
 
 // TwilioProvider fetches ICE credentials from the Twilio Network Traversal Service.
 //
@@ -80,7 +83,7 @@ func (p *TwilioProvider) GetICEServers(ctx context.Context, ttl int) ([]ICEServe
 		return nil, fmt.Errorf("twilio ice: read body: %w", err)
 	}
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("twilio ice: server returned %d: %s", resp.StatusCode, string(raw))
+		return nil, fmt.Errorf("%w: %d: %s", errTwilioServerError, resp.StatusCode, string(raw))
 	}
 
 	var token twilioTokenResponse

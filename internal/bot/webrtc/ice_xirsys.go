@@ -4,9 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+)
+
+var (
+	errXirsysServerError      = errors.New("xirsys ice: server error")
+	errXirsysAPIError         = errors.New("xirsys ice: api error")
+	errXirsysEmptyICEServers  = errors.New("xirsys ice: empty ice_servers in response")
 )
 
 // XirsysProvider fetches ICE credentials from the Xirsys TURN network.
@@ -57,7 +64,10 @@ type xirsysICEServers struct {
 func (p *XirsysProvider) GetICEServers(ctx context.Context, _ int) ([]ICEServer, error) {
 	endpoint := fmt.Sprintf("%s/_turn/%s", p.baseURL, p.channel)
 
-	reqBody, _ := json.Marshal(map[string]string{"format": "urls"})
+	reqBody, err := json.Marshal(map[string]string{"format": "urls"})
+	if err != nil {
+		return nil, fmt.Errorf("xirsys ice: marshal request body: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint, bytes.NewReader(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("xirsys ice: build request: %w", err)
@@ -76,7 +86,7 @@ func (p *XirsysProvider) GetICEServers(ctx context.Context, _ int) ([]ICEServer,
 		return nil, fmt.Errorf("xirsys ice: read body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("xirsys ice: server returned %d: %s", resp.StatusCode, string(raw))
+		return nil, fmt.Errorf("%w: %d: %s", errXirsysServerError, resp.StatusCode, string(raw))
 	}
 
 	var xr xirsysResponse
@@ -84,10 +94,10 @@ func (p *XirsysProvider) GetICEServers(ctx context.Context, _ int) ([]ICEServer,
 		return nil, fmt.Errorf("xirsys ice: decode response: %w", err)
 	}
 	if xr.S != "ok" {
-		return nil, fmt.Errorf("xirsys ice: api error: %s", xr.E)
+		return nil, fmt.Errorf("%w: %s", errXirsysAPIError, xr.E)
 	}
 	if xr.V == nil || len(xr.V.ICEServers.URLs) == 0 {
-		return nil, fmt.Errorf("xirsys ice: empty ice_servers in response")
+		return nil, errXirsysEmptyICEServers
 	}
 
 	ice := xr.V.ICEServers

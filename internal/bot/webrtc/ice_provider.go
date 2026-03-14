@@ -15,6 +15,7 @@ package webrtc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -22,12 +23,20 @@ import (
 	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
+var (
+	errICETwilioMissingCreds  = errors.New("ice provider: twilio requires account_sid and auth_token")
+	errICEXirsysMissingCreds  = errors.New("ice provider: xirsys requires ident, secret, and channel")
+	errICEMeteredMissingCreds = errors.New("ice provider: metered requires app_name and api_key")
+	errICEEmbeddedNoTURN      = errors.New("ice provider: embedded requires an active TURN server (webrtc.turn.enabled must be true)")
+	errICEUnknownProvider     = errors.New("ice provider: unknown provider")
+)
+
 // ICEServer is the normalised wire format understood by RTCPeerConnection.
 // Every provider translates its proprietary response into this struct.
 type ICEServer struct {
-	URLs       []string `json:"urls"`
 	Username   string   `json:"username,omitempty"`
 	Credential string   `json:"credential,omitempty"`
+	URLs       []string `json:"urls"`
 }
 
 // ICEProvider is the middleware contract for any source of ICE server credentials.
@@ -48,7 +57,7 @@ func NewICEProvider(cfg *config.WebRTCConfig, turnServer *TURNServer) (ICEProvid
 	switch cfg.ICEProviderName {
 	case "twilio":
 		if cfg.Twilio.AccountSID == "" || cfg.Twilio.AuthToken == "" {
-			return nil, fmt.Errorf("ice provider: twilio requires account_sid and auth_token")
+			return nil, errICETwilioMissingCreds
 		}
 		p := NewTwilioProvider(cfg.Twilio.AccountSID, cfg.Twilio.AuthToken)
 		logging.Infof("ICE provider: twilio (account=%s...)", cfg.Twilio.AccountSID[:min(8, len(cfg.Twilio.AccountSID))])
@@ -56,7 +65,7 @@ func NewICEProvider(cfg *config.WebRTCConfig, turnServer *TURNServer) (ICEProvid
 
 	case "xirsys":
 		if cfg.Xirsys.Ident == "" || cfg.Xirsys.Secret == "" || cfg.Xirsys.Channel == "" {
-			return nil, fmt.Errorf("ice provider: xirsys requires ident, secret, and channel")
+			return nil, errICEXirsysMissingCreds
 		}
 		p := NewXirsysProvider(cfg.Xirsys.Ident, cfg.Xirsys.Secret, cfg.Xirsys.Channel)
 		logging.Infof("ICE provider: xirsys (ident=%s, channel=%s)", cfg.Xirsys.Ident, cfg.Xirsys.Channel)
@@ -64,7 +73,7 @@ func NewICEProvider(cfg *config.WebRTCConfig, turnServer *TURNServer) (ICEProvid
 
 	case "metered":
 		if cfg.Metered.AppName == "" || cfg.Metered.APIKey == "" {
-			return nil, fmt.Errorf("ice provider: metered requires app_name and api_key")
+			return nil, errICEMeteredMissingCreds
 		}
 		p := NewMeteredProvider(cfg.Metered.AppName, cfg.Metered.APIKey)
 		logging.Infof("ICE provider: metered (app=%s)", cfg.Metered.AppName)
@@ -72,7 +81,7 @@ func NewICEProvider(cfg *config.WebRTCConfig, turnServer *TURNServer) (ICEProvid
 
 	case "embedded":
 		if turnServer == nil {
-			return nil, fmt.Errorf("ice provider: embedded requires an active TURN server (webrtc.turn.enabled must be true)")
+			return nil, errICEEmbeddedNoTURN
 		}
 		logging.Infof("ICE provider: embedded TURN (%s)", turnServer.Addr())
 		return NewEmbeddedProvider(turnServer, cfg.ICEServers), nil
@@ -82,7 +91,7 @@ func NewICEProvider(cfg *config.WebRTCConfig, turnServer *TURNServer) (ICEProvid
 		return NewStaticProvider(cfg.ICEServers), nil
 
 	default:
-		return nil, fmt.Errorf("ice provider: unknown provider %q (valid: twilio, xirsys, metered, embedded, static)", cfg.ICEProviderName)
+		return nil, fmt.Errorf("%w %q (valid: twilio, xirsys, metered, embedded, static)", errICEUnknownProvider, cfg.ICEProviderName)
 	}
 }
 

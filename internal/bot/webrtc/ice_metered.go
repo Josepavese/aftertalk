@@ -3,10 +3,13 @@ package webrtc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 )
+
+var errMeteredServerError = errors.New("metered ice: server error")
 
 // MeteredProvider fetches ICE credentials from the Metered.ca TURN service.
 //
@@ -66,7 +69,7 @@ func (p *MeteredProvider) GetICEServers(ctx context.Context, _ int) ([]ICEServer
 		return nil, fmt.Errorf("metered ice: read body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("metered ice: server returned %d: %s", resp.StatusCode, string(raw))
+		return nil, fmt.Errorf("%w: %d: %s", errMeteredServerError, resp.StatusCode, string(raw))
 	}
 
 	var entries []meteredICEServer
