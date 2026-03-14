@@ -14,22 +14,22 @@ import (
 type AudioTrackHandler func(sessionID, participantID, role string, payload []byte)
 
 type Sample struct {
-	Data            []byte
 	Timestamp       time.Time
-	Duration       time.Duration
+	Data            []byte
+	Duration        time.Duration
 	PacketTimestamp uint32
 }
 
 type Peer struct {
+	ConnectedAt   time.Time
+	PC            *webrtc.PeerConnection
+	AudioTrack    *webrtc.TrackLocalStaticSample
+	onAudio       AudioTrackHandler
 	SessionID     string
 	ParticipantID string
 	Role          string
-	PC            *webrtc.PeerConnection
-	AudioTrack    *webrtc.TrackLocalStaticSample
-	Connected     bool
-	ConnectedAt   time.Time
-	onAudio       AudioTrackHandler
 	mu            sync.RWMutex
+	Connected     bool
 }
 
 func NewPeer(sessionID, participantID, role string, onAudio AudioTrackHandler, iceServers []config.ICEServerConfig) (*Peer, error) {
@@ -67,12 +67,12 @@ func NewPeer(sessionID, participantID, role string, onAudio AudioTrackHandler, i
 	}
 
 	if err := peer.setupAudioTrack(); err != nil {
-		pc.Close()
+		_ = pc.Close() //nolint:errcheck // best-effort cleanup on error path
 		return nil, err
 	}
 
 	if err := peer.setupPeerConnection(); err != nil {
-		pc.Close()
+		_ = pc.Close() //nolint:errcheck // best-effort cleanup on error path
 		return nil, err
 	}
 
@@ -146,15 +146,15 @@ func writeSample(t *webrtc.TrackLocalStaticSample, s Sample) error {
 	}
 	if sw, ok := interface{}(t).(sampleWriter); ok {
 		type mediaSample struct {
+			Timestamp       interface{}
+			Duration        interface{}
 			Data            []byte
-			Timestamp      interface{}
-			Duration       interface{}
 			PacketTimestamp uint32
 		}
 		return sw.WriteSample(mediaSample{
 			Data:            s.Data,
-			Timestamp:      s.Timestamp,
-			Duration:      s.Duration,
+			Timestamp:       s.Timestamp,
+			Duration:        s.Duration,
 			PacketTimestamp: s.PacketTimestamp,
 		})
 	}
@@ -176,9 +176,9 @@ func (p *Peer) Close() error {
 
 type Manager struct {
 	peers      map[string]*Peer
-	mu         sync.RWMutex
 	onAudio    AudioTrackHandler
 	iceServers []config.ICEServerConfig
+	mu         sync.RWMutex
 }
 
 func NewManager(onAudio AudioTrackHandler, iceServers []config.ICEServerConfig) *Manager {
@@ -217,7 +217,9 @@ func (m *Manager) RemovePeer(sessionID, participantID string) {
 	defer m.mu.Unlock()
 	key := sessionID + ":" + participantID
 	if peer, exists := m.peers[key]; exists {
-		peer.Close()
+		if err := peer.Close(); err != nil {
+			logging.Warnf("Error closing WebRTC peer: %v", err)
+		}
 		delete(m.peers, key)
 		logging.Infof("Removed WebRTC peer for session=%s participant=%s", sessionID, participantID)
 	}
@@ -240,7 +242,9 @@ func (m *Manager) CloseSessionPeers(sessionID string) {
 	defer m.mu.Unlock()
 	for key, peer := range m.peers {
 		if peer.SessionID == sessionID {
-			peer.Close()
+			if err := peer.Close(); err != nil {
+				logging.Warnf("Error closing WebRTC peer: %v", err)
+			}
 			delete(m.peers, key)
 		}
 	}

@@ -27,7 +27,9 @@ func freePort(t *testing.T) int {
 	t.Helper()
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	require.NoError(t, err)
-	port := conn.LocalAddr().(*net.UDPAddr).Port
+	udpAddr, ok := conn.LocalAddr().(*net.UDPAddr)
+	require.True(t, ok, "expected *net.UDPAddr")
+	port := udpAddr.Port
 	conn.Close()
 	return port
 }
@@ -181,7 +183,9 @@ func TestStartTURNServer_TCP(t *testing.T) {
 	// Find a free TCP port.
 	l, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	require.NoError(t, err)
-	port := l.Addr().(*net.TCPAddr).Port
+	tcpAddr, ok := l.Addr().(*net.TCPAddr)
+	require.True(t, ok, "expected *net.TCPAddr")
+	port := tcpAddr.Port
 	l.Close()
 
 	cfg := config.TURNServerConfig{

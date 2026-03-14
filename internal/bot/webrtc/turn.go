@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // TURN RFC 5766 mandates HMAC-SHA1
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,8 +18,13 @@ import (
 	"github.com/pion/turn/v4"
 )
 
+var (
+	errTURNBothDisabled    = errors.New("turn: both UDP and TCP are disabled — enable at least one")
+	errUnexpectedAddrType  = errors.New("unexpected local addr type")
+)
+
 // TURNServer wraps a pion/turn server with lifecycle management.
-// Start it with StartTURNServer and stop it by cancelling the context.
+// Start it with StartTURNServer and stop it by canceling the context.
 type TURNServer struct {
 	server *turn.Server
 	addr   string // host:port actually bound (may differ from ListenAddr)
@@ -47,7 +53,7 @@ func (s *TURNServer) GenerateCredentials(label string, ttl int) (username, crede
 
 // StartTURNServer starts a pion/turn server according to cfg.
 // It listens on both UDP and TCP when enabled. The server shuts down
-// gracefully when ctx is cancelled.
+// gracefully when ctx is canceled.
 func StartTURNServer(ctx context.Context, cfg config.TURNServerConfig) (*TURNServer, error) {
 	secret := cfg.AuthSecret
 	if secret == "" {
@@ -58,7 +64,7 @@ func StartTURNServer(ctx context.Context, cfg config.TURNServerConfig) (*TURNSer
 	publicIP := cfg.PublicIP
 	if publicIP == "" {
 		var err error
-		publicIP, err = detectPublicIP()
+		publicIP, err = detectPublicIP() //nolint:contextcheck // detectPublicIP creates its own context with timeout
 		if err != nil {
 			logging.Warnf("TURN: could not auto-detect public IP (%v); TURN may not work over WAN", err)
 			publicIP = "127.0.0.1"
@@ -82,13 +88,13 @@ func StartTURNServer(ctx context.Context, cfg config.TURNServerConfig) (*TURNSer
 	var listeners []turn.ListenerConfig
 
 	if cfg.EnableUDP {
-		udpAddr, err := net.ResolveUDPAddr("udp4", cfg.ListenAddr)
-		if err != nil {
-			return nil, fmt.Errorf("turn: resolve UDP addr: %w", err)
+		udpAddr, udpErr := net.ResolveUDPAddr("udp4", cfg.ListenAddr)
+		if udpErr != nil {
+			return nil, fmt.Errorf("turn: resolve UDP addr: %w", udpErr)
 		}
-		udpConn, err := net.ListenUDP("udp4", udpAddr)
-		if err != nil {
-			return nil, fmt.Errorf("turn: listen UDP %s: %w", cfg.ListenAddr, err)
+		udpConn, udpErr := net.ListenUDP("udp4", udpAddr)
+		if udpErr != nil {
+			return nil, fmt.Errorf("turn: listen UDP %s: %w", cfg.ListenAddr, udpErr)
 		}
 		packetConns = append(packetConns, turn.PacketConnConfig{
 			PacketConn:            udpConn,
@@ -98,13 +104,13 @@ func StartTURNServer(ctx context.Context, cfg config.TURNServerConfig) (*TURNSer
 	}
 
 	if cfg.EnableTCP {
-		tcpAddr, err := net.ResolveTCPAddr("tcp4", cfg.ListenAddr)
-		if err != nil {
-			return nil, fmt.Errorf("turn: resolve TCP addr: %w", err)
+		tcpAddr, tcpErr := net.ResolveTCPAddr("tcp4", cfg.ListenAddr)
+		if tcpErr != nil {
+			return nil, fmt.Errorf("turn: resolve TCP addr: %w", tcpErr)
 		}
-		tcpListener, err := net.ListenTCP("tcp4", tcpAddr)
-		if err != nil {
-			return nil, fmt.Errorf("turn: listen TCP %s: %w", cfg.ListenAddr, err)
+		tcpListener, tcpErr := net.ListenTCP("tcp4", tcpAddr)
+		if tcpErr != nil {
+			return nil, fmt.Errorf("turn: listen TCP %s: %w", cfg.ListenAddr, tcpErr)
 		}
 		listeners = append(listeners, turn.ListenerConfig{
 			Listener:              tcpListener,
@@ -114,7 +120,7 @@ func StartTURNServer(ctx context.Context, cfg config.TURNServerConfig) (*TURNSer
 	}
 
 	if len(packetConns) == 0 && len(listeners) == 0 {
-		return nil, fmt.Errorf("turn: both UDP and TCP are disabled — enable at least one")
+		return nil, errTURNBothDisabled
 	}
 
 	srv, err := turn.NewServer(turn.ServerConfig{
@@ -133,7 +139,7 @@ func StartTURNServer(ctx context.Context, cfg config.TURNServerConfig) (*TURNSer
 		secret: secret,
 	}
 
-	// Shutdown when context is cancelled.
+	// Shutdown when context is canceled.
 	go func() {
 		<-ctx.Done()
 		logging.Infof("TURN: shutting down")
@@ -173,14 +179,20 @@ func relayGenerator(publicIP string) turn.RelayAddressGenerator {
 
 // detectPublicIP fetches the machine's public IPv4 via api.ipify.org.
 func detectPublicIP() (string, error) {
-	// Use a simple TCP dial to a well-known address to get the local outbound IP
+	// Use a simple UDP dial to a well-known address to get the local outbound IP
 	// (avoids HTTP dependency for simple LAN scenarios).
-	conn, err := net.DialTimeout("udp4", "8.8.8.8:53", 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	dialer := &net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "udp4", "8.8.8.8:53")
 	if err != nil {
 		return "", err
 	}
-	defer conn.Close()
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	defer conn.Close() //nolint:errcheck // best-effort close of UDP conn
+	localAddr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return "", errUnexpectedAddrType
+	}
 	return localAddr.IP.String(), nil
 }
 
