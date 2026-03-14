@@ -2,9 +2,16 @@ package audio
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	kazopus "github.com/kazzmir/opus-go/opus"
+)
+
+var (
+	errOpusEncodingNotSupported = errors.New("opus encoding requires external library - use github.com/hraban/opus")
+	errOpusEmptyFrame           = errors.New("empty opus frame")
+	errOpusFrameTooLarge        = errors.New("opus frame too large")
 )
 
 const (
@@ -77,20 +84,20 @@ func encodeWAV(samples []int16, sampleRate int) []byte {
 	buf := make([]byte, 44+dataLen)
 
 	copy(buf[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(buf[4:], uint32(36+dataLen))
+	binary.LittleEndian.PutUint32(buf[4:], uint32(36+dataLen)) //nolint:gosec // dataLen is always non-negative
 	copy(buf[8:12], "WAVE")
 	copy(buf[12:16], "fmt ")
 	binary.LittleEndian.PutUint32(buf[16:], 16)          // chunk size
 	binary.LittleEndian.PutUint16(buf[20:], 1)           // PCM
 	binary.LittleEndian.PutUint16(buf[22:], 1)           // mono
-	binary.LittleEndian.PutUint32(buf[24:], uint32(sampleRate))
-	binary.LittleEndian.PutUint32(buf[28:], uint32(sampleRate*2)) // byte rate
+	binary.LittleEndian.PutUint32(buf[24:], uint32(sampleRate))        //nolint:gosec // sampleRate is always positive
+	binary.LittleEndian.PutUint32(buf[28:], uint32(sampleRate*2))      //nolint:gosec // sampleRate is always positive
 	binary.LittleEndian.PutUint16(buf[32:], 2)           // block align
 	binary.LittleEndian.PutUint16(buf[34:], 16)          // bits per sample
 	copy(buf[36:40], "data")
-	binary.LittleEndian.PutUint32(buf[40:], uint32(dataLen))
+	binary.LittleEndian.PutUint32(buf[40:], uint32(dataLen)) //nolint:gosec // dataLen is always non-negative
 	for i, s := range samples {
-		binary.LittleEndian.PutUint16(buf[44+i*2:], uint16(s))
+		binary.LittleEndian.PutUint16(buf[44+i*2:], uint16(s)) //nolint:gosec // intentional int16->uint16 reinterpret for WAV encoding
 	}
 	return buf
 }
@@ -110,16 +117,16 @@ func NewOpusEncoder(sampleRate, channels, bitrate int) *OpusEncoder {
 }
 
 func (e *OpusEncoder) Encode(pcmData []int16) ([]byte, error) {
-	return nil, fmt.Errorf("opus encoding requires external library - use github.com/hraban/opus")
+	return nil, errOpusEncodingNotSupported
 }
 
 func ValidateOpusFrame(frame []byte) error {
 	if len(frame) == 0 {
-		return fmt.Errorf("empty opus frame")
+		return errOpusEmptyFrame
 	}
 
 	if len(frame) > 4000 {
-		return fmt.Errorf("opus frame too large: %d bytes", len(frame))
+		return fmt.Errorf("%w: %d bytes", errOpusFrameTooLarge, len(frame))
 	}
 
 	return nil

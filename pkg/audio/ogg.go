@@ -8,12 +8,12 @@ import (
 // oggCRCTable is the lookup table for the Ogg-specific CRC32.
 // Ogg uses polynomial 0x04c11db7 with NO input/output bit reflection,
 // which differs from the standard hash/crc32 IEEE implementation.
-var oggCRCTable [256]uint32
+var oggCRCTable [256]uint32 //nolint:gochecknoglobals // CRC table initialized once in init()
 
-func init() {
-	for i := 0; i < 256; i++ {
+func init() { //nolint:gochecknoinits // CRC table must be initialized before first use
+	for i := range 256 {
 		crc := uint32(i) << 24
-		for j := 0; j < 8; j++ {
+		for range 8 {
 			if crc&0x80000000 != 0 {
 				crc = (crc << 1) ^ 0x04c11db7
 			} else {
@@ -82,9 +82,9 @@ func buildOpusHead(channels uint8, inputSampleRate uint32) []byte {
 	h.WriteString("OpusHead")
 	h.WriteByte(1)                                        // version
 	h.WriteByte(channels)                                 // channel count
-	binary.Write(h, binary.LittleEndian, uint16(3840))    // pre-skip (80ms at 48kHz)
-	binary.Write(h, binary.LittleEndian, inputSampleRate) // input sample rate
-	binary.Write(h, binary.LittleEndian, int16(0))        // output gain
+	_ = binary.Write(h, binary.LittleEndian, uint16(3840))    //nolint:errcheck // bytes.Buffer never fails
+	_ = binary.Write(h, binary.LittleEndian, inputSampleRate) //nolint:errcheck // bytes.Buffer never fails
+	_ = binary.Write(h, binary.LittleEndian, int16(0))        //nolint:errcheck // bytes.Buffer never fails
 	h.WriteByte(0)                                        // channel mapping family (mono/stereo)
 	return h.Bytes()
 }
@@ -94,9 +94,9 @@ func buildOpusTags() []byte {
 	vendor := "aftertalk"
 	t := &bytes.Buffer{}
 	t.WriteString("OpusTags")
-	binary.Write(t, binary.LittleEndian, uint32(len(vendor)))
+	_ = binary.Write(t, binary.LittleEndian, uint32(len(vendor))) //nolint:errcheck,gosec // bytes.Buffer never fails; len is always non-negative
 	t.WriteString(vendor)
-	binary.Write(t, binary.LittleEndian, uint32(0)) // zero user comments
+	_ = binary.Write(t, binary.LittleEndian, uint32(0)) //nolint:errcheck // bytes.Buffer never fails
 	return t.Bytes()
 }
 
@@ -126,11 +126,11 @@ func writePage(w *bytes.Buffer, data []byte, headerType byte, granulePos int64, 
 	page.WriteString("OggS")                                       // capture pattern
 	page.WriteByte(0)                                              // version
 	page.WriteByte(headerType)                                     // header type
-	binary.Write(page, binary.LittleEndian, granulePos)            // granule position
-	binary.Write(page, binary.LittleEndian, serial)                // stream serial
-	binary.Write(page, binary.LittleEndian, seqNo)                 // page sequence number
-	binary.Write(page, binary.LittleEndian, uint32(0))             // checksum placeholder
-	page.WriteByte(byte(len(segTable)))                            // number of segments
+	_ = binary.Write(page, binary.LittleEndian, granulePos)            //nolint:errcheck // bytes.Buffer never fails
+	_ = binary.Write(page, binary.LittleEndian, serial)                //nolint:errcheck // bytes.Buffer never fails
+	_ = binary.Write(page, binary.LittleEndian, seqNo)                 //nolint:errcheck // bytes.Buffer never fails
+	_ = binary.Write(page, binary.LittleEndian, uint32(0))             //nolint:errcheck // bytes.Buffer never fails
+	page.WriteByte(byte(len(segTable)))                                 //nolint:gosec // Ogg spec: segment count ≤ 255
 	page.Write(segTable)                                           // segment table
 	page.Write(data)                                               // page data
 

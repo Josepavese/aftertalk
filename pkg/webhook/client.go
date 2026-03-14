@@ -25,22 +25,23 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/Josepavese/aftertalk/internal/logging"
-	"time"
 )
+
+var errWebhookBadStatus = errors.New("webhook returned bad status")
 
 // Client delivers webhook payloads to an external HTTP endpoint.
 type Client struct {
 	httpClient *http.Client
 	url        string
+	secret     string
 	timeout    time.Duration
-	// secret is the HMAC-SHA256 key used to sign NotificationPayload webhooks.
-	// Empty means no signature header is added (legacy push mode).
-	secret string
 }
 
 func (c *Client) URL() string { return c.url }
@@ -68,9 +69,9 @@ func NewClientWithSecret(url, secret string, timeout time.Duration) *Client {
 // The full minutes JSON is sent directly to the recipient.
 // Use NotificationPayload instead for sensitive data.
 type MinutesPayload struct {
-	SessionID string      `json:"session_id"`
-	Minutes   interface{} `json:"minutes"`
 	Timestamp time.Time   `json:"timestamp"`
+	Minutes   interface{} `json:"minutes"`
+	SessionID string      `json:"session_id"`
 }
 
 // NotificationPayload is the "notify_pull" webhook body.
@@ -79,15 +80,10 @@ type MinutesPayload struct {
 // to fetch the actual minutes. The URL expires at ExpiresAt and becomes
 // invalid after the first successful retrieval.
 type NotificationPayload struct {
-	// SessionID identifies the session whose minutes are ready.
-	SessionID string `json:"session_id"`
-	// RetrieveURL is the single-use URL the recipient must call to pull the data.
-	// Format: {pull_base_url}/v1/minutes/pull/{token}
-	RetrieveURL string `json:"retrieve_url"`
-	// ExpiresAt is when the retrieval token becomes invalid.
-	ExpiresAt time.Time `json:"expires_at"`
-	// Timestamp is when this notification was generated.
-	Timestamp time.Time `json:"timestamp"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	Timestamp   time.Time `json:"timestamp"`
+	SessionID   string    `json:"session_id"`
+	RetrieveURL string    `json:"retrieve_url"`
 }
 
 // Send delivers a MinutesPayload (push mode). No HMAC signing.
@@ -104,7 +100,7 @@ func (c *Client) Send(ctx context.Context, payload *MinutesPayload) error {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(jsonPayload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -129,7 +125,7 @@ func (c *Client) SendNotification(ctx context.Context, payload *NotificationPayl
 		return fmt.Errorf("failed to marshal notification payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.url, bytes.NewBuffer(jsonPayload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -148,15 +144,18 @@ func (c *Client) SendNotification(ctx context.Context, payload *NotificationPayl
 
 // do executes the HTTP request and checks for a non-4xx/5xx response.
 func (c *Client) do(req *http.Request, sessionID string) error {
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL comes from server configuration, not user input
 	if err != nil {
 		return fmt.Errorf("failed to send webhook: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read webhook response: %w", err)
+	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("webhook returned status %d: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("%w %d: %s", errWebhookBadStatus, resp.StatusCode, string(body))
 	}
 
 	logging.Infof("webhook sent successfully for session %s", sessionID)

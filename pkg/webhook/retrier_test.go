@@ -29,7 +29,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(context.Background(), `
 		CREATE TABLE IF NOT EXISTS webhook_events (
 			id TEXT PRIMARY KEY,
 			minutes_id TEXT NOT NULL,
@@ -66,7 +66,7 @@ func TestRetrier_Enqueue_InsertsRow(t *testing.T) {
 	require.NoError(t, err)
 
 	var count int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM webhook_events WHERE minutes_id='min-1'`).Scan(&count))
+	require.NoError(t, db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM webhook_events WHERE minutes_id='min-1'`).Scan(&count))
 	assert.Equal(t, 1, count)
 }
 
@@ -77,7 +77,7 @@ func TestRetrier_Enqueue_StatusIsPending(t *testing.T) {
 	require.NoError(t, r.Enqueue(context.Background(), "min-2", "http://x.com", testPayload("s2")))
 
 	var status string
-	require.NoError(t, db.QueryRow(`SELECT status FROM webhook_events WHERE minutes_id='min-2'`).Scan(&status))
+	require.NoError(t, db.QueryRowContext(context.Background(), `SELECT status FROM webhook_events WHERE minutes_id='min-2'`).Scan(&status))
 	assert.Equal(t, "pending", status)
 }
 
@@ -89,7 +89,7 @@ func TestRetrier_Enqueue_EmptyURL_NoInsert(t *testing.T) {
 	require.NoError(t, err)
 
 	var count int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM webhook_events`).Scan(&count))
+	require.NoError(t, db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM webhook_events`).Scan(&count))
 	assert.Equal(t, 0, count)
 }
 
@@ -108,7 +108,7 @@ func TestRetrier_Enqueue_IdempotentOnDuplicate(t *testing.T) {
 	require.NoError(t, r.Enqueue(context.Background(), "min-4b", url, p))
 
 	var count int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM webhook_events`).Scan(&count))
+	require.NoError(t, db.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM webhook_events`).Scan(&count))
 	assert.Equal(t, 2, count)
 }
 
@@ -134,7 +134,7 @@ func TestRetrier_ProcessPending_DeliverySuccess(t *testing.T) {
 	assert.Equal(t, int32(1), received.Load())
 
 	var status string
-	require.NoError(t, db.QueryRow(`SELECT status FROM webhook_events WHERE minutes_id='min-ok'`).Scan(&status))
+	require.NoError(t, db.QueryRowContext(context.Background(), `SELECT status FROM webhook_events WHERE minutes_id='min-ok'`).Scan(&status))
 	assert.Equal(t, "delivered", status)
 }
 
@@ -153,7 +153,7 @@ func TestRetrier_ProcessPending_DeliveryFailure_Retries(t *testing.T) {
 
 	var status string
 	var attempt int
-	require.NoError(t, db.QueryRow(`SELECT status, attempt_number FROM webhook_events WHERE minutes_id='min-fail'`).Scan(&status, &attempt))
+	require.NoError(t, db.QueryRowContext(context.Background(), `SELECT status, attempt_number FROM webhook_events WHERE minutes_id='min-fail'`).Scan(&status, &attempt))
 
 	// Still pending (not yet at maxAttempts=5)
 	assert.Equal(t, "pending", status)
@@ -174,14 +174,14 @@ func TestRetrier_ProcessPending_MaxAttempts_MarksFailed(t *testing.T) {
 
 	// Manually set next_retry_at in the past and simulate maxAttempts-1 prior attempts.
 	past := time.Now().Add(-1 * time.Second).UTC().Format(time.RFC3339)
-	_, err := db.Exec(`UPDATE webhook_events SET attempt_number=?, next_retry_at=? WHERE minutes_id='min-maxfail'`,
+	_, err := db.ExecContext(context.Background(), `UPDATE webhook_events SET attempt_number=?, next_retry_at=? WHERE minutes_id='min-maxfail'`,
 		maxAttempts-1, past)
 	require.NoError(t, err)
 
 	r.processPending(context.Background()) // this is attempt maxAttempts → failed
 
 	var status string
-	require.NoError(t, db.QueryRow(`SELECT status FROM webhook_events WHERE minutes_id='min-maxfail'`).Scan(&status))
+	require.NoError(t, db.QueryRowContext(context.Background(), `SELECT status FROM webhook_events WHERE minutes_id='min-maxfail'`).Scan(&status))
 	assert.Equal(t, "failed", status)
 }
 
@@ -200,7 +200,7 @@ func TestRetrier_ProcessPending_SkipsFutureRetries(t *testing.T) {
 
 	// Set next_retry_at far in the future.
 	future := time.Now().Add(1 * time.Hour).UTC().Format(time.RFC3339)
-	_, err := db.Exec(`UPDATE webhook_events SET next_retry_at=? WHERE minutes_id='min-future'`, future)
+	_, err := db.ExecContext(context.Background(), `UPDATE webhook_events SET next_retry_at=? WHERE minutes_id='min-future'`, future)
 	require.NoError(t, err)
 
 	r.processPending(context.Background())

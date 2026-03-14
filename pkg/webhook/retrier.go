@@ -96,7 +96,7 @@ func (r *Retrier) processPending(ctx context.Context) {
 		logging.Errorf("webhook retrier: query pending: %v", err)
 		return
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows.Close error is not actionable here
 
 	type event struct {
 		id, minutesID, webhookURL, payload, payloadType string
@@ -117,7 +117,11 @@ func (r *Retrier) processPending(ctx context.Context) {
 		}
 		events = append(events, e)
 	}
-	rows.Close()
+	rows.Close() //nolint:errcheck // close after full read; error irrelevant
+	if err := rows.Err(); err != nil {
+		logging.Errorf("webhook retrier: rows error: %v", err)
+		return
+	}
 
 	for _, e := range events {
 		r.deliver(ctx, e.id, e.minutesID, e.webhookURL, e.payload, e.payloadType, e.attempt)
@@ -174,7 +178,7 @@ func (r *Retrier) deliver(ctx context.Context, id, minutesID, webhookURL, payloa
 	}
 
 	// Exponential backoff: 30s, 2m, 8m, 30m.
-	backoff := time.Duration(1<<uint(attempt)) * 30 * time.Second
+	backoff := time.Duration(1<<uint(attempt)) * 30 * time.Second //nolint:gosec // attempt is bounded (max retries)
 	nextRetry := now.Add(backoff)
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE webhook_events

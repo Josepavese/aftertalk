@@ -3,10 +3,13 @@ package audio
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 )
+
+var errOpusDecodingNotImplemented = errors.New("opus decoding not yet implemented - requires opus library")
 
 const (
 	SampleRate = 48000
@@ -48,7 +51,7 @@ func (c *PCMConverter) ConvertToInt16(floatData []float32) []int16 {
 }
 
 func decodeOpus(opusData []byte, sampleRate, channels int) ([]int16, error) {
-	return nil, fmt.Errorf("opus decoding not yet implemented - requires opus library")
+	return nil, errOpusDecodingNotImplemented
 }
 
 func ReadPCM(r io.Reader) ([]int16, error) {
@@ -58,13 +61,13 @@ func ReadPCM(r io.Reader) ([]int16, error) {
 	for {
 		_, err := io.ReadFull(r, buf)
 		if err != nil {
-			if err == io.EOF || err == io.ErrUnexpectedEOF {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 				break
 			}
 			return nil, fmt.Errorf("failed to read PCM data: %w", err)
 		}
 
-		sample := int16(binary.LittleEndian.Uint16(buf))
+		sample := int16(binary.LittleEndian.Uint16(buf)) //nolint:gosec // intentional uint16->int16 reinterpret for PCM decoding
 		samples = append(samples, sample)
 	}
 
