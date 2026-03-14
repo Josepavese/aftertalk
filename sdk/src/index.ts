@@ -1,5 +1,5 @@
 // Main client
-export { AfterthalkClient } from './client.js';
+export { AftertalkClient } from './client.js';
 
 // API classes (for direct use if needed)
 export { ConfigAPI } from './api/config.js';
@@ -21,7 +21,7 @@ export type { AftertalkErrorCode } from './errors.js';
 
 // Types
 export type {
-  AfterthalkClientConfig,
+  AftertalkClientConfig,
   Citation,
   CreateSessionRequest,
   CreateSessionResponse,

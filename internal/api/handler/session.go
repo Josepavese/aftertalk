@@ -61,7 +61,7 @@ func (h *SessionHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(req.Participants) < 2 {
-		writeError(w, http.StatusInternalServerError, "at least 2 participants required")
+		writeError(w, http.StatusBadRequest, "at least 2 participants required")
 		return
 	}
 

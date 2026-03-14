@@ -4,20 +4,20 @@ import { SessionsAPI } from './api/sessions.js';
 import { TranscriptionsAPI } from './api/transcriptions.js';
 import { HttpClient } from './http.js';
 import { MinutesPoller } from './realtime/minutes-poller.js';
-import type { AfterthalkClientConfig, ICEServer, Minutes, PollerOptions, WebRTCConfig } from './types.js';
+import type { AftertalkClientConfig, ICEServer, Minutes, PollerOptions, WebRTCConfig } from './types.js';
 import { WebRTCConnection } from './webrtc/connection.js';
 
-export class AfterthalkClient {
+export class AftertalkClient {
   readonly sessions: SessionsAPI;
   readonly transcriptions: TranscriptionsAPI;
   readonly minutes: MinutesAPI;
   readonly config: ConfigAPI;
 
   private readonly http: HttpClient;
-  private readonly clientConfig: AfterthalkClientConfig;
+  private readonly clientConfig: AftertalkClientConfig;
   private readonly poller: MinutesPoller;
 
-  constructor(config: AfterthalkClientConfig) {
+  constructor(config: AftertalkClientConfig) {
     this.clientConfig = config;
     this.http = new HttpClient({
       baseUrl: config.baseUrl,

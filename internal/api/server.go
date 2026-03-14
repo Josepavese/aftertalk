@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -364,7 +365,6 @@ func findTestUIPath() string {
 	candidates := []string{
 		"./cmd/test-ui",
 		"../cmd/test-ui",
-		"/home/jose/hpdev/Libraries/aftertalk/cmd/test-ui",
 	}
 
 	// Also try relative to the executable
@@ -398,5 +398,7 @@ func (s *Server) ListenAndServe() error {
 }
 
 func (s *Server) Shutdown() error {
-	return s.httpServer.Shutdown(nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.httpServer.Shutdown(ctx)
 }

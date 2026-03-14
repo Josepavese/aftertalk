@@ -61,6 +61,8 @@ type Service struct {
 	pcmConverter  *audio.PCMConverter
 	templates     map[string]config.TemplateConfig // templateID → template
 
+	jwtExpiration time.Duration // token lifetime, from config.JWT.Expiration
+
 	inactivityMu     sync.Mutex
 	inactivityTimers map[string]*time.Timer // sessionID → timer
 
@@ -93,12 +95,16 @@ func NewService(
 	audioBuffer *cache.AudioBufferCache,
 	transcription TranscriptionServiceInterface,
 	minutes MinutesServiceInterface,
+	jwtExpiration time.Duration,
 	processingCfg config.ProcessingConfig,
 	templates []config.TemplateConfig,
 ) *Service {
 	tmplMap := make(map[string]config.TemplateConfig, len(templates))
 	for _, t := range templates {
 		tmplMap[t.ID] = t
+	}
+	if jwtExpiration <= 0 {
+		jwtExpiration = 2 * time.Hour
 	}
 	s := &Service{
 		repo:             repo,
@@ -108,6 +114,7 @@ func NewService(
 		audioBuffer:      audioBuffer,
 		transcription:    transcription,
 		minutes:          minutes,
+		jwtExpiration:    jwtExpiration,
 		transcribeCh:     make(chan *transcribeJob, processingCfg.TranscriptionQueueSize),
 		chunkSizeMs:      processingCfg.ChunkSizeMs,
 		opusDecoder:      audio.NewOpusDecoder(48000, 1),
@@ -268,7 +275,7 @@ func (s *Service) CreateSession(ctx context.Context, req *CreateSessionRequest) 
 	for _, p := range req.Participants {
 		participantID := uuid.New().String()
 		tokenJTI := uuid.New().String()
-		tokenExpiresAt := time.Now().Add(2 * time.Hour)
+		tokenExpiresAt := time.Now().Add(s.jwtExpiration)
 
 		token, tokenJTI, err := s.jwtManager.Generate(sessionID, p.UserID, p.Role)
 		if err != nil {
@@ -281,7 +288,7 @@ func (s *Service) CreateSession(ctx context.Context, req *CreateSessionRequest) 
 			return nil, fmt.Errorf("failed to create participant: %w", err)
 		}
 
-		s.tokenCache.SetToken(tokenJTI, sessionID, 2*time.Hour)
+		s.tokenCache.SetToken(tokenJTI, sessionID, s.jwtExpiration)
 
 		responses = append(responses, ParticipantResponse{
 			ID:        participantID,
@@ -298,7 +305,7 @@ func (s *Service) CreateSession(ctx context.Context, req *CreateSessionRequest) 
 		StartedAt:          session.CreatedAt,
 		ParticipantCount:   session.ParticipantCount,
 		ActiveParticipants: 0,
-	}, 2*time.Hour)
+	}, s.jwtExpiration)
 
 	return &CreateSessionResponse{
 		SessionID:    sessionID,
@@ -427,7 +434,12 @@ func (s *Service) processRemainingAudio(sessionID string) {
 }
 
 func (s *Service) generateMinutesForSession(sessionID string) {
-	time.Sleep(2 * time.Second)
+	// Wait for any pending transcription jobs (enqueued by real-time audio)
+	// to be processed before reading transcriptions for minutes generation.
+	deadline := time.Now().Add(30 * time.Second)
+	for len(s.transcribeCh) > 0 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -480,7 +492,7 @@ func (s *Service) ValidateParticipant(ctx context.Context, jti string) (*Partici
 		if err != nil || participant == nil {
 			return nil, fmt.Errorf("token not found or expired")
 		}
-		s.tokenCache.SetToken(jti, participant.SessionID, 2*time.Hour)
+		s.tokenCache.SetToken(jti, participant.SessionID, s.jwtExpiration)
 	}
 
 	participant, err := s.repo.GetParticipantByJTI(ctx, jti)
@@ -529,7 +541,7 @@ func (s *Service) ConnectParticipant(ctx context.Context, participantID string) 
 
 	if state, exists := s.sessionCache.GetSession(participant.SessionID); exists {
 		state.ActiveParticipants++
-		s.sessionCache.SetSession(participant.SessionID, state, 2*time.Hour)
+		s.sessionCache.SetSession(participant.SessionID, state, s.jwtExpiration)
 	}
 
 	return nil
