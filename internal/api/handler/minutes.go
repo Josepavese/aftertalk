@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/Josepavese/aftertalk/internal/core/minutes"
@@ -55,8 +54,7 @@ func (h *MinutesHandler) Routes() chi.Router {
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {
-	w.WriteHeader(code)
-	fmt.Fprint(w, msg)
+	http.Error(w, msg, code)
 }
 
 func (h *MinutesHandler) GetMinutes(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +104,7 @@ func (h *MinutesHandler) UpdateMinutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	editedBy := r.Header.Get("X-User-ID")
+	editedBy := r.Header.Get("X-User-Id")
 	if editedBy == "" {
 		editedBy = "unknown"
 	}

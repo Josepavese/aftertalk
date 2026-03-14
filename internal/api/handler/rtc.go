@@ -33,9 +33,9 @@ func NewRTCConfigHandler(cfg *config.Config, provider webrtc.ICEProvider) *RTCCo
 }
 
 type rtcConfigResponse struct {
+	Provider   string             `json:"provider"`
 	ICEServers []webrtc.ICEServer `json:"ice_servers"`
 	TTL        int                `json:"ttl"`
-	Provider   string             `json:"provider"`
 }
 
 // ServeHTTP handles GET /v1/rtc-config.

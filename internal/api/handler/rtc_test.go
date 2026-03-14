@@ -22,7 +22,9 @@ func freeTURNPort(t *testing.T) int {
 	t.Helper()
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	require.NoError(t, err)
-	port := conn.LocalAddr().(*net.UDPAddr).Port
+	udpAddr, ok := conn.LocalAddr().(*net.UDPAddr)
+	require.True(t, ok, "expected *net.UDPAddr")
+	port := udpAddr.Port
 	conn.Close()
 	return port
 }
@@ -52,13 +54,13 @@ func TestRTCConfigHandler_StaticProvider(t *testing.T) {
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
 	var resp struct {
+		Provider   string `json:"provider"`
 		ICEServers []struct {
 			URLs       []string `json:"urls"`
 			Username   string   `json:"username,omitempty"`
 			Credential string   `json:"credential,omitempty"`
 		} `json:"ice_servers"`
-		TTL      int    `json:"ttl"`
-		Provider string `json:"provider"`
+		TTL int `json:"ttl"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 
@@ -82,7 +84,8 @@ func TestRTCConfigHandler_EmptyICEServers(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	var resp map[string]interface{}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	servers := resp["ice_servers"].([]interface{})
+	servers, ok := resp["ice_servers"].([]interface{})
+	require.True(t, ok, "ice_servers should be a slice")
 	assert.Empty(t, servers)
 }
 
@@ -96,7 +99,9 @@ func TestRTCConfigHandler_DefaultTTL(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/rtc-config", nil))
 
-	var resp struct{ TTL int `json:"ttl"` }
+	var resp struct {
+		TTL int `json:"ttl"`
+	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, 86400, resp.TTL)
 }
@@ -134,12 +139,12 @@ func TestRTCConfigHandler_EmbeddedProvider_HasCredentials(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var resp struct {
+		Provider   string `json:"provider"`
 		ICEServers []struct {
 			URLs       []string `json:"urls"`
 			Username   string   `json:"username,omitempty"`
 			Credential string   `json:"credential,omitempty"`
 		} `json:"ice_servers"`
-		Provider string `json:"provider"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 
@@ -217,12 +222,12 @@ func TestRTCConfigHandler_TwilioProvider_Mock(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var resp struct {
+		Provider   string `json:"provider"`
 		ICEServers []struct {
 			URLs       []string `json:"urls"`
 			Username   string   `json:"username,omitempty"`
 			Credential string   `json:"credential,omitempty"`
 		} `json:"ice_servers"`
-		Provider string `json:"provider"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 
@@ -293,12 +298,12 @@ func TestRTCConfigHandler_XirsysProvider_Mock(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var resp struct {
+		Provider   string `json:"provider"`
 		ICEServers []struct {
 			URLs       []string `json:"urls"`
 			Username   string   `json:"username,omitempty"`
 			Credential string   `json:"credential,omitempty"`
 		} `json:"ice_servers"`
-		Provider string `json:"provider"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 
@@ -339,12 +344,12 @@ func TestRTCConfigHandler_MeteredProvider_Mock(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 
 	var resp struct {
+		Provider   string `json:"provider"`
 		ICEServers []struct {
 			URLs       []string `json:"urls"`
 			Username   string   `json:"username,omitempty"`
 			Credential string   `json:"credential,omitempty"`
 		} `json:"ice_servers"`
-		Provider string `json:"provider"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 

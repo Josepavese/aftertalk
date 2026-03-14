@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+var errTestGetSessionFailed = errors.New("failed to get session")
+
 type MockSessionService struct {
 	mock.Mock
 }
@@ -23,7 +25,7 @@ func (m *MockSessionService) CreateSession(ctx context.Context, req *session.Cre
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*session.CreateSessionResponse), args.Error(1)
+	return args.Get(0).(*session.CreateSessionResponse), args.Error(1) //nolint:forcetypeassert // testify mock contract guarantees type
 }
 
 func (m *MockSessionService) GetSession(ctx context.Context, sessionID string) (*session.Session, error) {
@@ -31,7 +33,7 @@ func (m *MockSessionService) GetSession(ctx context.Context, sessionID string) (
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*session.Session), args.Error(1)
+	return args.Get(0).(*session.Session), args.Error(1) //nolint:forcetypeassert // testify mock contract guarantees type
 }
 
 func (m *MockSessionService) EndSession(ctx context.Context, sessionID string) error {
@@ -44,7 +46,7 @@ func (m *MockSessionService) ValidateParticipant(ctx context.Context, jti string
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*session.Participant), args.Error(1)
+	return args.Get(0).(*session.Participant), args.Error(1) //nolint:forcetypeassert // testify mock contract guarantees type
 }
 
 func (m *MockSessionService) ConnectParticipant(ctx context.Context, participantID string) error {
@@ -57,7 +59,7 @@ func (m *MockSessionService) ListSessions(ctx context.Context, status string, li
 	if args.Get(0) == nil {
 		return nil, args.Int(1), args.Error(2)
 	}
-	return args.Get(0).([]*session.Session), args.Int(1), args.Error(2)
+	return args.Get(0).([]*session.Session), args.Int(1), args.Error(2) //nolint:forcetypeassert // testify mock contract guarantees type
 }
 
 func (m *MockSessionService) DeleteSession(ctx context.Context, sessionID string) error {
@@ -67,12 +69,12 @@ func (m *MockSessionService) DeleteSession(ctx context.Context, sessionID string
 
 func TestSessionHandler_CreateSession(t *testing.T) {
 	tests := []struct {
-		name           string
+		mockSetup      func(*MockSessionService)
+		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
 		rawBody        []byte
 		request        CreateSessionRequest
-		mockSetup      func(*MockSessionService)
+		name           string
 		expectedStatus int
-		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
 	}{
 		{
 			name: "Success - valid request",
@@ -145,7 +147,7 @@ func TestSessionHandler_CreateSession(t *testing.T) {
 			} else {
 				body, _ = json.Marshal(tt.request)
 			}
-			req := httptest.NewRequest("POST", "/session", bytes.NewReader(body))
+			req := httptest.NewRequestWithContext(context.Background(), "POST", "/session", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
@@ -164,11 +166,11 @@ func TestSessionHandler_CreateSession(t *testing.T) {
 
 func TestSessionHandler_GetSession(t *testing.T) {
 	tests := []struct {
+		mockSetup      func(*MockSessionService)
+		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
 		name           string
 		sessionID      string
-		mockSetup      func(*MockSessionService)
 		expectedStatus int
-		checkResponse  func(*testing.T, *httptest.ResponseRecorder)
 	}{
 		{
 			name:      "Success - valid session",
@@ -194,7 +196,7 @@ func TestSessionHandler_GetSession(t *testing.T) {
 			sessionID: "non-existent",
 			mockSetup: func(m *MockSessionService) {
 				m.On("GetSession", mock.Anything, "non-existent").
-					Return(nil, errors.New("failed to get session"))
+					Return(nil, errTestGetSessionFailed)
 			},
 			expectedStatus: http.StatusNotFound,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {

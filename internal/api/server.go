@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -42,11 +43,11 @@ type roomEntry struct {
 // All operations are atomic to prevent race conditions when two browsers
 // join the same room simultaneously.
 type roomCache struct {
-	mu    sync.Mutex
 	rooms map[string]*roomEntry
+	mu    sync.Mutex
 }
 
-var errRoleTaken = fmt.Errorf("role already taken in this room")
+var errRoleTaken = errors.New("role already taken in this room")
 
 // getOrCreate atomically returns the token for the given role in the room,
 // creating the session (via create()) if the room does not yet exist or has expired.
@@ -196,7 +197,9 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 		if cfg.Demo.Enabled {
 			resp["api_key"] = cfg.API.Key
 		}
-		_ = json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		}
 	})
 
 	// /test/start — requires API key when one is configured.
@@ -238,7 +241,7 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 			}
 		}
 
-		sessionID, token, err := rooms.getOrCreate(body.Code, body.Role, body.Name, func() (map[string]string, error) {
+		sessionID, token, err := rooms.getOrCreate(body.Code, body.Role, body.Name, func() (map[string]string, error) { //nolint:contextcheck // callback closure captures req.Context() below
 			createReq := &session.CreateSessionRequest{
 				ParticipantCount: 2,
 				TemplateID:       body.TemplateID,
@@ -257,8 +260,8 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 			}
 			return tokens, nil
 		})
-		if err == errRoleTaken {
-			http.Error(w, fmt.Sprintf("Il ruolo '%s' è già occupato nella stanza '%s'. Scegli un altro ruolo.", body.Role, body.Code), http.StatusConflict)
+		if errors.Is(err, errRoleTaken) {
+			http.Error(w, fmt.Sprintf("Role '%s' is already taken in room '%s'. Choose another role.", body.Role, body.Code), http.StatusConflict)
 			return
 		}
 		if err != nil {
@@ -267,10 +270,12 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		if err := json.NewEncoder(w).Encode(map[string]string{
 			"session_id": sessionID,
 			"token":      token,
-		})
+		}); err != nil {
+			http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		}
 	})
 
 	// --- Protected routes (API key required) ---

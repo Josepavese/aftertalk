@@ -34,7 +34,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func init() {
+func init() { //nolint:gochecknoinits // test package init for logger setup
 	logging.Init("info", "console") //nolint:errcheck
 }
 
@@ -88,6 +88,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		audioBuffer,
 		&api.TranscriptionAdapter{Svc: txSvc},
 		&api.MinutesAdapter{Svc: minSvc},
+		cfg.JWT.Expiration,
 		cfg.Processing,
 		cfg.Templates,
 	)
@@ -120,7 +121,7 @@ func (e *testEnv) url(path string) string {
 
 func (e *testEnv) get(t *testing.T, path string) *http.Response {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, e.url(path), nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.url(path), nil)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+e.cfg.API.Key)
 	resp, err := http.DefaultClient.Do(req)
@@ -136,7 +137,7 @@ func (e *testEnv) post(t *testing.T, path string, body interface{}) *http.Respon
 		require.NoError(t, err)
 		bodyReader = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(http.MethodPost, e.url(path), bodyReader)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, e.url(path), bodyReader)
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+e.cfg.API.Key)
@@ -222,7 +223,9 @@ func TestAPI_DemoConfig(t *testing.T) {
 	// cfg is held by pointer so the handler closure sees this update at request time.
 	e.cfg.Demo.Enabled = true
 
-	resp, err := http.Get(e.url("/demo/config")) // no auth required
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.url("/demo/config"), nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req) // no auth required
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -230,8 +233,8 @@ func TestAPI_DemoConfig(t *testing.T) {
 
 	var body struct {
 		APIKey            string                  `json:"api_key"`
-		Templates         []config.TemplateConfig `json:"templates"`
 		DefaultTemplateID string                  `json:"default_template_id"`
+		Templates         []config.TemplateConfig `json:"templates"`
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 
@@ -242,7 +245,10 @@ func TestAPI_DemoConfig(t *testing.T) {
 
 func TestAPI_DemoConfig_HasTherapyTemplate(t *testing.T) {
 	e := newTestEnv(t)
-	resp, _ := http.Get(e.url("/demo/config"))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.url("/demo/config"), nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	var body struct {
@@ -272,12 +278,14 @@ func TestAPI_RTCConfig_NoTURN(t *testing.T) {
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 	assert.NotEmpty(t, body.ICEServers)
-	assert.Greater(t, body.TTL, 0)
+	assert.Positive(t, body.TTL)
 }
 
 func TestAPI_RTCConfig_RequiresAuth(t *testing.T) {
 	e := newTestEnv(t)
-	resp, err := http.Get(e.url("/v1/rtc-config"))
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.url("/v1/rtc-config"), nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
@@ -288,7 +296,9 @@ func TestAPI_RTCConfig_WithLiveTURN(t *testing.T) {
 
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
 	require.NoError(t, err)
-	port := conn.LocalAddr().(*net.UDPAddr).Port
+	udpAddr, ok := conn.LocalAddr().(*net.UDPAddr)
+	require.True(t, ok, "expected *net.UDPAddr")
+	port := udpAddr.Port
 	conn.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -321,9 +331,9 @@ func TestAPI_RTCConfig_WithLiveTURN(t *testing.T) {
 
 	var body struct {
 		ICEServers []struct {
-			URLs       []string `json:"urls"`
 			Username   string   `json:"username,omitempty"`
 			Credential string   `json:"credential,omitempty"`
+			URLs       []string `json:"urls"`
 		} `json:"ice_servers"`
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
@@ -379,14 +389,14 @@ func TestAPI_TestStart_SameRoomSameRole_SameName_Reconnect(t *testing.T) {
 	e := newTestEnv(t)
 	body := map[string]string{"code": "room-003", "name": "Alice", "role": "therapist"}
 
-	r1 := e.post(t, "/test/start", body)
+	r1 := e.post(t, "/test/start", body) //nolint:bodyclose // body closed by decodeJSON
 	var res1 struct {
 		SessionID string `json:"session_id"`
 		Token     string `json:"token"`
 	}
 	decodeJSON(t, r1, &res1)
 
-	r2 := e.post(t, "/test/start", body)
+	r2 := e.post(t, "/test/start", body) //nolint:bodyclose // body closed by decodeJSON
 	var res2 struct {
 		SessionID string `json:"session_id"`
 		Token     string `json:"token"`
@@ -400,14 +410,14 @@ func TestAPI_TestStart_SameRoomSameRole_SameName_Reconnect(t *testing.T) {
 func TestAPI_TestStart_TwoRoles_BothJoin(t *testing.T) {
 	e := newTestEnv(t)
 
-	r1 := e.post(t, "/test/start", map[string]string{"code": "room-004", "name": "Alice", "role": "therapist"})
+	r1 := e.post(t, "/test/start", map[string]string{"code": "room-004", "name": "Alice", "role": "therapist"}) //nolint:bodyclose // body closed by decodeJSON
 	var res1 struct {
 		SessionID string `json:"session_id"`
 		Token     string `json:"token"`
 	}
 	decodeJSON(t, r1, &res1)
 
-	r2 := e.post(t, "/test/start", map[string]string{"code": "room-004", "name": "Bob", "role": "patient"})
+	r2 := e.post(t, "/test/start", map[string]string{"code": "room-004", "name": "Bob", "role": "patient"}) //nolint:bodyclose // body closed by decodeJSON
 	var res2 struct {
 		SessionID string `json:"session_id"`
 		Token     string `json:"token"`
@@ -449,8 +459,10 @@ func TestAPI_CreateSession(t *testing.T) {
 		},
 	}
 
-	b, _ := json.Marshal(body)
-	req, _ := http.NewRequest(http.MethodPost, e.url("/v1/sessions"), bytes.NewReader(b))
+	b, err := json.Marshal(body)
+	require.NoError(t, err)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, e.url("/v1/sessions"), bytes.NewReader(b))
+	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+e.cfg.API.Key)
 	resp, err := http.DefaultClient.Do(req)
@@ -467,8 +479,10 @@ func TestAPI_CreateSession(t *testing.T) {
 func TestAPI_GetSession(t *testing.T) {
 	e := newTestEnv(t)
 
-	r1 := e.post(t, "/test/start", map[string]string{"code": "room-get", "name": "Alice", "role": "therapist"})
-	var res struct{ SessionID string `json:"session_id"` }
+	r1 := e.post(t, "/test/start", map[string]string{"code": "room-get", "name": "Alice", "role": "therapist"}) //nolint:bodyclose // decodeJSON closes the body
+	var res struct {
+		SessionID string `json:"session_id"`
+	}
 	decodeJSON(t, r1, &res)
 
 	resp := e.get(t, "/v1/sessions/"+res.SessionID)
@@ -491,15 +505,16 @@ func TestAPI_GetSession_NotFound(t *testing.T) {
 func TestAPI_EndSession(t *testing.T) {
 	e := newTestEnv(t)
 
-	r1 := e.post(t, "/test/start", map[string]string{"code": "room-end", "name": "Alice", "role": "therapist"})
-	var res struct{ SessionID string `json:"session_id"` }
+	r1 := e.post(t, "/test/start", map[string]string{"code": "room-end", "name": "Alice", "role": "therapist"}) //nolint:bodyclose // decodeJSON closes the body
+	var res struct {
+		SessionID string `json:"session_id"`
+	}
 	decodeJSON(t, r1, &res)
 
 	resp := e.post(t, "/v1/sessions/"+res.SessionID+"/end", nil)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
-
 
 // ── Transcriptions ────────────────────────────────────────────────────────
 
@@ -518,8 +533,10 @@ func TestAPI_GetTranscriptions_RouteExists(t *testing.T) {
 func TestAPI_GetMinutes_NoMinutes(t *testing.T) {
 	e := newTestEnv(t)
 
-	r1 := e.post(t, "/test/start", map[string]string{"code": "room-min", "name": "Alice", "role": "therapist"})
-	var res struct{ SessionID string `json:"session_id"` }
+	r1 := e.post(t, "/test/start", map[string]string{"code": "room-min", "name": "Alice", "role": "therapist"}) //nolint:bodyclose // decodeJSON closes the body
+	var res struct {
+		SessionID string `json:"session_id"`
+	}
 	decodeJSON(t, r1, &res)
 
 	resp := e.get(t, "/v1/sessions/"+res.SessionID+"/minutes")
@@ -544,7 +561,9 @@ func TestAPI_WrongAPIKey_Unauthorized(t *testing.T) {
 
 func TestAPI_MissingAPIKey_Unauthorized(t *testing.T) {
 	e := newTestEnv(t)
-	resp, err := http.Get(e.url("/v1/health"))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, e.url("/v1/health"), nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
@@ -554,7 +573,9 @@ func TestAPI_PublicRoutes_NoAuth(t *testing.T) {
 	e := newTestEnv(t)
 	// /demo/config and /test/start are public.
 	for _, path := range []string{"/demo/config"} {
-		resp, err := http.Get(e.url(path))
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, e.url(path), nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		resp.Body.Close()
 		assert.NotEqual(t, http.StatusUnauthorized, resp.StatusCode, "path=%s should be public", path)
