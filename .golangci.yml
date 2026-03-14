@@ -9,10 +9,12 @@ run:
   timeout: 5m
   tests: true
   modules-download-mode: readonly
+  go: "1.25"
 
 output:
   formats:
-    - format: colored-line-number
+    colored-line-number: {}
+  sort-results: true
   sort-order:
     - linter
     - severity
@@ -39,6 +41,8 @@ linters:
     - tparallel       # Same as above
     - dupl            # Duplicate detection has too many false positives
     - mnd             # Magic numbers are acceptable in tests and configs
+    - tagliatelle     # JSON tag style conflicts with established external API contracts
+    - wrapcheck       # Too strict: wrapping all stdlib/external errors adds noise without value
 
   settings:
     errcheck:
@@ -146,6 +150,9 @@ linters:
     tenv:
       all: true
 
+  exclude-dirs:
+    - sdk/node_modules
+
   exclusions:
     generated: lax
     presets:
@@ -183,6 +190,25 @@ linters:
           - govet
         path: _test\.go
         text: "shadow"
+      # Test fixture structs: fields intentionally set for documentation/completeness
+      - linters:
+          - govet
+        path: _test\.go
+        text: "unusedwrite"
+      # Test response structs: logical field order preferred over memory alignment
+      - linters:
+          - govet
+        path: _test\.go
+        text: "fieldalignment"
+      # Prometheus metrics must be package-level globals (required by promauto pattern)
+      - linters:
+          - gochecknoglobals
+        path: internal/metrics/metrics\.go
+      # G101 false positives on test fixture strings (fake credentials, OAuth URLs)
+      - linters:
+          - gosec
+        path: _test\.go
+        text: "G101"
 
 formatters:
   enable:
