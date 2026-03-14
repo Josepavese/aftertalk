@@ -34,7 +34,7 @@ func TestCreateTranscription(t *testing.T) {
 
 	assert.Equal(t, "test-id-1", transcription.ID)
 	assert.Equal(t, "session-123", transcription.SessionID)
-	assert.Equal(t, 0.95, transcription.Confidence)
+	assert.InEpsilon(t, 0.95, transcription.Confidence, 1e-9)
 	assert.Equal(t, "google", transcription.Provider)
 	assert.Equal(t, StatusPending, transcription.Status)
 }
@@ -57,7 +57,7 @@ func TestGetByID(t *testing.T) {
 	assert.Equal(t, trans.StartMs, retrieved.StartMs)
 	assert.Equal(t, trans.EndMs, retrieved.EndMs)
 	assert.Equal(t, trans.Text, retrieved.Text)
-	assert.Equal(t, trans.Confidence, retrieved.Confidence)
+	assert.InEpsilon(t, trans.Confidence, retrieved.Confidence, 1e-9)
 	assert.Equal(t, trans.Provider, retrieved.Provider)
 	assert.Equal(t, trans.Status, retrieved.Status)
 	assert.WithinDuration(t, trans.CreatedAt, retrieved.CreatedAt, time.Second)
@@ -154,7 +154,7 @@ func TestTranscriptionWithNullConfidence(t *testing.T) {
 	retrieved, err := repo.GetByID(ctx, "test-id")
 	require.NoError(t, err)
 
-	assert.Equal(t, float64(0.0), retrieved.Confidence)
+	assert.Zero(t, retrieved.Confidence)
 }
 
 func TestTranscriptionWithConfidenceZero(t *testing.T) {
@@ -172,7 +172,7 @@ func TestTranscriptionWithConfidenceZero(t *testing.T) {
 	retrieved, err := repo.GetByID(ctx, "test-id")
 	require.NoError(t, err)
 
-	assert.Equal(t, float64(0.0), retrieved.Confidence)
+	assert.Zero(t, retrieved.Confidence)
 }
 
 func TestTranscriptionWithMaxConfidence(t *testing.T) {
@@ -190,7 +190,7 @@ func TestTranscriptionWithMaxConfidence(t *testing.T) {
 	retrieved, err := repo.GetByID(ctx, "test-id")
 	require.NoError(t, err)
 
-	assert.Equal(t, float64(1.0), retrieved.Confidence)
+	assert.InEpsilon(t, 1.0, retrieved.Confidence, 1e-9)
 }
 
 func TestCreateTranscriptionWithMultipleSegments(t *testing.T) {
@@ -249,7 +249,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 	db, err := sql.Open("sqlite", ":memory:")
 	require.NoError(t, err)
 
-	err = db.Ping()
+	err = db.PingContext(t.Context())
 	require.NoError(t, err)
 
 	err = createTranscriptionTable(db)
@@ -275,7 +275,7 @@ func createTranscriptionTable(db *sql.DB) error {
 			UNIQUE(session_id, segment_index)
 		)
 	`
-	_, err := db.Exec(query)
+	_, err := db.ExecContext(context.Background(), query)
 	return err
 }
 

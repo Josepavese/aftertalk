@@ -25,19 +25,13 @@ type RetryConfig struct {
 // WebhookConfig mirrors the relevant subset of config.WebhookConfig for the
 // minutes service. See config.WebhookConfig for full documentation.
 type WebhookConfig struct {
-	URL     string
-	Timeout time.Duration
-	// Mode: "push" (default) or "notify_pull". See config.WebhookConfig.
-	Mode string
-	// Secret is the HMAC-SHA256 signing key for notify_pull notifications.
-	Secret string
-	// TokenTTL is how long a pull token remains valid (default: 1h).
-	TokenTTL time.Duration
-	// DeleteOnPull removes minutes + transcriptions after a successful pull.
-	// Defaults to true when Mode = "notify_pull".
+	URL          string
+	Mode         string
+	Secret       string
+	PullBaseURL  string
+	Timeout      time.Duration
+	TokenTTL     time.Duration
 	DeleteOnPull bool
-	// PullBaseURL is the public base URL used to build the retrieval URL.
-	PullBaseURL string
 }
 
 type Service struct {
@@ -103,7 +97,9 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 	if strings.TrimSpace(transcriptionText) == "" {
 		logging.Warnf("Session %s has no transcription text; storing empty minutes", sessionID)
 		m.MarkReady()
-		s.repo.Update(ctx, m)
+		if err := s.repo.Update(ctx, m); err != nil {
+			logging.Errorf("Failed to update minutes: %v", err)
+		}
 		return m, nil
 	}
 
@@ -134,14 +130,18 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 
 	if err != nil {
 		m.MarkError()
-		s.repo.Update(ctx, m)
+		if updateErr := s.repo.Update(ctx, m); updateErr != nil {
+			logging.Errorf("Failed to update minutes: %v", updateErr)
+		}
 		return nil, fmt.Errorf("failed to generate minutes after %d retries: %w", s.retryConfig.MaxRetries+1, err)
 	}
 
 	parsed, err := llm.ParseMinutesDynamic(response)
 	if err != nil {
 		m.MarkError()
-		s.repo.Update(ctx, m)
+		if updateErr := s.repo.Update(ctx, m); updateErr != nil {
+			logging.Errorf("Failed to update minutes: %v", updateErr)
+		}
 		return nil, fmt.Errorf("failed to parse LLM response: %w", err)
 	}
 
@@ -154,7 +154,7 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 	}
 
 	logging.Infof("Minutes generated successfully for session %s", sessionID)
-	go s.deliverWebhook(sessionID, m)
+	go s.deliverWebhook(sessionID, m) //nolint:contextcheck,gosec // webhook delivery is intentionally fire-and-forget, must outlive the request context
 
 	return m, nil
 }
@@ -198,7 +198,9 @@ func (s *Service) deliverWebhook(sessionID string, m *Minutes) {
 	}
 	logging.Infof("Webhook delivered for session %s", sessionID)
 	m.MarkDelivered()
-	s.repo.Update(context.Background(), m)
+	if updateErr := s.repo.Update(context.Background(), m); updateErr != nil {
+		logging.Errorf("Failed to update minutes after delivery: %v", updateErr)
+	}
 }
 
 // deliverNotification implements the notify_pull delivery strategy:

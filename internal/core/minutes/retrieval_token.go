@@ -3,11 +3,14 @@ package minutes
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
 
-// RetrievalToken is a single-use, time-limited credential that authorises one
+var errRetrievalTokenConsumed = errors.New("retrieval token not found or already consumed")
+
+// RetrievalToken is a single-use, time-limited credential that authorizes one
 // GET /v1/minutes/pull/{id} request.
 //
 // Security properties:
@@ -16,11 +19,11 @@ import (
 //   - opaque: the token ID is a UUIDv4 — no information about the session is
 //     embedded, so intercepting a notification webhook reveals nothing on its own
 type RetrievalToken struct {
+	ExpiresAt time.Time
+	CreatedAt time.Time
+	UsedAt    *time.Time
 	ID        string
 	MinutesID string
-	ExpiresAt time.Time
-	UsedAt    *time.Time
-	CreatedAt time.Time
 }
 
 // CreateRetrievalToken inserts a new retrieval token into the DB.
@@ -68,7 +71,7 @@ func (r *MinutesRepository) ConsumeToken(ctx context.Context, tokenID string) (*
 	}
 	if affected == 0 {
 		// Intentionally vague — covers not-found, already-used, and expired.
-		return nil, fmt.Errorf("retrieval token not found or already consumed")
+		return nil, errRetrievalTokenConsumed
 	}
 
 	// Fetch the row to return MinutesID to the caller.
@@ -84,11 +87,16 @@ func (r *MinutesRepository) ConsumeToken(ctx context.Context, tokenID string) (*
 		return nil, fmt.Errorf("retrieve token after consume: %w", err)
 	}
 
-	t.ExpiresAt, _ = time.Parse(time.RFC3339, expiresAt)
-	t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	if parsed, err := time.Parse(time.RFC3339, expiresAt); err == nil {
+		t.ExpiresAt = parsed
+	}
+	if parsed, err := time.Parse(time.RFC3339, createdAt); err == nil {
+		t.CreatedAt = parsed
+	}
 	if usedAt.Valid {
-		u, _ := time.Parse(time.RFC3339, usedAt.String)
-		t.UsedAt = &u
+		if u, err := time.Parse(time.RFC3339, usedAt.String); err == nil {
+			t.UsedAt = &u
+		}
 	}
 
 	return &t, nil

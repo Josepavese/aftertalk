@@ -46,7 +46,7 @@ func TestNewTranscription(t *testing.T) {
 	assert.Equal(t, 0, transcription.StartMs)
 	assert.Equal(t, 1000, transcription.EndMs)
 	assert.Equal(t, "Hello world", transcription.Text)
-	assert.Equal(t, "", transcription.Provider)
+	assert.Empty(t, transcription.Provider)
 	assert.Equal(t, StatusPending, transcription.Status)
 	assert.WithinDuration(t, now, transcription.CreatedAt, time.Second)
 }
@@ -55,7 +55,7 @@ func TestTranscriptionSetConfidence(t *testing.T) {
 	transcription := NewTranscription("id", "session", 0, "host", 0, 1000, "Hello")
 	transcription.SetConfidence(0.95)
 
-	assert.Equal(t, float64(0.95), transcription.Confidence)
+	assert.InEpsilon(t, 0.95, transcription.Confidence, 1e-9)
 }
 
 func TestTranscriptionSetProvider(t *testing.T) {
@@ -122,8 +122,8 @@ func TestTranscriptionFieldValidation(t *testing.T) {
 	now := time.Now().UTC()
 
 	tests := []struct {
-		name          string
 		transcription *Transcription
+		name          string
 		expectValid   bool
 	}{
 		{

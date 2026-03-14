@@ -14,6 +14,8 @@ import (
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 )
 
+var errTestTranscription = errors.New("transcription error")
+
 type MockSTTProvider struct {
 	mock.Mock
 }
@@ -23,7 +25,7 @@ func (m *MockSTTProvider) Transcribe(ctx context.Context, audioData *stt.AudioDa
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*stt.TranscriptionResult), args.Error(1)
+	return args.Get(0).(*stt.TranscriptionResult), args.Error(1) //nolint:forcetypeassert
 }
 
 func (m *MockSTTProvider) Name() string {
@@ -100,7 +102,7 @@ func TestTranscribeAudio_Success(t *testing.T) {
 		assert.Equal(t, expectedSegments[i].Text, transcription.Text)
 		assert.Equal(t, expectedSegments[i].StartMs, transcription.StartMs)
 		assert.Equal(t, expectedSegments[i].EndMs, transcription.EndMs)
-		assert.Equal(t, expectedSegments[i].Confidence, transcription.Confidence)
+		assert.InEpsilon(t, expectedSegments[i].Confidence, transcription.Confidence, 1e-9)
 		assert.Equal(t, "mock-provider", transcription.Provider)
 		assert.Equal(t, StatusReady, transcription.Status)
 		assert.Equal(t, i, transcription.SegmentIndex)
@@ -150,7 +152,7 @@ func TestTranscribeAudio_RetryMultipleFailures(t *testing.T) {
 	expectedResult.AddSegment(expectedSegments[0])
 
 	// Fail first 2 attempts, succeed on 3rd
-	mockProvider.On("Transcribe", ctx, audioData).Return(nil, errors.New("transcription error")).Times(2)
+	mockProvider.On("Transcribe", ctx, audioData).Return(nil, errTestTranscription).Times(2)
 	mockProvider.On("Transcribe", ctx, audioData).Return(expectedResult, nil)
 
 	service := NewService(repo, mockProvider, retryConfig)

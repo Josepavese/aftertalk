@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -12,6 +13,16 @@ import (
 	"github.com/Josepavese/aftertalk/pkg/audio"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
 	"github.com/google/uuid"
+)
+
+var (
+	errAtLeast2Participants     = errors.New("at least 2 participants required")
+	errParticipantCountMismatch = errors.New("participant count mismatch")
+	errCannotDeleteActive       = errors.New("cannot delete an active session; end it first")
+	errTokenNotFoundExpired     = errors.New("token not found or expired")
+	errTokenAlreadyUsed         = errors.New("token already used")
+	errTokenExpired             = errors.New("token expired")
+	errParticipantNotFound      = errors.New("participant not found")
 )
 
 type AudioData struct {
@@ -47,26 +58,23 @@ const InactivityTimeout = 10 * time.Minute
 type OnSessionEndFunc func(sessionID string)
 
 type Service struct {
-	repo          *SessionRepository
-	jwtManager    *jwt.JWTManager
-	sessionCache  *cache.SessionCache
-	tokenCache    *cache.TokenCache
-	audioBuffer   *cache.AudioBufferCache
-	transcription TranscriptionServiceInterface
-	minutes       MinutesServiceInterface
-	transcribeCh  chan *transcribeJob
-	chunkSizeMs   int
-	wg            sync.WaitGroup
-	opusDecoder   *audio.OpusDecoder
-	pcmConverter  *audio.PCMConverter
-	templates     map[string]config.TemplateConfig // templateID → template
-
-	jwtExpiration time.Duration // token lifetime, from config.JWT.Expiration
-
+	transcription    TranscriptionServiceInterface
+	minutes          MinutesServiceInterface
+	templates        map[string]config.TemplateConfig
+	repo             *SessionRepository
+	audioBuffer      *cache.AudioBufferCache
+	sessionCache     *cache.SessionCache
+	jwtManager       *jwt.JWTManager
+	transcribeCh     chan *transcribeJob
+	onSessionEnd     OnSessionEndFunc
+	inactivityTimers map[string]*time.Timer
+	opusDecoder      *audio.OpusDecoder
+	pcmConverter     *audio.PCMConverter
+	tokenCache       *cache.TokenCache
+	wg               sync.WaitGroup
+	jwtExpiration    time.Duration
+	chunkSizeMs      int
 	inactivityMu     sync.Mutex
-	inactivityTimers map[string]*time.Timer // sessionID → timer
-
-	onSessionEnd OnSessionEndFunc // optional hook called when a session ends
 }
 
 // SetOnSessionEnd registers a callback invoked when any session is ended.
@@ -185,8 +193,8 @@ func (s *Service) convertToPCM16k(opusData []byte) ([]byte, error) {
 
 	out := make([]byte, len(resampled)*2)
 	for i, sample := range resampled {
-		out[i*2] = byte(sample)
-		out[i*2+1] = byte(sample >> 8)
+		out[i*2] = byte(sample)         //nolint:gosec // intentional little-endian PCM byte extraction
+		out[i*2+1] = byte(sample >> 8)  //nolint:gosec // intentional little-endian PCM byte extraction
 	}
 
 	return out, nil
@@ -230,10 +238,10 @@ func (s *Service) cancelInactivityTimer(sessionID string) {
 }
 
 type CreateSessionRequest struct {
-	ParticipantCount int                  `json:"participant_count"`
-	Participants     []ParticipantRequest `json:"participants"`
 	TemplateID       string               `json:"template_id,omitempty"`
 	Metadata         string               `json:"metadata,omitempty"`
+	Participants     []ParticipantRequest `json:"participants"`
+	ParticipantCount int                  `json:"participant_count"`
 }
 
 type ParticipantRequest struct {
@@ -256,11 +264,11 @@ type ParticipantResponse struct {
 
 func (s *Service) CreateSession(ctx context.Context, req *CreateSessionRequest) (*CreateSessionResponse, error) {
 	if req.ParticipantCount < 2 {
-		return nil, fmt.Errorf("at least 2 participants required")
+		return nil, errAtLeast2Participants
 	}
 
 	if len(req.Participants) != req.ParticipantCount {
-		return nil, fmt.Errorf("participant count mismatch")
+		return nil, errParticipantCountMismatch
 	}
 
 	sessionID := uuid.New().String()
@@ -274,7 +282,6 @@ func (s *Service) CreateSession(ctx context.Context, req *CreateSessionRequest) 
 	responses := make([]ParticipantResponse, 0, len(req.Participants))
 	for _, p := range req.Participants {
 		participantID := uuid.New().String()
-		tokenJTI := uuid.New().String()
 		tokenExpiresAt := time.Now().Add(s.jwtExpiration)
 
 		token, tokenJTI, err := s.jwtManager.Generate(sessionID, p.UserID, p.Role)
@@ -336,7 +343,7 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("session not found: %w", err)
 	}
 	if sess.Status == StatusActive {
-		return fmt.Errorf("cannot delete an active session; end it first")
+		return errCannotDeleteActive
 	}
 	s.cancelInactivityTimer(sessionID)
 	return s.repo.Delete(ctx, sessionID)
@@ -369,7 +376,7 @@ func (s *Service) EndSession(ctx context.Context, sessionID string) error {
 		s.onSessionEnd(sessionID)
 	}
 
-	go func() {
+	go func() { //nolint:contextcheck // post-session processing must outlive the request context
 		s.processRemainingAudio(sessionID)
 		s.generateMinutesForSession(sessionID)
 	}()
@@ -490,7 +497,7 @@ func (s *Service) ValidateParticipant(ctx context.Context, jti string) (*Partici
 	if _, exists := s.tokenCache.GetToken(jti); !exists {
 		participant, err := s.repo.GetParticipantByJTI(ctx, jti)
 		if err != nil || participant == nil {
-			return nil, fmt.Errorf("token not found or expired")
+			return nil, errTokenNotFoundExpired
 		}
 		s.tokenCache.SetToken(jti, participant.SessionID, s.jwtExpiration)
 	}
@@ -501,11 +508,11 @@ func (s *Service) ValidateParticipant(ctx context.Context, jti string) (*Partici
 	}
 
 	if participant.TokenUsed {
-		return nil, fmt.Errorf("token already used")
+		return nil, errTokenAlreadyUsed
 	}
 
 	if !participant.IsTokenValid() {
-		return nil, fmt.Errorf("token expired")
+		return nil, errTokenExpired
 	}
 
 	return participant, nil
@@ -523,7 +530,7 @@ func (s *Service) ConnectParticipant(ctx context.Context, participantID string) 
 			return err
 		}
 		if len(participants) == 0 {
-			return fmt.Errorf("participant not found")
+			return errParticipantNotFound
 		}
 		participant = participants[0]
 	}
@@ -609,7 +616,9 @@ func (s *Service) ProcessAudioChunk(sessionID, participantID string, payload []b
 	stream, err := s.repo.GetAudioStreamByParticipant(context.Background(), participantID)
 	if err == nil && stream != nil {
 		stream.AddChunk()
-		s.repo.UpdateAudioStream(context.Background(), stream)
+		if updateErr := s.repo.UpdateAudioStream(context.Background(), stream); updateErr != nil {
+			logging.Errorf("Failed to update audio stream: %v", updateErr)
+		}
 	}
 
 	return nil

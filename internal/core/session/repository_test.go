@@ -15,11 +15,11 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("failed to open test database: %v", err)
 	}
 
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(t.Context()); err != nil {
 		t.Fatalf("failed to ping test database: %v", err)
 	}
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(t.Context(), `
 		CREATE TABLE sessions (
 			id TEXT PRIMARY KEY,
 			status TEXT NOT NULL,
@@ -34,7 +34,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("failed to create sessions table: %v", err)
 	}
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(t.Context(), `
 		CREATE TABLE participants (
 			id TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL,
@@ -52,7 +52,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("failed to create participants table: %v", err)
 	}
 
-	_, err = db.Exec(`
+	_, err = db.ExecContext(t.Context(), `
 		CREATE TABLE audio_streams (
 			id TEXT PRIMARY KEY,
 			participant_id TEXT NOT NULL,
@@ -95,8 +95,8 @@ func TestSessionRepository_Create(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
 		session *Session
+		name    string
 		wantErr bool
 	}{
 		{
@@ -356,4 +356,3 @@ func TestSessionRepository_GetParticipantByJTI(t *testing.T) {
 		})
 	}
 }
-

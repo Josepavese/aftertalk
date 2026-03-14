@@ -13,13 +13,13 @@ const (
 )
 
 type Session struct {
-	ID               string        `json:"id"`
-	Status           SessionStatus `json:"status"`
 	CreatedAt        time.Time     `json:"created_at"`
 	EndedAt          *time.Time    `json:"ended_at,omitempty"`
-	ParticipantCount int           `json:"participant_count"`
+	ID               string        `json:"id"`
+	Status           SessionStatus `json:"status"`
 	TemplateID       string        `json:"template_id,omitempty"`
 	Metadata         string        `json:"metadata,omitempty"`
+	ParticipantCount int           `json:"participant_count"`
 }
 
 func NewSession(id string, participantCount int, templateID string) *Session {
@@ -51,15 +51,15 @@ func (s *Session) Fail() {
 }
 
 type Participant struct {
+	TokenExpiresAt time.Time  `json:"token_expires_at"`
+	ConnectedAt    *time.Time `json:"connected_at,omitempty"`
+	DisconnectedAt *time.Time `json:"disconnected_at,omitempty"`
 	ID             string     `json:"id"`
 	SessionID      string     `json:"session_id"`
 	UserID         string     `json:"user_id"`
 	Role           string     `json:"role"`
 	TokenJTI       string     `json:"token_jti"`
-	TokenExpiresAt time.Time  `json:"token_expires_at"`
 	TokenUsed      bool       `json:"token_used"`
-	ConnectedAt    *time.Time `json:"connected_at,omitempty"`
-	DisconnectedAt *time.Time `json:"disconnected_at,omitempty"`
 }
 
 func NewParticipant(id, sessionID, userID, role, tokenJTI string, tokenExpiresAt time.Time) *Participant {
@@ -98,16 +98,16 @@ const (
 )
 
 type AudioStream struct {
+	StartedAt        time.Time         `json:"started_at"`
+	EndedAt          *time.Time        `json:"ended_at,omitempty"`
 	ID               string            `json:"id"`
 	ParticipantID    string            `json:"participant_id"`
 	Codec            string            `json:"codec"`
+	Status           AudioStreamStatus `json:"status"`
 	SampleRate       int               `json:"sample_rate"`
 	Channels         int               `json:"channels"`
 	ChunkSizeSeconds float64           `json:"chunk_size_seconds"`
-	StartedAt        time.Time         `json:"started_at"`
-	EndedAt          *time.Time        `json:"ended_at,omitempty"`
 	ChunksReceived   int               `json:"chunks_received"`
-	Status           AudioStreamStatus `json:"status"`
 }
 
 func NewAudioStream(id, participantID string, chunkSizeSeconds float64) *AudioStream {

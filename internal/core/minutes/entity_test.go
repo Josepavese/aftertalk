@@ -10,10 +10,10 @@ import (
 )
 
 func TestMinutesStatusConstants(t *testing.T) {
-	assert.Equal(t, MinutesStatus("pending"), MinutesStatusPending)
-	assert.Equal(t, MinutesStatus("ready"), MinutesStatusReady)
-	assert.Equal(t, MinutesStatus("delivered"), MinutesStatusDelivered)
-	assert.Equal(t, MinutesStatus("error"), MinutesStatusError)
+	assert.Equal(t, MinutesStatusPending, MinutesStatus("pending"))
+	assert.Equal(t, MinutesStatusReady, MinutesStatus("ready"))
+	assert.Equal(t, MinutesStatusDelivered, MinutesStatus("delivered"))
+	assert.Equal(t, MinutesStatusError, MinutesStatus("error"))
 }
 
 func TestNewMinutes(t *testing.T) {
@@ -57,7 +57,7 @@ func TestMinutesMethods(t *testing.T) {
 		assert.NotZero(t, m.DeliveredAt)
 
 		if !before.IsZero() {
-			assert.True(t, m.DeliveredAt.Sub(before) >= 0)
+			assert.GreaterOrEqual(t, m.DeliveredAt.Sub(before), time.Duration(0))
 		}
 	})
 

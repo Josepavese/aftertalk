@@ -12,17 +12,17 @@ const (
 )
 
 type Transcription struct {
+	CreatedAt    time.Time           `json:"created_at"`
 	ID           string              `json:"id"`
 	SessionID    string              `json:"session_id"`
-	SegmentIndex int                 `json:"segment_index"`
 	Role         string              `json:"role"`
+	Text         string              `json:"text"`
+	Provider     string              `json:"provider"`
+	Status       TranscriptionStatus `json:"status"`
+	SegmentIndex int                 `json:"segment_index"`
 	StartMs      int                 `json:"start_ms"`
 	EndMs        int                 `json:"end_ms"`
-	Text         string              `json:"text"`
 	Confidence   float64             `json:"confidence,omitempty"`
-	Provider     string              `json:"provider"`
-	CreatedAt    time.Time           `json:"created_at"`
-	Status       TranscriptionStatus `json:"status"`
 }
 
 func NewTranscription(id, sessionID string, segmentIndex int, role string, startMs, endMs int, text string) *Transcription {
