@@ -22,9 +22,9 @@
 - **Cost efficiency**: 75% riduzione costi cloud per stesso carico
 
 **Alternatives Considered**:
-- **Node.js + Python**: Architettura a 3 servizi, overhead comunicazione, costi 4x superiori
-- **Rust**: Performance superiore, ma curva di apprendimento ripida e development velocity inferiore
-- **Full Node.js**: Coerenza tecnologica, ma performance inferiori per WebRTC e AI processing
+- **Node.js + Python**: 3-service architecture, communication overhead, 4x higher costs
+- **Rust**: Superior performance, but steep learning curve and lower development velocity
+- **Full Node.js**: Technological consistency, but lower performance for WebRTC and AI processing
 
 **Best Practices**:
 - Use Go modules for dependency management
@@ -84,9 +84,9 @@ peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPRecei
 - Gin: Faster, but custom context type (less idiomatic)
 
 **Alternatives Considered**:
-- **Gin**: Performance superiori, ma meno idiomatico
-- **Echo**: Buono, ma più features del necessario
-- **Fiber**: Express-like API, ma non usa standard library types
+- **Gin**: Superior performance, but less idiomatic
+- **Echo**: Good, but more features than necessary
+- **Fiber**: Express-like API, but does not use standard library types
 
 **Best Practices**:
 ```go
@@ -121,9 +121,9 @@ mux.HandleFunc("GET /v1/sessions/{id}", h.GetSession)
 - Active maintenance
 
 **Alternatives Considered**:
-- **lib/pq**: Stable, ma meno performante
-- **GORM**: ORM, ma abstraction layer non necessario
-- **sqlc**: Type-safe queries, ma build step aggiuntivo
+- **lib/pq**: Stable, but less performant
+- **GORM**: ORM, but abstraction layer not necessary
+- **sqlc**: Type-safe queries, but additional build step
 
 **Best Practices**:
 ```go
@@ -270,8 +270,8 @@ func (o *OpenAI) Generate(ctx context.Context, prompt string, config LLMConfig) 
 - Lightweight
 
 **Alternatives Considered**:
-- **Viper**: Popular, ma heavy reflection usage
-- **Envconfig**: Simple, ma env-only
+- **Viper**: Popular, but heavy reflection usage
+- **Envconfig**: Simple, but env-only
 - **Standard library**: Manual parsing
 
 **Best Practices**:
@@ -325,8 +325,8 @@ func LoadConfig() (*Config, error) {
 - Industry standard
 
 **Alternatives Considered**:
-- **Zerolog**: Faster, but less features
-- **Logrus**: Popular, ma slower
+- **Zerolog**: Faster, but fewer features
+- **Logrus**: Popular, but slower
 - **Standard library**: Unstructured
 
 **Best Practices**:

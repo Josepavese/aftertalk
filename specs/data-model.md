@@ -6,7 +6,7 @@
 
 ## Core Entities
 
-### 1. Session (Sessione)
+### 1. Session
 
 **Purpose**: Represents a conversational session with audio capture and processing
 
@@ -36,7 +36,7 @@
 
 **Storage**: SQLite table `sessions`
 
-### 2. Participant (Partecipante)
+### 2. Participant
 
 **Purpose**: Represents an actor in the conversation with abstract role
 
@@ -70,7 +70,7 @@
 
 **Storage**: SQLite table `participants`
 
-### 3. AudioStream (Stream Audio)
+### 3. AudioStream
 
 **Purpose**: Represents the audio stream from a participant (metadata only, no audio storage)
 
@@ -104,7 +104,7 @@
 
 **Note**: Actual audio data is processed in-memory and never persisted to disk/database.
 
-### 4. Transcription (Trascrizione)
+### 4. Transcription
 
 **Purpose**: Represents the text conversion of audio with timestamps and role assignment
 
@@ -142,7 +142,7 @@
 
 **Retention Policy**: Configurable retention period (default: 90 days), automatic cleanup via scheduled job.
 
-### 5. Minutes (Minuta)
+### 5. Minutes
 
 **Purpose**: Represents the structured summary of the conversation with citations
 
@@ -179,7 +179,7 @@
 
 **Storage**: SQLite table `minutes`
 
-### 6. MinutesHistory (Cronologia Minuta)
+### 6. MinutesHistory
 
 **Purpose**: Stores previous versions of minutes for audit trail
 
@@ -192,7 +192,7 @@
 | version | Integer | Yes | Version number | Copied from minutes.version |
 | content | JSONB | Yes | Full minutes content at this version | Complete minutes JSON |
 | edited_at | Timestamp | Yes | When this version was created | ISO 8601, UTC |
-| edited_by | String | No | Who made the edit (if applicable) | User identifier from layer applicativo |
+| edited_by | String | No | Who made the edit (if applicable) | User identifier from application layer |
 
 **Relationships**:
 - Many-to-one with Minutes
@@ -206,7 +206,7 @@
 
 **Retention Policy**: Same as transcriptions (configurable, default 90 days).
 
-### 7. WebhookEvent (Evento Webhook)
+### 7. WebhookEvent
 
 **Purpose**: Tracks webhook delivery attempts and status for idempotency
 
@@ -240,7 +240,7 @@
 
 ## In-Memory Cache Structures
 
-SQLite è il database primario per tutti i dati persistenti. Per performance, usiamo cache in-memory Go per:
+SQLite is the primary database for all persistent data. For performance, we use in-memory Go caches for:
 
 ### 1. Session State Cache
 
