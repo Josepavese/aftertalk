@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewProcessingQueue(t *testing.T) {
@@ -67,7 +68,7 @@ func TestProcessingQueue_EnqueueFullQueue(t *testing.T) {
 			Payload:   json.RawMessage(`{"test": "data"}`),
 		}
 		err := q.Enqueue(job)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	assert.Equal(t, 4, q.Size())
@@ -95,7 +96,7 @@ func TestProcessingQueue_EnqueueMultipleTypes(t *testing.T) {
 			Payload:   json.RawMessage(`{"test": "data"}`),
 		}
 		err := q.Enqueue(job)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	assert.Equal(t, 4, q.Size())
@@ -329,7 +330,7 @@ func TestProcessingQueue_MultipleSessions(t *testing.T) {
 			Payload:   json.RawMessage(`{"test": "data"}`),
 		}
 		err := q.Enqueue(job)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	for _, sessionID := range sessions {
@@ -355,9 +356,9 @@ func TestProcessingQueue_EmptyJob(t *testing.T) {
 
 	dequeued, exists := q.Dequeue()
 	assert.True(t, exists)
-	assert.Equal(t, "", dequeued.Type)
-	assert.Equal(t, "", dequeued.SessionID)
-	assert.Equal(t, json.RawMessage(nil), dequeued.Payload)
+	assert.Empty(t, dequeued.Type)
+	assert.Empty(t, dequeued.SessionID)
+	assert.Empty(t, dequeued.Payload)
 }
 
 func TestProcessingQueue_NilPayload(t *testing.T) {
@@ -434,7 +435,7 @@ func TestProcessingQueue_HugeQueue(t *testing.T) {
 			Payload:   json.RawMessage(`{"test": "data"}`),
 		}
 		err := q.Enqueue(job)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	assert.Equal(t, 1000, q.Size())
@@ -464,7 +465,7 @@ func TestProcessingQueue_LargePayloads(t *testing.T) {
 		}
 
 		err := q.Enqueue(job)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 
 	assert.Equal(t, 100, q.Size())
@@ -472,7 +473,7 @@ func TestProcessingQueue_LargePayloads(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		job, exists := q.Dequeue()
 		assert.True(t, exists)
-		assert.Equal(t, 1000, len(job.Payload))
+		assert.Len(t, job.Payload, 1000)
 	}
 
 	assert.Equal(t, 0, q.Size())

@@ -2,15 +2,21 @@ package cache
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
 
+var (
+	errQueueClosed = errors.New("queue is closed")
+	errQueueFull   = errors.New("queue is full")
+)
+
 type SessionState struct {
+	StartedAt          time.Time `json:"started_at"`
 	SessionID          string    `json:"session_id"`
 	Status             string    `json:"status"`
-	StartedAt          time.Time `json:"started_at"`
 	ParticipantCount   int       `json:"participant_count"`
 	ActiveParticipants int       `json:"active_participants"`
 }
@@ -88,7 +94,6 @@ func (tc *TokenCache) UseToken(jti string, sessionID string) bool {
 }
 
 type ProcessingQueue struct {
-	mu        sync.Mutex
 	jobs      chan Job
 	quit      chan struct{}
 	closeOnce sync.Once
@@ -114,14 +119,14 @@ func NewProcessingQueue(workers int) *ProcessingQueue {
 func (q *ProcessingQueue) Enqueue(job Job) error {
 	select {
 	case <-q.quit:
-		return fmt.Errorf("queue is closed")
+		return errQueueClosed
 	default:
 	}
 	select {
 	case q.jobs <- job:
 		return nil
 	default:
-		return fmt.Errorf("queue is full")
+		return errQueueFull
 	}
 }
 
@@ -155,16 +160,17 @@ func (q *ProcessingQueue) Size() int {
 }
 
 type AudioBuffer struct {
-	Data          []byte   // concatenated Opus payloads (legacy, kept for compatibility)
-	Frames        [][]byte // individual Opus RTP payloads, one per RTP packet
-	DurationMs    int
 	StartTime     time.Time
 	ParticipantID string
 	Role          string
+	Data          []byte
+	Frames        [][]byte
+	DurationMs    int
 }
 
 type AudioBufferCache struct {
 	*Cache
+
 	mu sync.RWMutex
 }
 
@@ -208,7 +214,11 @@ func (abc *AudioBufferCache) AppendToBuffer(sessionID, participantID, role strin
 
 	var buffer *AudioBuffer
 	if existing, exists := abc.Get(key); exists {
-		buffer = existing.(*AudioBuffer)
+		buf, ok := existing.(*AudioBuffer)
+		if !ok {
+			buf = &AudioBuffer{Data: make([]byte, 0), StartTime: time.Now(), ParticipantID: participantID}
+		}
+		buffer = buf
 	} else {
 		buffer = &AudioBuffer{
 			Data:          make([]byte, 0, len(chunk)*3),

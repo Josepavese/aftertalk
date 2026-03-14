@@ -12,4 +12,4 @@ import (
 var raw string
 
 // Current is the application version (e.g. "1.0.0").
-var Current = strings.TrimSpace(raw)
+var Current = strings.TrimSpace(raw) //nolint:gochecknoglobals // embed-initialized version variable

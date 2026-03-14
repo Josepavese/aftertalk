@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -38,7 +39,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Print(out)
+			fmt.Print(out) //nolint:forbidigo // intentional stdout output for CLI --dump-defaults
 			return
 		}
 	}
@@ -57,7 +58,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := logging.Init(cfg.Logging.Level, cfg.Logging.Format); err != nil {
+	if err = logging.Init(cfg.Logging.Level, cfg.Logging.Format); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logging: %v\n", err)
 		os.Exit(1)
 	}
@@ -75,14 +76,14 @@ func main() {
 	}
 	defer func() {
 		logger.Info("Closing database connection...")
-		if err := db.Close(); err != nil {
-			logger.Errorf("Failed to close database: %v", err)
+		if closeErr := db.Close(); closeErr != nil {
+			logger.Errorf("Failed to close database: %v", closeErr)
 		}
 	}()
 
 	logger.Infof("Database initialized: %s", cfg.Database.Path)
 
-	if err := runMigrations(ctx, db); err != nil {
+	if err = runMigrations(ctx, db); err != nil {
 		logger.Fatalf("Failed to run migrations: %v", err)
 	}
 	migrateWebhookEvents(ctx, db)      // idempotent: adds payload + next_retry_at columns
@@ -229,7 +230,8 @@ func main() {
 	// Start embedded TURN server if the "embedded" ICE provider is configured.
 	var turnServer *webrtc.TURNServer
 	if cfg.WebRTC.TURN.Enabled || cfg.WebRTC.ICEProviderName == "embedded" {
-		ts, err := webrtc.StartTURNServer(ctx, cfg.WebRTC.TURN)
+		var ts *webrtc.TURNServer
+		ts, err = webrtc.StartTURNServer(ctx, cfg.WebRTC.TURN)
 		if err != nil {
 			logger.Fatalf("Failed to start TURN server: %v", err)
 		}
@@ -251,7 +253,7 @@ func main() {
 
 	go func() {
 		logger.Infof("HTTP server listening on %s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
-		if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := apiServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Fatalf("HTTP server error: %v", err)
 		}
 	}()
@@ -404,7 +406,12 @@ func checkWhisperHealth(baseURL string) {
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
 	healthURL := strings.TrimRight(baseURL, "/") + "/health"
-	resp, err := client.Get(healthURL)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, healthURL, nil)
+	if err != nil {
+		logging.Warnf("whisper-local health check: build request: %v", err)
+		return
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		logging.Warnf("whisper-local server unreachable at %s: %v", baseURL, err)
 		logging.Warnf("Transcriptions will fail until whisper_server.py is running (run: aftertalk start)")
@@ -428,10 +435,12 @@ func migrateWebhookEvents(ctx context.Context, db *sqlite.DB) {
 	}
 	for _, stmt := range upgrades {
 		// Ignore "duplicate column" errors (SQLite returns them as generic errors).
-		_ = db.RunInTx(ctx, func(tx *sql.Tx) error {
-			_, err := tx.ExecContext(ctx, stmt)
-			return err
-		})
+		if err := db.RunInTx(ctx, func(tx *sql.Tx) error {
+			_, innerErr := tx.ExecContext(ctx, stmt)
+			return innerErr
+		}); err != nil {
+			logging.Warnf("Schema upgrade skipped (column may already exist): %v", err)
+		}
 	}
 }
 
@@ -445,8 +454,8 @@ func migrateWebhookEvents(ctx context.Context, db *sqlite.DB) {
 //   - ON DELETE CASCADE means tokens are auto-removed when the minutes row is
 //     deleted (e.g. by PurgeMinutes after a successful pull).
 func migrateRetrievalTokens(ctx context.Context, db *sqlite.DB) {
-	_ = db.RunInTx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `
+	if err := db.RunInTx(ctx, func(tx *sql.Tx) error {
+		_, innerErr := tx.ExecContext(ctx, `
 			CREATE TABLE IF NOT EXISTS retrieval_tokens (
 				id          TEXT PRIMARY KEY,
 				minutes_id  TEXT NOT NULL REFERENCES minutes(id) ON DELETE CASCADE,
@@ -457,18 +466,22 @@ func migrateRetrievalTokens(ctx context.Context, db *sqlite.DB) {
 			CREATE INDEX IF NOT EXISTS idx_retrieval_tokens_minutes ON retrieval_tokens(minutes_id);
 			CREATE INDEX IF NOT EXISTS idx_retrieval_tokens_expires ON retrieval_tokens(expires_at);
 		`)
-		return err
-	})
+		return innerErr
+	}); err != nil {
+		logging.Warnf("migrateRetrievalTokens: %v", err)
+	}
 }
 
 // migrateWebhookPayloadType adds the payload_type column to webhook_events,
 // needed to distinguish push-mode (MinutesPayload) from notify_pull-mode
 // (NotificationPayload) rows in the Retrier worker. Idempotent.
 func migrateWebhookPayloadType(ctx context.Context, db *sqlite.DB) {
-	_ = db.RunInTx(ctx, func(tx *sql.Tx) error {
-		// ADD COLUMN returns an error if the column already exists; ignore it.
-		_, err := tx.ExecContext(ctx,
+	// ADD COLUMN returns an error if the column already exists; ignore it.
+	if err := db.RunInTx(ctx, func(tx *sql.Tx) error {
+		_, innerErr := tx.ExecContext(ctx,
 			`ALTER TABLE webhook_events ADD COLUMN payload_type TEXT NOT NULL DEFAULT 'minutes'`)
-		return err
-	})
+		return innerErr
+	}); err != nil {
+		logging.Warnf("migrateWebhookPayloadType: column may already exist: %v", err)
+	}
 }

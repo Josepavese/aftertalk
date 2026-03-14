@@ -176,13 +176,13 @@ func TestCache_Values(t *testing.T) {
 	c.Set("key4", val4, 1*time.Hour)
 
 	testCases := []struct {
-		key    string
 		target interface{}
+		key    string
 	}{
-		{"key1", val1},
-		{"key2", val2},
-		{"key3", val3},
-		{"key4", val4},
+		{key: "key1", target: val1},
+		{key: "key2", target: val2},
+		{key: "key3", target: val3},
+		{key: "key4", target: val4},
 	}
 
 	for _, tc := range testCases {

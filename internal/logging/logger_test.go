@@ -58,7 +58,7 @@ func TestInit(t *testing.T) {
 
 func TestInitWithInvalidFormat(t *testing.T) {
 	err := Init("info", "invalid")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, Logger)
 }
 
@@ -75,10 +75,10 @@ func TestInitTwice(t *testing.T) {
 
 func TestLevelSwitching(t *testing.T) {
 	tests := []struct {
+		validate func(t *testing.T)
 		name     string
 		initial  string
 		second   string
-		validate func(t *testing.T)
 	}{
 		{
 			name:    "FromDebugToInfo",

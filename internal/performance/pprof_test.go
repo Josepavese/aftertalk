@@ -2,6 +2,7 @@ package performance
 
 import (
 	"context"
+	"errors"
 	"math/rand"
 	"net/http"
 	"net/http/pprof"
@@ -28,12 +29,13 @@ func TestMain(m *testing.M) {
 	mux.HandleFunc("/debug/pprof/threadcreate", pprof.Handler("threadcreate").ServeHTTP)
 
 	pprofServer = &http.Server{
-		Addr:    ":6060",
-		Handler: mux,
+		Addr:              ":6060",
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
-		if err := pprofServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := pprofServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			panic(err)
 		}
 	}()
@@ -123,7 +125,7 @@ func generateRandomString(length int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+		b[i] = letters[rand.Intn(len(letters))] //nolint:gosec // math/rand is fine for test data generation
 	}
 	return string(b)
 }

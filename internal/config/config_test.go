@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // validBase returns a Default() config with valid JWT secret and API key,
@@ -39,6 +40,7 @@ func TestConfigStructs(t *testing.T) {
 			Host: "0.0.0.0",
 		}
 		assert.Equal(t, 8081, cfg.Port)
+		assert.Equal(t, "0.0.0.0", cfg.Host)
 	})
 
 	t.Run("LoggingConfig", func(t *testing.T) {
@@ -110,6 +112,7 @@ func TestConfigStructs(t *testing.T) {
 		assert.Equal(t, 10, cfg.MaxConcurrentTranscriptions)
 		assert.Equal(t, 5, cfg.MaxConcurrentMinutesGenerations)
 		assert.Equal(t, 10*time.Minute, cfg.TranscriptionTimeout)
+		assert.Equal(t, 5*time.Minute, cfg.MinutesGenerationTimeout)
 	})
 
 	t.Run("SessionConfig", func(t *testing.T) {
@@ -137,7 +140,7 @@ func TestConfigStructs(t *testing.T) {
 			EnableProfiling: true,
 			ProfilingPort:   6060,
 		}
-		assert.Equal(t, true, cfg.EnableProfiling)
+		assert.True(t, cfg.EnableProfiling)
 		assert.Equal(t, 6060, cfg.ProfilingPort)
 	})
 }
@@ -160,14 +163,14 @@ func TestConfig_Default(t *testing.T) {
 	assert.Equal(t, 10, cfg.Processing.MaxConcurrentTranscriptions)
 	assert.Equal(t, 2*time.Hour, cfg.Session.MaxDuration)
 	assert.Equal(t, 90, cfg.Retention.TranscriptionDays)
-	assert.Equal(t, false, cfg.Performance.EnableProfiling)
+	assert.False(t, cfg.Performance.EnableProfiling)
 }
 
 func TestConfig_EmptyDatabasePath(t *testing.T) {
 	cfg := Default()
 	cfg.Database.Path = ""
 	err := validate(cfg)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "database path is required")
 }
 
@@ -190,7 +193,7 @@ func TestConfig_InvalidHTTPPort(t *testing.T) {
 			cfg.HTTP.Port = tc.port
 			err := validate(cfg)
 			if tc.error {
-				assert.Error(t, err)
+				require.Error(t, err)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -216,7 +219,7 @@ func TestConfig_InvalidWebSocketPort(t *testing.T) {
 			cfg.WebSocket.Port = tc.port
 			err := validate(cfg)
 			if tc.error {
-				assert.Error(t, err)
+				require.Error(t, err)
 			} else {
 				assert.NoError(t, err)
 			}
@@ -227,7 +230,7 @@ func TestConfig_InvalidWebSocketPort(t *testing.T) {
 func TestConfig_DefaultJWTSecret(t *testing.T) {
 	cfg := Default()
 	err := validate(cfg)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "JWT secret must be changed from default value")
 }
 
@@ -235,7 +238,7 @@ func TestConfig_DefaultAPIKey(t *testing.T) {
 	cfg := Default()
 	cfg.JWT.Secret = "valid-test-secret" // bypass JWT check to reach API key check
 	err := validate(cfg)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "API key must be changed from default value")
 }
 
@@ -271,7 +274,7 @@ func TestConfig_InvalidSTTProvider(t *testing.T) {
 	cfg := validBase()
 	cfg.STT.Provider = "invalid-provider"
 	err := validate(cfg)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid STT provider")
 }
 
@@ -291,7 +294,7 @@ func TestConfig_InvalidLLMProvider(t *testing.T) {
 	cfg := validBase()
 	cfg.LLM.Provider = "invalid-provider"
 	err := validate(cfg)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid LLM provider")
 }
 
@@ -331,35 +334,35 @@ func TestConfig_EdgeCases(t *testing.T) {
 		cfg := Default()
 		cfg.JWT.Expiration = 0
 		err := validate(cfg)
-		assert.Error(t, err)
+		require.Error(t, err)
 	})
 
 	t.Run("ZeroTimeout", func(t *testing.T) {
 		cfg := Default()
 		cfg.Webhook.Timeout = 0
 		err := validate(cfg)
-		assert.Error(t, err)
+		require.Error(t, err)
 	})
 
 	t.Run("EmptyWebhookURL", func(t *testing.T) {
 		cfg := Default()
 		cfg.Webhook.URL = ""
 		err := validate(cfg)
-		assert.Error(t, err)
+		require.Error(t, err)
 	})
 
 	t.Run("ZeroMaxConcurrent", func(t *testing.T) {
 		cfg := Default()
 		cfg.Processing.MaxConcurrentTranscriptions = 0
 		err := validate(cfg)
-		assert.Error(t, err)
+		require.Error(t, err)
 	})
 
 	t.Run("NegativeMaxConcurrent", func(t *testing.T) {
 		cfg := Default()
 		cfg.Processing.MaxConcurrentTranscriptions = -1
 		err := validate(cfg)
-		assert.Error(t, err)
+		require.Error(t, err)
 	})
 
 	t.Run("EmptyCredentialsPath", func(t *testing.T) {

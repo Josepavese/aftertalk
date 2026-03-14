@@ -15,7 +15,7 @@ func TestIncrementActiveConnections(t *testing.T) {
 	IncrementActiveConnections()
 	activeConnections := GetActiveConnectionsValue()
 
-	assert.Equal(t, float64(1), activeConnections)
+	assert.InEpsilon(t, float64(1), activeConnections, 1e-9)
 }
 
 func TestDecrementActiveConnections(t *testing.T) {
@@ -24,12 +24,12 @@ func TestDecrementActiveConnections(t *testing.T) {
 	IncrementActiveConnections()
 	activeConnections := GetActiveConnectionsValue()
 
-	assert.Equal(t, float64(1), activeConnections)
+	assert.InEpsilon(t, float64(1), activeConnections, 1e-9)
 
 	DecrementActiveConnections()
 	activeConnections = GetActiveConnectionsValue()
 
-	assert.Equal(t, float64(0), activeConnections)
+	assert.Zero(t, activeConnections)
 }
 
 func TestDecrementBeyondZero(t *testing.T) {
@@ -38,7 +38,7 @@ func TestDecrementBeyondZero(t *testing.T) {
 	DecrementActiveConnections()
 	activeConnections := GetActiveConnectionsValue()
 
-	assert.Equal(t, float64(-1), activeConnections)
+	assert.InDelta(t, float64(-1), activeConnections, 1e-9)
 }
 
 func TestMultipleIncrements(t *testing.T) {
@@ -49,7 +49,7 @@ func TestMultipleIncrements(t *testing.T) {
 	}
 
 	activeConnections := GetActiveConnectionsValue()
-	assert.Equal(t, float64(10), activeConnections)
+	assert.InEpsilon(t, float64(10), activeConnections, 1e-9)
 }
 
 func TestMixedIncrementsAndDecrements(t *testing.T) {
@@ -64,7 +64,7 @@ func TestMixedIncrementsAndDecrements(t *testing.T) {
 
 	// +1+1-1+1-1-1 = 0
 	activeConnections := GetActiveConnectionsValue()
-	assert.Equal(t, float64(0), activeConnections)
+	assert.Zero(t, activeConnections)
 }
 
 func TestSetQueueSize(t *testing.T) {
@@ -72,11 +72,11 @@ func TestSetQueueSize(t *testing.T) {
 
 	SetQueueSize(0)
 	queueSize := GetQueueSize()
-	assert.Equal(t, float64(0), queueSize)
+	assert.Zero(t, queueSize)
 
 	SetQueueSize(100)
 	queueSize = GetQueueSize()
-	assert.Equal(t, float64(100), queueSize)
+	assert.InEpsilon(t, float64(100), queueSize, 1e-9)
 
 	SetQueueSize(999)
 	queueSize = GetQueueSize()
@@ -173,14 +173,14 @@ func TestRequestDurationMultipleObservations(t *testing.T) {
 
 func TestAllCountersIndependence(t *testing.T) {
 	before := map[string]float64{
-		"SessionsCreated":          testutil.ToFloat64(SessionsCreated),
-		"SessionsEnded":            testutil.ToFloat64(SessionsEnded),
-		"TranscriptionsGenerated":  testutil.ToFloat64(TranscriptionsGenerated),
-		"TranscriptionErrors":      testutil.ToFloat64(TranscriptionErrors),
-		"MinutesGenerated":         testutil.ToFloat64(MinutesGenerated),
-		"MinutesErrors":            testutil.ToFloat64(MinutesErrors),
-		"WebhookSent":              testutil.ToFloat64(WebhookSent),
-		"WebhookErrors":            testutil.ToFloat64(WebhookErrors),
+		"SessionsCreated":         testutil.ToFloat64(SessionsCreated),
+		"SessionsEnded":           testutil.ToFloat64(SessionsEnded),
+		"TranscriptionsGenerated": testutil.ToFloat64(TranscriptionsGenerated),
+		"TranscriptionErrors":     testutil.ToFloat64(TranscriptionErrors),
+		"MinutesGenerated":        testutil.ToFloat64(MinutesGenerated),
+		"MinutesErrors":           testutil.ToFloat64(MinutesErrors),
+		"WebhookSent":             testutil.ToFloat64(WebhookSent),
+		"WebhookErrors":           testutil.ToFloat64(WebhookErrors),
 	}
 
 	SessionsCreated.Inc()
@@ -206,11 +206,11 @@ func TestGetActiveConnectionsValue(t *testing.T) {
 	ResetMetrics()
 
 	activeConnections := GetActiveConnectionsValue()
-	assert.Equal(t, float64(0), activeConnections)
+	assert.Zero(t, activeConnections)
 
 	IncrementActiveConnections()
 	activeConnections = GetActiveConnectionsValue()
-	assert.Equal(t, float64(1), activeConnections)
+	assert.InEpsilon(t, float64(1), activeConnections, 1e-9)
 
 	IncrementActiveConnections()
 	activeConnections = GetActiveConnectionsValue()
@@ -218,14 +218,14 @@ func TestGetActiveConnectionsValue(t *testing.T) {
 
 	DecrementActiveConnections()
 	activeConnections = GetActiveConnectionsValue()
-	assert.Equal(t, float64(1), activeConnections)
+	assert.InEpsilon(t, float64(1), activeConnections, 1e-9)
 }
 
 func TestGetQueueSize(t *testing.T) {
 	ResetMetrics()
 
 	queueSize := GetQueueSize()
-	assert.Equal(t, float64(0), queueSize)
+	assert.Zero(t, queueSize)
 
 	SetQueueSize(10)
 	queueSize = GetQueueSize()
@@ -233,7 +233,7 @@ func TestGetQueueSize(t *testing.T) {
 
 	SetQueueSize(0)
 	queueSize = GetQueueSize()
-	assert.Equal(t, float64(0), queueSize)
+	assert.Zero(t, queueSize)
 }
 
 func TestConcurrentActiveConnections(t *testing.T) {
@@ -364,20 +364,20 @@ func TestHistogramInvariants(t *testing.T) {
 func TestCounterZeroInitial(t *testing.T) {
 	// Prometheus counters are global and can't be reset — just verify they're accessible and non-negative
 	for _, counter := range []struct {
-		name string
 		val  prometheus.Counter
+		name string
 	}{
-		{"SessionsCreated", SessionsCreated},
-		{"SessionsEnded", SessionsEnded},
-		{"TranscriptionsGenerated", TranscriptionsGenerated},
-		{"TranscriptionErrors", TranscriptionErrors},
-		{"MinutesGenerated", MinutesGenerated},
-		{"MinutesErrors", MinutesErrors},
-		{"WebhookSent", WebhookSent},
-		{"WebhookErrors", WebhookErrors},
+		{name: "SessionsCreated", val: SessionsCreated},
+		{name: "SessionsEnded", val: SessionsEnded},
+		{name: "TranscriptionsGenerated", val: TranscriptionsGenerated},
+		{name: "TranscriptionErrors", val: TranscriptionErrors},
+		{name: "MinutesGenerated", val: MinutesGenerated},
+		{name: "MinutesErrors", val: MinutesErrors},
+		{name: "WebhookSent", val: WebhookSent},
+		{name: "WebhookErrors", val: WebhookErrors},
 	} {
 		t.Run(counter.name, func(t *testing.T) {
-			assert.True(t, testutil.ToFloat64(counter.val) >= 0)
+			assert.GreaterOrEqual(t, testutil.ToFloat64(counter.val), float64(0))
 		})
 	}
 }

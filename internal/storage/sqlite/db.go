@@ -3,20 +3,24 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
 	_ "modernc.org/sqlite"
 )
 
+var errDatabasePathEmpty = errors.New("database path cannot be empty")
+
 type DB struct {
 	*sql.DB
+
 	mu sync.RWMutex
 }
 
 func New(ctx context.Context, path string) (*DB, error) {
 	if path == "" {
-		return nil, fmt.Errorf("database path cannot be empty")
+		return nil, errDatabasePathEmpty
 	}
 
 	db, err := sql.Open("sqlite", path)
@@ -63,14 +67,14 @@ func (db *DB) RunInTx(ctx context.Context, fn func(*sql.Tx) error) error {
 
 	defer func() {
 		if p := recover(); p != nil {
-			_ = tx.Rollback()
+			_ = tx.Rollback() //nolint:errcheck // rollback on panic; original panic takes precedence
 			panic(p)
 		}
 	}()
 
 	if err := fn(tx); err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
-			return fmt.Errorf("failed to rollback transaction: %w (original error: %v)", rbErr, err)
+			return fmt.Errorf("failed to rollback transaction: %w (original error: %w)", rbErr, err)
 		}
 		return err
 	}
