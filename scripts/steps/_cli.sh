@@ -83,9 +83,27 @@ cmd_restart() { cmd_stop; sleep 1; cmd_start; }
 
 cmd_update() {
   cmd_stop
-  git -C "$AFTERTALK_HOME/src" pull --ff-only
-  (cd "$AFTERTALK_HOME/src" && go build -o "$BIN/aftertalk-server" ./cmd/aftertalk/)
-  cp "$AFTERTALK_HOME/src/scripts/whisper_server.py" "$BIN/whisper_server.py"
+  local release="${AFTERTALK_RELEASE:-latest}"
+  local os arch bin_name url whisper_url
+  case "$(uname -s)" in Linux*) os=linux ;; Darwin*) os=macos ;; *) echo "Unsupported OS" ; return 1 ;; esac
+  case "$(uname -m 2>/dev/null)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) echo "Unsupported arch" ; return 1 ;; esac
+  bin_name="aftertalk-${os}-${arch}"
+
+  if [[ "$release" == "latest" ]]; then
+    url="https://github.com/Josepavese/aftertalk/releases/latest/download/${bin_name}"
+    whisper_url="https://github.com/Josepavese/aftertalk/releases/latest/download/whisper_server.py"
+  else
+    url="https://github.com/Josepavese/aftertalk/releases/download/${release}/${bin_name}"
+    whisper_url="https://github.com/Josepavese/aftertalk/releases/download/${release}/whisper_server.py"
+  fi
+
+  echo "▶ Downloading update (${os}/${arch}, release: ${release})..."
+  curl -fL --progress-bar "$url" -o "$BIN/aftertalk-server"
+  chmod +x "$BIN/aftertalk-server"
+  curl -fsSL "$whisper_url" -o "$BIN/whisper_server.py" \
+    || curl -fsSL "https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/whisper_server.py" \
+         -o "$BIN/whisper_server.py"
+  chmod +x "$BIN/whisper_server.py"
   echo "✓ Updated. Run: aftertalk start"
 }
 

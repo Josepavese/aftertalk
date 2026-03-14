@@ -10,33 +10,66 @@ Aftertalk is a Go module that intercepts audio from WebRTC sessions, automatical
 
 **Target**: 200+ concurrent sessions, <100ms audio capture latency, <5min minutes generation.
 
-## Quick Start
+## Install
 
-### Prerequisites
+Pre-built binaries for Linux, macOS, and Windows are published automatically on every release.
 
-- Go 1.22+
-- Docker & Docker Compose (optional)
-
-**Note**: SQLite is embedded - no external database server needed!
-
-### Setup
+### Linux / macOS
 
 ```bash
-# Clone repository
-git clone https://github.com/Josepavese/aftertalk.git
-cd aftertalk
-
-# Copy environment variables
-cp .env.example .env
-# Edit .env with your configuration
-
-# Run application
-make run
+curl -fsSL https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.sh | bash
 ```
 
-**That's it!** No database setup needed - SQLite creates `aftertalk.db` automatically.
+Modes (default: `local-ai` — installs Whisper + Ollama locally):
 
-### Development
+```bash
+# Cloud STT/LLM providers (configure keys after install)
+curl -fsSL .../install.sh | bash -s -- --mode=cloud
+
+# No AI (stub providers, useful for testing)
+curl -fsSL .../install.sh | bash -s -- --mode=offline
+```
+
+### Windows
+
+Run in PowerShell **as Administrator**:
+
+```powershell
+irm https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.ps1 | iex
+```
+
+### Manual binary download
+
+Download the binary for your platform from [Releases](https://github.com/Josepavese/aftertalk/releases/latest):
+
+| Platform | File |
+|---|---|
+| Linux x86-64 | `aftertalk-linux-amd64` |
+| Linux ARM64  | `aftertalk-linux-arm64` |
+| macOS x86-64 | `aftertalk-darwin-amd64` |
+| macOS Apple Silicon | `aftertalk-darwin-arm64` |
+| Windows x86-64 | `aftertalk-windows-amd64.exe` |
+| Windows ARM64  | `aftertalk-windows-arm64.exe` |
+
+### Environment overrides
+
+| Variable | Default | Description |
+|---|---|---|
+| `AFTERTALK_HOME` | `~/.aftertalk` | Install directory |
+| `AFTERTALK_RELEASE` | `latest` | Release to install (`latest` or `edge` for master builds) |
+| `WHISPER_MODEL` | `base` | Whisper model size |
+| `SKIP_WHISPER` | — | Set to `1` to skip Whisper setup |
+| `SKIP_OLLAMA` | — | Set to `1` to skip Ollama setup |
+
+## Build from source
+
+```bash
+git clone https://github.com/Josepavese/aftertalk.git
+cd aftertalk
+go build -o bin/aftertalk-server ./cmd/aftertalk
+```
+
+## Development
 
 ```bash
 # Run without building
@@ -48,11 +81,8 @@ make test
 # Run with coverage
 make test-coverage
 
-# Lint code
+# Lint
 make lint
-
-# Format code
-make fmt
 ```
 
 ## Architecture
@@ -73,23 +103,17 @@ aftertalk/
 ## Key Features
 
 - **WebRTC Audio Capture**: Pion-based server-side peer
-- **Real-time Transcription**: Pluggable STT providers (Google, AWS, Azure)
-- **AI Minutes Generation**: Structured output with LLM (OpenAI, Anthropic)
+- **Real-time Transcription**: Pluggable STT providers (Google, AWS, Azure, Whisper)
+- **AI Minutes Generation**: Structured output with LLM (OpenAI, Anthropic, Ollama)
 - **Privacy-First**: No persistent audio, append-only transcriptions
 - **Human-in-the-loop**: Minutes always editable by professionals
 
 ## Documentation
 
+- [Wiki](docs/wiki/)
 - [Architecture Plan](specs/plan.md)
-- [Technical Research](specs/research.md)
-- [Data Model](specs/data-model.md)
-- [Quickstart Guide](specs/quickstart.md)
 - [API Contracts](specs/contracts/)
 
 ## License
 
 MIT
-
-## Status
-
-🚧 Under active development

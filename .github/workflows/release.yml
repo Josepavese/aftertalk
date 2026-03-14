@@ -1,0 +1,148 @@
+name: Release
+
+# Triggers:
+#   - Push to master  → creates/replaces the rolling "edge" prerelease
+#   - Push of v* tag  → creates a permanent versioned release
+#   - Manual dispatch → same logic as branch push
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write  # required to create/update GitHub Releases
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build cross-platform binaries
+        run: |
+          mkdir -p dist
+          declare -a PLATFORMS=(
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+            "windows/arm64"
+          )
+          for platform in "${PLATFORMS[@]}"; do
+            os="${platform%/*}"
+            arch="${platform#*/}"
+            output="dist/aftertalk-${os}-${arch}"
+            [[ "$os" == "windows" ]] && output="${output}.exe"
+            echo "→ Building ${os}/${arch} → $(basename "$output")"
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
+              go build -trimpath -ldflags="-s -w" \
+              -o "$output" ./cmd/aftertalk
+          done
+
+          # Include the whisper server Python script as a release asset
+          # so installers can fetch it without cloning the repository.
+          cp scripts/whisper_server.py dist/
+
+          echo ""
+          echo "Built assets:"
+          ls -lh dist/
+
+      - name: Determine release metadata
+        id: meta
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            echo "tag=${TAG}"                       >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"                 >> "$GITHUB_OUTPUT"
+            echo "title=Aftertalk ${TAG}"           >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=edge"                         >> "$GITHUB_OUTPUT"
+            echo "prerelease=true"                  >> "$GITHUB_OUTPUT"
+            echo "title=Edge Build (latest master)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Delete previous edge release (master push only)
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete edge --yes --cleanup-tag 2>/dev/null || true
+
+      - name: Write release notes
+        run: |
+          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
+            cat > /tmp/release-notes.md << 'NOTES'
+          Automated build from latest `master` (commit: `${{ github.sha }}`).
+
+          > ⚠️ This is a pre-release edge build — use for testing only.
+          > For production use a [stable release](https://github.com/Josepavese/aftertalk/releases/latest).
+
+          **Install edge build:**
+
+          ```bash
+          # Linux / macOS
+          AFTERTALK_RELEASE=edge \
+            curl -fsSL https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.sh | bash
+          ```
+
+          ```powershell
+          # Windows (PowerShell as Administrator)
+          $env:AFTERTALK_RELEASE = "edge"
+          irm https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.ps1 | iex
+          ```
+          NOTES
+          else
+            cat > /tmp/release-notes.md << 'NOTES'
+          ## Install
+
+          ```bash
+          # Linux / macOS
+          curl -fsSL https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.sh | bash
+          ```
+
+          ```powershell
+          # Windows (PowerShell as Administrator)
+          irm https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.ps1 | iex
+          ```
+
+          ## Manual download
+
+          Pick the binary for your platform from the assets below:
+
+          | Platform | File |
+          |---|---|
+          | Linux x86-64 | `aftertalk-linux-amd64` |
+          | Linux ARM64  | `aftertalk-linux-arm64` |
+          | macOS x86-64 | `aftertalk-darwin-amd64` |
+          | macOS Apple Silicon | `aftertalk-darwin-arm64` |
+          | Windows x86-64 | `aftertalk-windows-amd64.exe` |
+          | Windows ARM64  | `aftertalk-windows-arm64.exe` |
+          NOTES
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRERELEASE_FLAG=""
+          [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]] && PRERELEASE_FLAG="--prerelease"
+
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            dist/* \
+            --title "${{ steps.meta.outputs.title }}" \
+            --notes-file /tmp/release-notes.md \
+            $PRERELEASE_FLAG
