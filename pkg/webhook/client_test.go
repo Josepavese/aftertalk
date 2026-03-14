@@ -295,7 +295,8 @@ func TestClient_Send_PayloadWithComplexData(t *testing.T) {
 		if payload.SessionID != "complex-session" {
 			t.Errorf("Expected session_id complex-session, got %s", payload.SessionID)
 		}
-		if len(payload.Minutes.(map[string]interface{})) == 0 {
+		minutesMap, ok := payload.Minutes.(map[string]interface{})
+		if !ok || len(minutesMap) == 0 {
 			t.Error("Expected minutes to be non-empty")
 		}
 		w.WriteHeader(http.StatusOK)

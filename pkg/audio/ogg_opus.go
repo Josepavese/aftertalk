@@ -2,6 +2,7 @@ package audio
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"os/exec"
@@ -30,11 +31,11 @@ func writeOggPage(buf *bytes.Buffer, headerType byte, granule int64, serial, seq
 	copy(page[0:], "OggS")
 	page[4] = 0 // version
 	page[5] = headerType
-	binary.LittleEndian.PutUint64(page[6:], uint64(granule))
+	binary.LittleEndian.PutUint64(page[6:], uint64(granule)) //nolint:gosec // granule position is always non-negative
 	binary.LittleEndian.PutUint32(page[14:], serial)
 	binary.LittleEndian.PutUint32(page[18:], seqNo)
 	// checksum at [22:26] starts as zero
-	page[26] = byte(len(segTable))
+	page[26] = byte(len(segTable)) //nolint:gosec // Ogg spec: segment count ≤ 255
 	copy(page[27:], segTable)
 	copy(page[27+len(segTable):], segData)
 
@@ -57,7 +58,7 @@ func EncodeOggOpus(frames [][]byte, sampleRate int, frameSizeSamples int) []byte
 	opusHead[8] = 1 // version
 	opusHead[9] = 1 // channel count (mono)
 	binary.LittleEndian.PutUint16(opusHead[10:], 0)              // pre-skip
-	binary.LittleEndian.PutUint32(opusHead[12:], uint32(sampleRate)) // input sample rate
+	binary.LittleEndian.PutUint32(opusHead[12:], uint32(sampleRate)) //nolint:gosec // sampleRate is always positive
 	binary.LittleEndian.PutUint16(opusHead[16:], 0)              // output gain
 	opusHead[18] = 0                                              // channel mapping family (mono/stereo)
 
@@ -89,11 +90,11 @@ func EncodeOggOpus(frames [][]byte, sampleRate int, frameSizeSamples int) []byte
 
 // DecodeFramesToWAVffmpeg wraps Opus RTP frames in Ogg and decodes via ffmpeg.
 // Falls back to kazzmir if ffmpeg is not available.
-func DecodeFramesToWAVffmpeg(frames [][]byte, sampleRate int) ([]byte, error) {
+func DecodeFramesToWAVffmpeg(ctx context.Context, frames [][]byte, sampleRate int) ([]byte, error) {
 	ogg := EncodeOggOpus(frames, 48000, OpusFrameSize)
 
 	// Use ffmpeg to convert Ogg/Opus → WAV 16kHz mono PCM
-	cmd := exec.Command("ffmpeg",
+	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-f", "ogg", "-i", "pipe:0",
 		"-ar", "16000", "-ac", "1",
 		"-f", "wav", "pipe:1",

@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -8,16 +9,23 @@ import (
 	"github.com/google/uuid"
 )
 
+var (
+	errJWTExpirationNotPositive = errors.New("invalid expiration: must be positive")
+	errJWTUnexpectedSignMethod  = errors.New("unexpected signing method")
+	errJWTInvalidClaims         = errors.New("invalid token claims")
+)
+
 type Claims struct {
+	jwt.RegisteredClaims
+
 	SessionID string `json:"session_id"`
 	UserID    string `json:"user_id"`
 	Role      string `json:"role"`
-	jwt.RegisteredClaims
 }
 
 type JWTManager struct {
-	secret     []byte
 	issuer     string
+	secret     []byte
 	expiration time.Duration
 }
 
@@ -31,7 +39,7 @@ func NewJWTManager(secret, issuer string, expiration time.Duration) *JWTManager 
 
 func (j *JWTManager) Generate(sessionID, userID, role string) (string, string, error) {
 	if j.expiration <= 0 {
-		return "", "", fmt.Errorf("invalid expiration: must be positive")
+		return "", "", errJWTExpirationNotPositive
 	}
 
 	jti := uuid.New().String()
@@ -62,7 +70,7 @@ func (j *JWTManager) Generate(sessionID, userID, role string) (string, string, e
 func (j *JWTManager) Validate(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, fmt.Errorf("%w: %v", errJWTUnexpectedSignMethod, token.Header["alg"])
 		}
 		return j.secret, nil
 	}, jwt.WithIssuer(j.issuer), jwt.WithExpirationRequired())
@@ -73,7 +81,7 @@ func (j *JWTManager) Validate(tokenString string) (*Claims, error) {
 
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
-		return nil, fmt.Errorf("invalid token claims")
+		return nil, errJWTInvalidClaims
 	}
 
 	return claims, nil

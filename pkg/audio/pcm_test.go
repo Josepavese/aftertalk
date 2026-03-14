@@ -59,9 +59,9 @@ func TestPCMConverter_ConvertToFloat32(t *testing.T) {
 		floats := converter.ConvertToFloat32(samples)
 
 		assert.Len(t, floats, len(samples))
-		assert.Equal(t, float32(1000)/32768.0, floats[0])
-		assert.Equal(t, float32(5000)/32768.0, floats[1])
-		assert.Equal(t, float32(10000)/32768.0, floats[2])
+		assert.InDelta(t, float32(1000)/32768.0, floats[0], 1e-6)
+		assert.InDelta(t, float32(5000)/32768.0, floats[1], 1e-6)
+		assert.InDelta(t, float32(10000)/32768.0, floats[2], 1e-6)
 	})
 
 	t.Run("NegativeSamples", func(t *testing.T) {
@@ -69,9 +69,9 @@ func TestPCMConverter_ConvertToFloat32(t *testing.T) {
 		floats := converter.ConvertToFloat32(samples)
 
 		assert.Len(t, floats, len(samples))
-		assert.Equal(t, -float32(1000)/32768.0, floats[0])
-		assert.Equal(t, -float32(5000)/32768.0, floats[1])
-		assert.Equal(t, -float32(10000)/32768.0, floats[2])
+		assert.InDelta(t, -float32(1000)/32768.0, floats[0], 1e-6)
+		assert.InDelta(t, -float32(5000)/32768.0, floats[1], 1e-6)
+		assert.InDelta(t, -float32(10000)/32768.0, floats[2], 1e-6)
 	})
 
 	t.Run("ZeroSamples", func(t *testing.T) {
@@ -111,7 +111,7 @@ func TestPCMConverter_ConvertToFloat32(t *testing.T) {
 	t.Run("LargeNumberOfSamples", func(t *testing.T) {
 		samples := make([]int16, 10000)
 		for i := range samples {
-			samples[i] = int16(i % 65536)
+			samples[i] = int16(i % 65536) //nolint:gosec // intentional wraparound for test data
 		}
 
 		floats := converter.ConvertToFloat32(samples)
@@ -320,7 +320,7 @@ func TestWritePCM(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Len(t, buf.Bytes(), 2)
-		assert.Equal(t, int16(1000), int16(binary.LittleEndian.Uint16(buf.Bytes()[:2])))
+		assert.Equal(t, int16(1000), int16(binary.LittleEndian.Uint16(buf.Bytes()[:2])))  //nolint:gosec // intentional uint16->int16 reinterpret in test
 	})
 
 	t.Run("WriteMultipleSamples", func(t *testing.T) {
@@ -340,13 +340,13 @@ func TestWritePCM(t *testing.T) {
 		err := WritePCM(&buf, samples)
 
 		assert.NoError(t, err)
-		assert.Len(t, buf.Bytes(), 0)
+		assert.Empty(t, buf.Bytes())
 	})
 
 	t.Run("WriteBigSamples", func(t *testing.T) {
 		samples := make([]int16, 10000)
 		for i := range samples {
-			samples[i] = int16(i % 65536)
+			samples[i] = int16(i % 65536) //nolint:gosec // intentional wraparound for test data
 		}
 
 		var buf bytes.Buffer
@@ -392,7 +392,7 @@ func TestChunkPCM(t *testing.T) {
 	t.Run("StandardChunkSize", func(t *testing.T) {
 		samples := make([]int16, 4800)
 		for i := range samples {
-			samples[i] = int16(i % 65536)
+			samples[i] = int16(i % 65536) //nolint:gosec // intentional wraparound for test data
 		}
 
 		chunks := ChunkPCM(samples, 100, SampleRate)
@@ -404,7 +404,7 @@ func TestChunkPCM(t *testing.T) {
 	t.Run("MultipleChunks", func(t *testing.T) {
 		samples := make([]int16, 9600)
 		for i := range samples {
-			samples[i] = int16(i % 65536)
+			samples[i] = int16(i % 65536) //nolint:gosec // intentional wraparound for test data
 		}
 
 		chunks := ChunkPCM(samples, 100, SampleRate)
@@ -417,7 +417,7 @@ func TestChunkPCM(t *testing.T) {
 	t.Run("PartialLastChunk", func(t *testing.T) {
 		samples := make([]int16, 10000)
 		for i := range samples {
-			samples[i] = int16(i % 65536)
+			samples[i] = int16(i % 65536) //nolint:gosec // intentional wraparound for test data
 		}
 
 		chunks := ChunkPCM(samples, 100, SampleRate)
@@ -447,7 +447,7 @@ func TestChunkPCM(t *testing.T) {
 	t.Run("ExactMultipleOfChunkSize", func(t *testing.T) {
 		samples := make([]int16, 48000)
 		for i := range samples {
-			samples[i] = int16(i % 65536)
+			samples[i] = int16(i % 65536) //nolint:gosec // intentional wraparound for test data
 		}
 
 		chunks := ChunkPCM(samples, 100, SampleRate)
@@ -460,7 +460,7 @@ func TestChunkPCM(t *testing.T) {
 	t.Run("ChunkSizeZero", func(t *testing.T) {
 		samples := make([]int16, 10000)
 		for i := range samples {
-			samples[i] = int16(i % 65536)
+			samples[i] = int16(i % 65536) //nolint:gosec // intentional wraparound for test data
 		}
 
 		chunks := ChunkPCM(samples, 0, SampleRate)
@@ -471,7 +471,7 @@ func TestChunkPCM(t *testing.T) {
 	t.Run("VerySmallChunkSize", func(t *testing.T) {
 		samples := make([]int16, 10000)
 		for i := range samples {
-			samples[i] = int16(i % 65536)
+			samples[i] = int16(i % 65536) //nolint:gosec // intentional wraparound for test data
 		}
 
 		chunks := ChunkPCM(samples, 1, SampleRate)
@@ -485,7 +485,7 @@ func TestChunkPCM(t *testing.T) {
 	t.Run("VeryLargeChunkSize", func(t *testing.T) {
 		samples := make([]int16, 10000)
 		for i := range samples {
-			samples[i] = int16(i % 65536)
+			samples[i] = int16(i % 65536) //nolint:gosec // intentional wraparound for test data
 		}
 
 		chunks := ChunkPCM(samples, 100000, SampleRate)
@@ -497,7 +497,7 @@ func TestChunkPCM(t *testing.T) {
 	t.Run("DifferentSampleRate", func(t *testing.T) {
 		samples := make([]int16, 8820)
 		for i := range samples {
-			samples[i] = int16(i % 65536)
+			samples[i] = int16(i % 65536) //nolint:gosec // intentional wraparound for test data
 		}
 
 		chunks := ChunkPCM(samples, 100, 44100)
@@ -583,7 +583,7 @@ func TestMergePCM(t *testing.T) {
 		for i := range chunks {
 			chunk := make([]int16, 1000)
 			for j := range chunk {
-				chunk[j] = int16(j % 65536)
+				chunk[j] = int16(j % 65536) //nolint:gosec // intentional wraparound for test data
 			}
 			chunks[i] = chunk
 		}
@@ -651,7 +651,7 @@ func TestMergePCM(t *testing.T) {
 		for i := range chunks {
 			chunk := make([]int16, 100)
 			for j := range chunk {
-				chunk[j] = int16((i*100 + j) % 65536)
+				chunk[j] = int16((i*100 + j) % 65536) //nolint:gosec // intentional wraparound for test data
 			}
 			chunks[i] = chunk
 		}

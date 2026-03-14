@@ -62,7 +62,7 @@ func TestJWTManager_Generate(t *testing.T) {
 		assert.Equal(t, "user-456", claims.UserID)
 		assert.Equal(t, "moderator", claims.Role)
 		assert.Equal(t, "aftertalk", claims.Issuer)
-		assert.NotZero(t, claims.ID)
+		assert.NotEmpty(t, claims.ID)
 		assert.NotZero(t, claims.IssuedAt)
 		assert.NotZero(t, claims.ExpiresAt)
 		assert.NotZero(t, claims.NotBefore)
@@ -106,7 +106,7 @@ func TestJWTManager_Generate(t *testing.T) {
 		}
 
 		// All JTIs should be unique
-		assert.Equal(t, len(jtis), len(unique(jtis)))
+		assert.Len(t, unique(jtis), len(jtis))
 	})
 
 	t.Run("CurrentTimestampUsed", func(t *testing.T) {
@@ -461,7 +461,7 @@ func TestJWTManager_SessionAndUserID(t *testing.T) {
 
 		claims, err := manager.Validate(tokenString)
 		assert.NoError(t, err)
-		assert.Equal(t, "", claims.SessionID)
+		assert.Empty(t, claims.SessionID)
 	})
 
 	t.Run("EmptyUserID", func(t *testing.T) {
@@ -472,7 +472,7 @@ func TestJWTManager_SessionAndUserID(t *testing.T) {
 
 		claims, err := manager.Validate(tokenString)
 		assert.NoError(t, err)
-		assert.Equal(t, "", claims.UserID)
+		assert.Empty(t, claims.UserID)
 	})
 }
 
