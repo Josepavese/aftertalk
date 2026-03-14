@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Josepavese/aftertalk/internal/logging"
 )
@@ -53,7 +54,7 @@ func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, e
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
@@ -136,7 +137,7 @@ func (p *AnthropicProvider) Generate(ctx context.Context, prompt string) (string
 	req.Header.Set("x-api-key", p.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
@@ -211,7 +212,7 @@ func (p *AzureOpenAIProvider) Generate(ctx context.Context, prompt string) (stri
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("api-key", p.apiKey)
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
@@ -318,16 +319,37 @@ func (p *StubLLMProvider) Generate(_ context.Context, prompt string) (string, er
 		citations = []citation{}
 	}
 
+	// Build sections map by parsing the JSON schema embedded in the prompt.
+	// The schema block looks like:  "sections": {\n    "key": [...],\n  }
+	// Fall back to a generic "transcript" key if parsing yields nothing.
+	sections := make(map[string]interface{})
+	if start := strings.Index(prompt, "\"sections\": {\n"); start != -1 {
+		rest := prompt[start+len("\"sections\": {\n"):]
+		if end := strings.Index(rest, "\n  }"); end != -1 {
+			for _, line := range strings.Split(rest[:end], "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "\"") {
+					if colonIdx := strings.Index(line, "\": "); colonIdx != -1 {
+						key := line[1:colonIdx]
+						sections[key] = []interface{}{}
+					}
+				}
+			}
+		}
+	}
+	if len(sections) == 0 {
+		sections["transcript"] = contents
+	} else {
+		// Populate the first section with the transcript contents.
+		for k := range sections {
+			sections[k] = contents
+			break
+		}
+	}
+
 	result := map[string]interface{}{
-		"themes":                   []string{"[stub] Conversazione registrata"},
-		"contents_reported":        contents,
-		"professional_interventions": []entry{},
-		"progress_issues": map[string]interface{}{
-			"progress": []string{},
-			"issues":   []string{},
-		},
-		"next_steps": []string{},
-		"citations":  citations,
+		"sections":  sections,
+		"citations": citations,
 	}
 
 	out, err := json.Marshal(result)

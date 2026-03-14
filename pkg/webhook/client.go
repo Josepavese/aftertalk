@@ -27,8 +27,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
+
+	"github.com/Josepavese/aftertalk/internal/logging"
 	"time"
 )
 
@@ -92,11 +93,11 @@ type NotificationPayload struct {
 // Send delivers a MinutesPayload (push mode). No HMAC signing.
 func (c *Client) Send(ctx context.Context, payload *MinutesPayload) error {
 	if c.url == "" {
-		log.Println("[WARN] Webhook URL not configured, skipping notification")
+		logging.Warnf("webhook URL not configured, skipping notification")
 		return nil
 	}
 
-	log.Printf("[INFO] Sending webhook to %s for session %s", c.url, payload.SessionID)
+	logging.Infof("sending webhook to %s for session %s", c.url, payload.SessionID)
 
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
@@ -117,11 +118,11 @@ func (c *Client) Send(ctx context.Context, payload *MinutesPayload) error {
 // over the raw JSON body so the recipient can verify authenticity.
 func (c *Client) SendNotification(ctx context.Context, payload *NotificationPayload) error {
 	if c.url == "" {
-		log.Println("[WARN] Webhook URL not configured, skipping notification")
+		logging.Warnf("webhook URL not configured, skipping notification")
 		return nil
 	}
 
-	log.Printf("[INFO] Sending notification webhook to %s for session %s", c.url, payload.SessionID)
+	logging.Infof("sending notification webhook to %s for session %s", c.url, payload.SessionID)
 
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
@@ -158,6 +159,6 @@ func (c *Client) do(req *http.Request, sessionID string) error {
 		return fmt.Errorf("webhook returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	log.Printf("[INFO] Webhook sent successfully for session %s", sessionID)
+	logging.Infof("webhook sent successfully for session %s", sessionID)
 	return nil
 }

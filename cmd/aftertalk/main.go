@@ -217,6 +217,7 @@ func main() {
 		audioBufferCache,
 		transcriptionAdapter,
 		minutesAdapter,
+		cfg.JWT.Expiration,
 		cfg.Processing,
 		cfg.Templates,
 	)

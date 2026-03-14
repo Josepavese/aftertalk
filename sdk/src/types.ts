@@ -160,7 +160,7 @@ export interface PaginatedResponse<T> {
 
 // ─── SDK Config ───────────────────────────────────────────────────────────────
 
-export interface AfterthalkClientConfig {
+export interface AftertalkClientConfig {
   /** Base URL of the Aftertalk server, e.g. "http://localhost:8080" */
   baseUrl: string;
   /** API key for authenticated endpoints */
