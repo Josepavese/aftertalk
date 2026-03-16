@@ -18,15 +18,19 @@ func stepVerify() *Step {
 	}
 }
 
-func runVerify(_ context.Context, cfg *instconfig.InstallConfig, log Logger) error {
+func runVerify(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) error {
 	url := fmt.Sprintf("http://127.0.0.1:%d/v1/health", cfg.HTTPPort)
 
 	var lastErr error
 	for attempt := 1; attempt <= 10; attempt++ {
 		log.Info(fmt.Sprintf("health check attempt %d/10: %s", attempt, url))
 
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return fmt.Errorf("build health request: %w", err)
+		}
 		client := &http.Client{Timeout: 3 * time.Second}
-		resp, err := client.Get(url) //nolint:noctx
+		resp, err := client.Do(req)
 		if err == nil {
 			io.Copy(io.Discard, resp.Body) //nolint:errcheck
 			resp.Body.Close()
@@ -40,7 +44,11 @@ func runVerify(_ context.Context, cfg *instconfig.InstallConfig, log Logger) err
 		}
 
 		if attempt < 10 {
-			time.Sleep(3 * time.Second)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(3 * time.Second):
+			}
 		}
 	}
 	return fmt.Errorf("health check failed after 10 attempts: %w", lastErr)
