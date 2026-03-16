@@ -45,12 +45,20 @@ jobs:
           for platform in "${PLATFORMS[@]}"; do
             os="${platform%/*}"
             arch="${platform#*/}"
+
             output="dist/aftertalk-${os}-${arch}"
             [[ "$os" == "windows" ]] && output="${output}.exe"
-            echo "→ Building ${os}/${arch} → $(basename "$output")"
+            echo "→ Building aftertalk ${os}/${arch} → $(basename "$output")"
             GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
               go build -trimpath -ldflags="-s -w" \
               -o "$output" ./cmd/aftertalk
+
+            installer_output="dist/aftertalk-installer-${os}-${arch}"
+            [[ "$os" == "windows" ]] && installer_output="${installer_output}.exe"
+            echo "→ Building installer ${os}/${arch} → $(basename "$installer_output")"
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
+              go build -trimpath -ldflags="-s -w" \
+              -o "$installer_output" ./cmd/installer
           done
 
           # Include the whisper server Python script as a release asset
@@ -123,14 +131,14 @@ jobs:
 
           Pick the binary for your platform from the assets below:
 
-          | Platform | File |
-          |---|---|
-          | Linux x86-64 | `aftertalk-linux-amd64` |
-          | Linux ARM64  | `aftertalk-linux-arm64` |
-          | macOS x86-64 | `aftertalk-darwin-amd64` |
-          | macOS Apple Silicon | `aftertalk-darwin-arm64` |
-          | Windows x86-64 | `aftertalk-windows-amd64.exe` |
-          | Windows ARM64  | `aftertalk-windows-arm64.exe` |
+          | Platform | Server | Installer |
+          |---|---|---|
+          | Linux x86-64 | `aftertalk-linux-amd64` | `aftertalk-installer-linux-amd64` |
+          | Linux ARM64  | `aftertalk-linux-arm64` | `aftertalk-installer-linux-arm64` |
+          | macOS x86-64 | `aftertalk-darwin-amd64` | `aftertalk-installer-darwin-amd64` |
+          | macOS Apple Silicon | `aftertalk-darwin-arm64` | `aftertalk-installer-darwin-arm64` |
+          | Windows x86-64 | `aftertalk-windows-amd64.exe` | `aftertalk-installer-windows-amd64.exe` |
+          | Windows ARM64  | `aftertalk-windows-arm64.exe` | `aftertalk-installer-windows-arm64.exe` |
           NOTES
           fi
 
