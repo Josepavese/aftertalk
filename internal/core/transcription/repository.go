@@ -146,6 +146,28 @@ func (r *TranscriptionRepository) GetBySessionOrdered(ctx context.Context, sessi
 	return r.GetBySession(ctx, sessionID)
 }
 
+// GetLastActivityTime returns the created_at of the most recent transcription
+// for a session. Returns zero time and no error when no transcriptions exist.
+// Used at startup to restore inactivity timers for active sessions.
+func (r *TranscriptionRepository) GetLastActivityTime(ctx context.Context, sessionID string) (time.Time, error) {
+	var raw sql.NullString
+	err := r.QueryRowContext(ctx,
+		`SELECT MAX(created_at) FROM transcriptions WHERE session_id = ?`,
+		sessionID,
+	).Scan(&raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("get last activity time: %w", err)
+	}
+	if !raw.Valid {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339, raw.String)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse last activity time: %w", err)
+	}
+	return t, nil
+}
+
 // CountBySession returns the number of already-saved segments for a session,
 // used to compute the segment_index offset when a session reconnects.
 func (r *TranscriptionRepository) CountBySession(ctx context.Context, sessionID string) (int, error) {

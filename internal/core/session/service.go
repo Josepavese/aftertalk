@@ -45,6 +45,12 @@ type TranscriptionServiceInterface interface {
 	GetTranscriptionsAsText(ctx context.Context, sessionID string) (string, error)
 }
 
+// LastActivityProvider is implemented by the transcription repository and used
+// at startup to restore inactivity timers for sessions that survived a restart.
+type LastActivityProvider interface {
+	GetLastActivityTime(ctx context.Context, sessionID string) (time.Time, error)
+}
+
 type MinutesServiceInterface interface {
 	// GenerateMinutes calls the LLM to produce structured minutes. sessCtx carries
 	// the opaque session metadata and participant list set at session-creation time;
@@ -54,37 +60,116 @@ type MinutesServiceInterface interface {
 	GetMinutes(ctx context.Context, sessionID string) (interface{}, error)
 }
 
-// InactivityTimeout is the period of silence after which a session is
-// automatically ended and minutes are generated.
-const InactivityTimeout = 10 * time.Minute
+// defaultInactivityTimeout is the fallback when SessionConfig.InactivityTimeout is 0.
+const defaultInactivityTimeout = 10 * time.Minute
 
 // OnSessionEndFunc is called synchronously before minutes generation to allow
 // callers (e.g. WebRTC manager) to close all peers for the session.
 type OnSessionEndFunc func(sessionID string)
 
 type Service struct {
-	transcription    TranscriptionServiceInterface
-	minutes          MinutesServiceInterface
-	templates        map[string]config.TemplateConfig
-	repo             *SessionRepository
-	audioBuffer      *cache.AudioBufferCache
-	sessionCache     *cache.SessionCache
-	jwtManager       *jwt.JWTManager
-	transcribeCh     chan *transcribeJob
-	onSessionEnd     OnSessionEndFunc
-	inactivityTimers map[string]*time.Timer
-	opusDecoder      *audio.OpusDecoder
-	pcmConverter     *audio.PCMConverter
-	tokenCache       *cache.TokenCache
-	wg               sync.WaitGroup
-	jwtExpiration    time.Duration
-	chunkSizeMs      int
-	inactivityMu     sync.Mutex
+	transcription        TranscriptionServiceInterface
+	lastActivityProvider LastActivityProvider
+	minutes              MinutesServiceInterface
+	templates            map[string]config.TemplateConfig
+	repo                 *SessionRepository
+	audioBuffer          *cache.AudioBufferCache
+	sessionCache         *cache.SessionCache
+	jwtManager           *jwt.JWTManager
+	transcribeCh         chan *transcribeJob
+	onSessionEnd         OnSessionEndFunc
+	inactivityTimers     map[string]*time.Timer
+	opusDecoder          *audio.OpusDecoder
+	pcmConverter         *audio.PCMConverter
+	tokenCache           *cache.TokenCache
+	wg                   sync.WaitGroup
+	// transcribeWg tracks in-flight transcription jobs so that
+	// generateMinutesForSession can wait for all DB writes to complete
+	// before reading transcriptions. This replaces the former busy-wait loop.
+	transcribeWg      sync.WaitGroup
+	jwtExpiration     time.Duration
+	maxDuration       time.Duration
+	inactivityTimeout time.Duration
+	chunkSizeMs       int
+	inactivityMu      sync.Mutex
 }
 
 // SetOnSessionEnd registers a callback invoked when any session is ended.
 func (s *Service) SetOnSessionEnd(fn OnSessionEndFunc) {
 	s.onSessionEnd = fn
+}
+
+// SetLastActivityProvider wires the repository used by RestoreInactivityTimers
+// to look up the last transcription timestamp for each active session at boot.
+func (s *Service) SetLastActivityProvider(p LastActivityProvider) {
+	s.lastActivityProvider = p
+}
+
+// RestoreInactivityTimers re-arms inactivity timers for sessions that are
+// still active in the DB after a process restart. Without this, the timers
+// (which are in-memory only) are lost on restart and the session would only
+// be closed by the session reaper at MaxDuration — potentially hours later.
+//
+// For each active session, the last-activity time is the MAX(created_at) of
+// its transcriptions. If no transcriptions exist, the session's own created_at
+// is used as the baseline. The remaining timer duration is:
+//
+//	remaining = inactivityTimeout - elapsed_since_last_activity
+//
+// If elapsed >= inactivityTimeout (session was already overdue at restart),
+// EndSession is called immediately in a goroutine.
+func (s *Service) RestoreInactivityTimers(ctx context.Context) {
+	if s.inactivityTimeout == 0 {
+		return
+	}
+	sessions, _, err := s.repo.List(ctx, string(StatusActive), 0, 0)
+	if err != nil {
+		logging.Errorf("RestoreInactivityTimers: list active sessions: %v", err)
+		return
+	}
+	if len(sessions) == 0 {
+		return
+	}
+	logging.Infof("RestoreInactivityTimers: restoring timers for %d active session(s)", len(sessions))
+	for _, sess := range sessions {
+		id := sess.ID
+		baseline := sess.CreatedAt
+
+		if s.lastActivityProvider != nil {
+			if t, err := s.lastActivityProvider.GetLastActivityTime(ctx, id); err != nil {
+				logging.Warnf("RestoreInactivityTimers: session=%s last activity lookup failed: %v", id, err)
+			} else if !t.IsZero() {
+				baseline = t
+			}
+		}
+
+		elapsed := time.Since(baseline)
+		remaining := s.inactivityTimeout - elapsed
+		if remaining <= 0 {
+			logging.Infof("RestoreInactivityTimers: session=%s overdue by %s — ending immediately",
+				id, (-remaining).Round(time.Second))
+			go func() {
+				endCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if err := s.EndSession(endCtx, id); err != nil {
+					logging.Errorf("RestoreInactivityTimers: EndSession %s: %v", id, err)
+				}
+			}()
+			continue
+		}
+		logging.Infof("RestoreInactivityTimers: session=%s restoring timer (remaining=%s)",
+			id, remaining.Round(time.Second))
+		s.inactivityMu.Lock()
+		s.inactivityTimers[id] = time.AfterFunc(remaining, func() {
+			logging.Infof("Inactivity timeout reached, auto-ending session=%s", id)
+			endCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := s.EndSession(endCtx, id); err != nil {
+				logging.Errorf("Auto-end session=%s failed: %v", id, err)
+			}
+		})
+		s.inactivityMu.Unlock()
+	}
 }
 
 type transcribeJob struct {
@@ -111,6 +196,7 @@ func NewService(
 	jwtExpiration time.Duration,
 	processingCfg config.ProcessingConfig,
 	templates []config.TemplateConfig,
+	sessionCfg config.SessionConfig,
 ) *Service {
 	tmplMap := make(map[string]config.TemplateConfig, len(templates))
 	for _, t := range templates {
@@ -119,21 +205,27 @@ func NewService(
 	if jwtExpiration <= 0 {
 		jwtExpiration = 2 * time.Hour
 	}
+	inactivityTimeout := sessionCfg.InactivityTimeout
+	if inactivityTimeout <= 0 {
+		inactivityTimeout = defaultInactivityTimeout
+	}
 	s := &Service{
-		repo:             repo,
-		jwtManager:       jwtManager,
-		sessionCache:     sessionCache,
-		tokenCache:       tokenCache,
-		audioBuffer:      audioBuffer,
-		transcription:    transcription,
-		minutes:          minutes,
-		jwtExpiration:    jwtExpiration,
-		transcribeCh:     make(chan *transcribeJob, processingCfg.TranscriptionQueueSize),
-		chunkSizeMs:      processingCfg.ChunkSizeMs,
-		opusDecoder:      audio.NewOpusDecoder(48000, 1),
-		pcmConverter:     audio.NewPCMConverter(16000, 1),
-		inactivityTimers: make(map[string]*time.Timer),
-		templates:        tmplMap,
+		repo:              repo,
+		jwtManager:        jwtManager,
+		sessionCache:      sessionCache,
+		tokenCache:        tokenCache,
+		audioBuffer:       audioBuffer,
+		transcription:     transcription,
+		minutes:           minutes,
+		jwtExpiration:     jwtExpiration,
+		maxDuration:       sessionCfg.MaxDuration,
+		inactivityTimeout: inactivityTimeout,
+		transcribeCh:      make(chan *transcribeJob, processingCfg.TranscriptionQueueSize),
+		chunkSizeMs:       processingCfg.ChunkSizeMs,
+		opusDecoder:       audio.NewOpusDecoder(48000, 1),
+		pcmConverter:      audio.NewPCMConverter(16000, 1),
+		inactivityTimers:  make(map[string]*time.Timer),
+		templates:         tmplMap,
 	}
 
 	if transcription != nil {
@@ -144,47 +236,120 @@ func NewService(
 	return s
 }
 
+// RecoverProcessingSessions re-triggers minutes generation for sessions that
+// were left in status='processing' by a previous process that was killed or
+// crashed mid-flight. Call this once at startup, after the service is fully wired.
+//
+// The recovery is safe to run on every boot: processRemainingAudio reads from
+// the in-memory audio buffer (empty after restart, so it is a no-op), and
+// generateMinutesForSession is idempotent — if a minutes record already exists
+// for the session it will not create a duplicate.
+func (s *Service) RecoverProcessingSessions(ctx context.Context) {
+	sessions, _, err := s.repo.List(ctx, string(StatusProcessing), 0, 0)
+	if err != nil {
+		logging.Errorf("RecoverProcessingSessions: failed to list processing sessions: %v", err)
+		return
+	}
+	if len(sessions) == 0 {
+		return
+	}
+	logging.Warnf("RecoverProcessingSessions: found %d session(s) stuck in 'processing' — re-triggering minutes generation", len(sessions))
+	for _, sess := range sessions {
+		id := sess.ID
+		go func() {
+			s.processRemainingAudio(id)
+			s.generateMinutesForSession(id)
+		}()
+	}
+}
+
+// reaperSweepInterval is how often the reaper checks for expired sessions.
+const reaperSweepInterval = 5 * time.Minute
+
+// StartSessionReaper starts a background goroutine that periodically closes
+// sessions that have exceeded cfg.Session.MaxDuration. It is a no-op when
+// MaxDuration is 0 (disabled). The goroutine exits when ctx is cancelled.
+//
+// Call this once from main.go after wiring the service.
+func (s *Service) StartSessionReaper(ctx context.Context) {
+	if s.maxDuration == 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(reaperSweepInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.reapExpiredSessions(ctx)
+			}
+		}
+	}()
+}
+
+func (s *Service) reapExpiredSessions(ctx context.Context) {
+	sessions, err := s.repo.ListActive(ctx)
+	if err != nil {
+		logging.Errorf("session reaper: list active sessions: %v", err)
+		return
+	}
+	for _, sess := range sessions {
+		if time.Since(sess.CreatedAt) > s.maxDuration {
+			logging.Infof("session reaper: auto-closing session %s (age %s > max_duration %s)",
+				sess.ID, time.Since(sess.CreatedAt).Round(time.Second), s.maxDuration)
+			if err := s.EndSession(ctx, sess.ID); err != nil {
+				logging.Errorf("session reaper: EndSession %s: %v", sess.ID, err)
+			}
+		}
+	}
+}
+
 func (s *Service) processTranscriptionQueue() {
 	defer s.wg.Done()
 
 	for job := range s.transcribeCh {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		func() {
+			defer s.transcribeWg.Done() // signal completion after DB write
 
-		// When Opus frames are available skip PCM conversion (OGG muxing is done
-		// inside the STT provider). Only convert when no frames are present.
-		var pcmData []byte
-		if len(job.OpusFrames) == 0 {
-			var err error
-			pcmData, err = s.convertToPCM16k(job.AudioData)
-			if err != nil {
-				logging.Errorf("Failed to convert audio to PCM for session=%s participant=%s: %v",
-					job.SessionID, job.ParticipantID, err)
-				cancel()
-				continue
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			// When Opus frames are available skip PCM conversion (OGG muxing is done
+			// inside the STT provider). Only convert when no frames are present.
+			var pcmData []byte
+			if len(job.OpusFrames) == 0 {
+				var err error
+				pcmData, err = s.convertToPCM16k(job.AudioData)
+				if err != nil {
+					logging.Errorf("Failed to convert audio to PCM for session=%s participant=%s: %v",
+						job.SessionID, job.ParticipantID, err)
+					return
+				}
 			}
-		}
 
-		audioData := &AudioData{
-			SessionID:     job.SessionID,
-			ParticipantID: job.ParticipantID,
-			Role:          job.Role,
-			Data:          pcmData,
-			Frames:        job.OpusFrames,
-			SampleRate:    16000,
-			Duration:      job.DurationMs,
-			OffsetMs:      job.OffsetMs,
-		}
+			audioData := &AudioData{
+				SessionID:     job.SessionID,
+				ParticipantID: job.ParticipantID,
+				Role:          job.Role,
+				Data:          pcmData,
+				Frames:        job.OpusFrames,
+				SampleRate:    16000,
+				Duration:      job.DurationMs,
+				OffsetMs:      job.OffsetMs,
+			}
 
-		if err := s.transcription.TranscribeAudio(ctx, audioData); err != nil {
-			logging.Errorf("Failed to transcribe audio for session=%s participant=%s: %v",
-				job.SessionID, job.ParticipantID, err)
-		} else {
-			logging.Infof("Transcription completed for session=%s participant=%s",
-				job.SessionID, job.ParticipantID)
-		}
+			if err := s.transcription.TranscribeAudio(ctx, audioData); err != nil {
+				logging.Errorf("Failed to transcribe audio for session=%s participant=%s: %v",
+					job.SessionID, job.ParticipantID, err)
+			} else {
+				logging.Infof("Transcription completed for session=%s participant=%s",
+					job.SessionID, job.ParticipantID)
+			}
 
-		s.audioBuffer.ClearBuffer(job.SessionID, job.ParticipantID)
-		cancel()
+			s.audioBuffer.ClearBuffer(job.SessionID, job.ParticipantID)
+		}()
 	}
 }
 
@@ -218,10 +383,10 @@ func (s *Service) resetInactivityTimer(sessionID string) {
 	defer s.inactivityMu.Unlock()
 
 	if t, ok := s.inactivityTimers[sessionID]; ok {
-		t.Reset(InactivityTimeout)
+		t.Reset(s.inactivityTimeout)
 		return
 	}
-	s.inactivityTimers[sessionID] = time.AfterFunc(InactivityTimeout, func() {
+	s.inactivityTimers[sessionID] = time.AfterFunc(s.inactivityTimeout, func() {
 		logging.Infof("Inactivity timeout reached, auto-ending session=%s", sessionID)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -400,70 +565,83 @@ func (s *Service) processRemainingAudio(sessionID string) {
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
+		func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
 
-		// When individual Opus frames are available pass them directly to the STT
-		// provider (which handles OGG muxing). Only fall back to PCM conversion
-		// for providers that require raw PCM and have no frames.
-		var pcmData []byte
-		if len(buffer.Frames) == 0 {
-			var err error
-			pcmData, err = s.convertToPCM16k(buffer.Data)
-			if err != nil {
-				logging.Errorf("Failed to convert remaining audio for session=%s participant=%s: %v",
+			// When individual Opus frames are available pass them directly to the STT
+			// provider (which handles OGG muxing). Only fall back to PCM conversion
+			// for providers that require raw PCM and have no frames.
+			var pcmData []byte
+			if len(buffer.Frames) == 0 {
+				var err error
+				pcmData, err = s.convertToPCM16k(buffer.Data)
+				if err != nil {
+					logging.Errorf("Failed to convert remaining audio for session=%s participant=%s: %v",
+						sessionID, participantID, err)
+					return
+				}
+			}
+
+			var offsetMs int
+			if state, ok := s.sessionCache.GetSession(sessionID); ok && !state.StartedAt.IsZero() {
+				offsetMs = int(buffer.StartTime.Sub(state.StartedAt).Milliseconds())
+				if offsetMs < 0 {
+					offsetMs = 0
+				}
+			}
+
+			audioData := &AudioData{
+				SessionID:     sessionID,
+				ParticipantID: participantID,
+				Role:          buffer.Role,
+				Data:          pcmData,
+				Frames:        buffer.Frames,
+				SampleRate:    16000,
+				Duration:      buffer.DurationMs,
+				OffsetMs:      offsetMs,
+			}
+
+			if err := s.transcription.TranscribeAudio(ctx, audioData); err != nil {
+				logging.Errorf("Failed to transcribe remaining audio for session=%s participant=%s: %v",
 					sessionID, participantID, err)
-				continue
 			}
-		}
 
-		var offsetMs int
-		if state, ok := s.sessionCache.GetSession(sessionID); ok && !state.StartedAt.IsZero() {
-			offsetMs = int(buffer.StartTime.Sub(state.StartedAt).Milliseconds())
-			if offsetMs < 0 {
-				offsetMs = 0
-			}
-		}
-
-		audioData := &AudioData{
-			SessionID:     sessionID,
-			ParticipantID: participantID,
-			Role:          buffer.Role,
-			Data:          pcmData,
-			Frames:        buffer.Frames,
-			SampleRate:    16000,
-			Duration:      buffer.DurationMs,
-			OffsetMs:      offsetMs,
-		}
-
-		if err := s.transcription.TranscribeAudio(ctx, audioData); err != nil {
-			logging.Errorf("Failed to transcribe remaining audio for session=%s participant=%s: %v",
-				sessionID, participantID, err)
-		}
-
-		s.audioBuffer.ClearBuffer(sessionID, participantID)
+			s.audioBuffer.ClearBuffer(sessionID, participantID)
+		}()
 	}
 }
 
 func (s *Service) generateMinutesForSession(sessionID string) {
-	// Wait for any pending transcription jobs (enqueued by real-time audio)
-	// to be processed before reading transcriptions for minutes generation.
-	deadline := time.Now().Add(30 * time.Second)
-	for len(s.transcribeCh) > 0 && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-	}
+	// Wait for all in-flight transcription jobs to finish writing to DB before
+	// reading them. This replaces the former busy-wait on len(s.transcribeCh),
+	// which had a race: the channel could be empty while a job was still being
+	// persisted by processTranscriptionQueue.
+	s.transcribeWg.Wait()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	transcriptionText, err := s.transcription.GetTranscriptionsAsText(ctx, sessionID)
-	if err != nil {
-		logging.Errorf("Failed to get transcriptions for session=%s: %v", sessionID, err)
-		return
+	// failSession marks the session as error in the DB so operators can
+	// distinguish "permanently failed" from "still processing".
+	failSession := func(sess *Session) {
+		sess.Fail()
+		if updateErr := s.repo.Update(ctx, sess); updateErr != nil {
+			logging.Errorf("generateMinutesForSession: failed to mark session %s as error: %v", sessionID, updateErr)
+		}
 	}
 
-	if transcriptionText == "" {
-		logging.Warnf("No transcriptions found for session=%s", sessionID)
+	var transcriptionText string
+	if s.transcription != nil {
+		var err error
+		transcriptionText, err = s.transcription.GetTranscriptionsAsText(ctx, sessionID)
+		if err != nil {
+			logging.Errorf("Failed to get transcriptions for session=%s: %v", sessionID, err)
+			return
+		}
+		if transcriptionText == "" {
+			logging.Warnf("No transcriptions found for session=%s", sessionID)
+		}
 	}
 
 	session, err := s.repo.GetByID(ctx, sessionID)
@@ -500,10 +678,13 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 		sessCtx.Participants = summaries
 	}
 
-	_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx)
-	if err != nil {
-		logging.Errorf("Failed to generate minutes for session=%s: %v", sessionID, err)
-		return
+	if s.minutes != nil {
+		_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx)
+		if err != nil {
+			logging.Errorf("Failed to generate minutes for session=%s: %v", sessionID, err)
+			failSession(session)
+			return
+		}
 	}
 
 	session.Complete()
@@ -626,6 +807,7 @@ func (s *Service) ProcessAudioChunk(sessionID, participantID string, payload []b
 
 		select {
 		case s.transcribeCh <- job:
+			s.transcribeWg.Add(1)
 			s.audioBuffer.ClearBuffer(sessionID, participantID)
 		default:
 			logging.Warnf("Transcription queue full, dropping chunk for session=%s participant=%s", sessionID, participantID)

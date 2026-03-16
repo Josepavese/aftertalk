@@ -91,6 +91,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		cfg.JWT.Expiration,
 		cfg.Processing,
 		cfg.Templates,
+		cfg.Session,
 	)
 
 	botServer := api.NewBotServer(sessionSvc, jwtMgr, tokenCache, nil)
