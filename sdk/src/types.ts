@@ -25,6 +25,18 @@ export interface Participant {
 export interface CreateSessionRequest {
   participantCount: number;
   templateId?: string;
+  /**
+   * Opaque JSON string stored with the session and propagated unchanged to
+   * every webhook delivery. Use it to carry your own routing context
+   * (e.g. appointment ID, doctor ID) so webhook recipients can associate
+   * the minutes without maintaining a separate lookup table.
+   *
+   * Example: `JSON.stringify({ appointmentId: 'appt_123', doctorId: 'doc_456' })`
+   *
+   * Aftertalk never inspects or modifies this value.
+   * Must be set server-side; never derive it from client input.
+   */
+  metadata?: string;
   participants: ParticipantInput[];
 }
 
@@ -213,4 +225,71 @@ export interface PollerOptions {
   maxInterval?: number;
   /** Backoff multiplier (default: 1.5) */
   backoffFactor?: number;
+}
+
+// ─── Webhook payloads ─────────────────────────────────────────────────────────
+// These types describe the JSON bodies that Aftertalk POSTs to your webhook URL.
+// They are provided for reference and for use in server-side webhook handlers
+// (e.g. Express, Next.js API routes). The JS/TS SDK itself does not receive webhooks.
+
+/**
+ * Compact participant record included in webhook payloads.
+ * Allows recipients to identify who participated without a separate API call.
+ */
+export interface WebhookParticipantSummary {
+  user_id: string;
+  role: string;
+}
+
+/**
+ * Payload for "push" mode webhooks.
+ * The full minutes JSON is delivered directly in the POST body together with
+ * the session context (metadata + participants) set at session-creation time.
+ */
+export interface WebhookMinutesPayload {
+  /** Aftertalk session UUID */
+  session_id: string;
+  /** Delivery timestamp (RFC3339) */
+  timestamp: string;
+  /** Structured minutes output */
+  minutes: Minutes;
+  /**
+   * Opaque string set at session creation. Never modified by Aftertalk.
+   * Use it to correlate the delivery with your own data model.
+   * Omitted when not set.
+   */
+  session_metadata?: string;
+  /**
+   * Compact participant list `[{user_id, role}]`.
+   * Omitted when no participants were registered.
+   */
+  participants?: WebhookParticipantSummary[];
+}
+
+/**
+ * Payload for "notify_pull" mode webhooks.
+ * Contains only a signed, single-use retrieval URL — no clinical data.
+ * The session context is included so recipients can route the notification
+ * (e.g. notify the right doctor) before deciding whether to pull.
+ */
+export interface WebhookNotificationPayload {
+  /** Aftertalk session UUID */
+  session_id: string;
+  /** Notification timestamp (RFC3339) */
+  timestamp: string;
+  /** Single-use URL to retrieve the full minutes. Expires at `expires_at`. */
+  retrieve_url: string;
+  /** Token expiry timestamp (RFC3339) */
+  expires_at: string;
+  /**
+   * Opaque string set at session creation. Never modified by Aftertalk.
+   * Use it to correlate the notification with your own data model.
+   * Omitted when not set.
+   */
+  session_metadata?: string;
+  /**
+   * Compact participant list `[{user_id, role}]`.
+   * Omitted when no participants were registered.
+   */
+  participants?: WebhookParticipantSummary[];
 }
