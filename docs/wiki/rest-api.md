@@ -59,6 +59,7 @@ curl -X POST http://localhost:8080/v1/sessions \
   -d '{
     "participant_count": 2,
     "template_id": "therapy",
+    "metadata": "{\"appointment_id\":\"appt_123\",\"doctor_id\":\"doc_456\",\"patient_id\":\"pat_789\"}",
     "participants": [
       {"user_id": "dr-smith", "role": "therapist"},
       {"user_id": "patient-1", "role": "patient"}
@@ -83,10 +84,20 @@ Response:
 }
 ```
 
+**Request fields:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `participant_count` | int | yes | Must match the length of `participants` |
+| `participants` | array | yes | `[{user_id, role}]`; min 2 entries |
+| `template_id` | string | no | Template for minute structure; defaults to configured default |
+| `metadata` | string | no | Opaque JSON string stored with the session and propagated to every webhook delivery. Use it to embed your own context (appointment ID, user IDs, etc.) so webhook recipients can associate the minutes without a lookup table. |
+
 **Validation:**
 - At least 2 participants
 - `user_id` max 128 chars, `role` max 64 chars
 - `template_id` optional; defaults to the configured default template
+- `metadata` is stored as-is — Aftertalk never parses or validates its content
 
 ### GET /v1/sessions
 List sessions with pagination.

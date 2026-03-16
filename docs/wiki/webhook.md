@@ -32,6 +32,11 @@ Content-Type: application/json
 
 {
   "session_id": "uuid",
+  "session_metadata": "{\"appointment_id\":\"appt_123\",\"doctor_id\":\"doc_456\",\"patient_id\":\"pat_789\"}",
+  "participants": [
+    { "user_id": "doc_456", "role": "therapist" },
+    { "user_id": "pat_789", "role": "patient" }
+  ],
   "minutes": {
     "id": "uuid",
     "session_id": "uuid",
@@ -45,6 +50,16 @@ Content-Type: application/json
   "timestamp": "2026-03-13T12:00:00Z"
 }
 ```
+
+**Fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `session_id` | string | Aftertalk session UUID |
+| `session_metadata` | string (JSON) | Opaque string passed at session creation. Aftertalk never inspects it. Use it to carry your own context (appointment ID, doctor ID, etc.). Omitted if empty. |
+| `participants` | array | Compact participant list `[{user_id, role}]` set at session creation. Omitted if empty. |
+| `minutes` | object | Structured minutes output (sections, citations) |
+| `timestamp` | string (RFC3339) | Delivery timestamp |
 
 Your endpoint must return `2xx`. Non-2xx or network errors trigger the retrier (see below).
 
@@ -72,9 +87,16 @@ X-Aftertalk-Signature: hmac-sha256=<hex>
   "session_id": "uuid",
   "retrieve_url": "https://aftertalk.yourdomain.com/v1/minutes/pull/TOKEN",
   "expires_at": "2026-03-13T13:00:00Z",
-  "timestamp": "2026-03-13T12:00:00Z"
+  "timestamp": "2026-03-13T12:00:00Z",
+  "session_metadata": "{\"appointment_id\":\"appt_123\",\"doctor_id\":\"doc_456\"}",
+  "participants": [
+    { "user_id": "doc_456", "role": "therapist" },
+    { "user_id": "pat_789", "role": "patient" }
+  ]
 }
 ```
+
+The notification payload carries the full session context (`session_metadata`, `participants`) so your server can route the event (e.g. notify the right doctor) without first pulling the minutes. The `retrieve_url` points to the actual clinical data — it is fetched only when needed.
 
 ### Step 2 — Verify signature (your server)
 
@@ -120,6 +142,71 @@ webhook:
 ```
 
 Failed attempts are stored in the `webhook_events` table with status `failed`. After exhausting retries, the event remains as `failed` — no alert is emitted by default.
+
+---
+
+## Session Context: Metadata and Participants
+
+Both `push` and `notify_pull` payloads carry a **session context** — the `session_metadata` string and the `participants` array — set once at session-creation time and propagated unchanged to every delivery.
+
+### Why
+
+Without this, recipients must maintain a local `session_id → context` mapping table to associate an incoming webhook with their own data model (appointment, patient, etc.). The session context eliminates that need.
+
+### Setting the context at creation
+
+```bash
+curl -X POST http://localhost:8080/v1/sessions \
+  -H "X-API-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "participant_count": 2,
+    "template_id": "therapy",
+    "metadata": "{\"appointment_id\":\"appt_123\",\"doctor_id\":\"doc_456\",\"patient_id\":\"pat_789\"}",
+    "participants": [
+      {"user_id": "doc_456", "role": "therapist"},
+      {"user_id": "pat_789", "role": "patient"}
+    ]
+  }'
+```
+
+The `metadata` field is an **opaque JSON string**. Aftertalk stores it as-is and echoes it back in every webhook payload under `session_metadata`. Use any structure that makes sense for your application.
+
+### Receiving the context in your webhook handler
+
+```php
+// PHP example — Laravel/Slim controller
+public function handleWebhook(Request $request): Response
+{
+    // 1. Verify signature (notify_pull mode)
+    $signature = $request->header('X-Aftertalk-Signature');
+    if (!$this->aftertalk->webhook->verifySignature($request->getContent(), $signature)) {
+        return response('Forbidden', 403);
+    }
+
+    // 2. Parse payload
+    $payload = json_decode($request->getContent(), true);
+    $meta    = json_decode($payload['session_metadata'] ?? '{}', true);
+
+    // 3. Associate with your data model — no lookup table needed
+    $appointmentId = $meta['appointment_id'];
+    $doctorId      = $meta['doctor_id'];
+
+    // For notify_pull: retrieve_url is in payload; pull minutes separately.
+    // For push: minutes are already in payload['minutes'].
+
+    Appointment::find($appointmentId)->attachMinutes($payload);
+    Doctor::find($doctorId)->notifyMinutesReady($appointmentId);
+
+    return response('OK', 200);
+}
+```
+
+### Security notes
+
+- `session_metadata` is **server-supplied**: it is set only via the `POST /v1/sessions` endpoint, which requires the API key. Clients (browsers) never touch it.
+- The content is **not validated or parsed** by Aftertalk. Ensure your backend sanitises it before using it in queries or rendering.
+- In `notify_pull` mode the metadata travels in the notification (before the pull). If the metadata itself is sensitive, consider using only opaque IDs (e.g. `appointment_id`) and resolving them server-side.
 
 ---
 
