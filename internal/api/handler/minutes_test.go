@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strings"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -124,7 +125,7 @@ func TestMinutesHandler_GetMinutes(t *testing.T) {
 			mockSetup:      func(m *MockMinutesService) {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, "Session ID required", rec.Body.String())
+				assert.Equal(t, "Session ID required", strings.TrimSpace(rec.Body.String()))
 			},
 		},
 	}
@@ -198,7 +199,7 @@ func TestMinutesHandler_GetMinutesByID(t *testing.T) {
 			mockSetup:      func(m *MockMinutesService) {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, "Minutes ID required", rec.Body.String())
+				assert.Equal(t, "Minutes ID required", strings.TrimSpace(rec.Body.String()))
 			},
 		},
 	}
@@ -275,7 +276,7 @@ func TestMinutesHandler_UpdateMinutes(t *testing.T) {
 			mockSetup:      func(m *MockMinutesService) {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, "Invalid request body", rec.Body.String())
+				assert.Equal(t, "Invalid request body", strings.TrimSpace(rec.Body.String()))
 			},
 		},
 		{
@@ -384,7 +385,7 @@ func TestMinutesHandler_GetMinutesHistory(t *testing.T) {
 			mockSetup:      func(m *MockMinutesService) {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, "Minutes ID required", rec.Body.String())
+				assert.Equal(t, "Minutes ID required", strings.TrimSpace(rec.Body.String()))
 			},
 		},
 	}

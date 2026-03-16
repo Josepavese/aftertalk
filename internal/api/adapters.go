@@ -8,6 +8,7 @@ import (
 	"github.com/Josepavese/aftertalk/internal/core/minutes"
 	"github.com/Josepavese/aftertalk/internal/core/session"
 	"github.com/Josepavese/aftertalk/internal/core/transcription"
+	"github.com/Josepavese/aftertalk/pkg/webhook"
 )
 
 // TranscriptionAdapter adapts transcription.Service to session.TranscriptionServiceInterface.
@@ -37,8 +38,8 @@ type MinutesAdapter struct {
 	Svc *minutes.Service
 }
 
-func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig) (interface{}, error) {
-	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl)
+func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext) (interface{}, error) {
+	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx)
 }
 
 func (a *MinutesAdapter) GetMinutes(ctx context.Context, sessionID string) (interface{}, error) {

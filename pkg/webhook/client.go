@@ -2,9 +2,16 @@
 //
 // Two payload types are supported:
 //
-//   - MinutesPayload: legacy "push" mode — full minutes JSON in the POST body.
+//   - MinutesPayload: "push" mode — full minutes JSON in the POST body together with
+//     session metadata and participant summary.
 //   - NotificationPayload: "notify_pull" mode — only a signed retrieval URL is sent;
-//     the recipient calls GET /v1/minutes/pull/{token} to fetch the actual data.
+//     the recipient calls GET /v1/minutes/pull/{token} to fetch the actual minutes.
+//     Session metadata and participants are included here so the recipient has full
+//     context without needing a second API call.
+//
+// Both payloads carry a SessionContext so that recipients can associate the delivery
+// with their own data model (e.g. appointment_id, doctor_id) without maintaining a
+// separate session-id → context mapping table on their side.
 //
 // The Client signs outgoing notification webhooks with HMAC-SHA256 over the request
 // body using the configured Secret.  Recipients should verify the
@@ -36,6 +43,29 @@ import (
 
 var errWebhookBadStatus = errors.New("webhook returned bad status")
 
+// ParticipantSummary is a compact record of a session participant included in
+// webhook payloads. It lets recipients identify who joined without a separate API call.
+type ParticipantSummary struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role"`
+}
+
+// SessionContext carries the opaque metadata and participant list associated with
+// a session. It is set at session-creation time by the integrating backend and
+// propagated unchanged through the call chain to every webhook delivery.
+//
+// Metadata is a raw JSON string — Aftertalk never inspects or modifies it. A
+// typical value from a telemedicine backend might look like:
+//
+//	{"appointment_id":"appt_123","doctor_id":"doc_456","patient_id":"pat_789"}
+//
+// Participants contains one entry per participant in the order they were created.
+// Both fields are omitted from JSON when empty to keep legacy payloads unchanged.
+type SessionContext struct {
+	Metadata     string               `json:"metadata,omitempty"`
+	Participants []ParticipantSummary `json:"participants,omitempty"`
+}
+
 // Client delivers webhook payloads to an external HTTP endpoint.
 type Client struct {
 	httpClient *http.Client
@@ -65,25 +95,31 @@ func NewClientWithSecret(url, secret string, timeout time.Duration) *Client {
 	}
 }
 
-// MinutesPayload is the legacy "push" webhook body.
-// The full minutes JSON is sent directly to the recipient.
-// Use NotificationPayload instead for sensitive data.
+// MinutesPayload is the "push" webhook body.
+// The full minutes JSON is sent directly to the recipient together with the
+// session context (metadata + participants) set at session-creation time.
+// Use NotificationPayload instead when sensitive data must not travel in the
+// webhook body (notify_pull mode).
 type MinutesPayload struct {
-	Timestamp time.Time   `json:"timestamp"`
-	Minutes   interface{} `json:"minutes"`
-	SessionID string      `json:"session_id"`
+	Timestamp       time.Time          `json:"timestamp"`
+	Minutes         interface{}        `json:"minutes"`
+	SessionID       string             `json:"session_id"`
+	SessionMetadata string             `json:"session_metadata,omitempty"`
+	Participants    []ParticipantSummary `json:"participants,omitempty"`
 }
 
 // NotificationPayload is the "notify_pull" webhook body.
 // It carries only a signed, single-use retrieval URL — no medical data.
-// The recipient must call RetrieveURL (with an optional TLS-pinned client)
-// to fetch the actual minutes. The URL expires at ExpiresAt and becomes
-// invalid after the first successful retrieval.
+// The session context (metadata + participants) is included here so the
+// recipient has full routing context without needing to pull first.
+// The URL expires at ExpiresAt and becomes invalid after the first successful retrieval.
 type NotificationPayload struct {
-	ExpiresAt   time.Time `json:"expires_at"`
-	Timestamp   time.Time `json:"timestamp"`
-	SessionID   string    `json:"session_id"`
-	RetrieveURL string    `json:"retrieve_url"`
+	ExpiresAt       time.Time          `json:"expires_at"`
+	Timestamp       time.Time          `json:"timestamp"`
+	SessionID       string             `json:"session_id"`
+	RetrieveURL     string             `json:"retrieve_url"`
+	SessionMetadata string             `json:"session_metadata,omitempty"`
+	Participants    []ParticipantSummary `json:"participants,omitempty"`
 }
 
 // Send delivers a MinutesPayload (push mode). No HMAC signing.

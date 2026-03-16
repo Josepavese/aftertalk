@@ -1,6 +1,6 @@
 # Improvement 11: Metadata nei Payload Webhook
 
-## Stato: APERTO
+## Stato: COMPLETATO
 
 ## Contesto
 
