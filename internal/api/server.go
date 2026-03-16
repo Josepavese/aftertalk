@@ -22,9 +22,11 @@ import (
 )
 
 type Server struct {
-	httpServer *http.Server
-	router     *chi.Mux
-	botServer  *BotServer
+	httpServer  *http.Server
+	router      *chi.Mux
+	botServer   *BotServer
+	tlsCertFile string
+	tlsKeyFile  string
 }
 
 // roomTTL is how long a room entry is kept in the cache after creation.
@@ -353,8 +355,10 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 	addr := fmt.Sprintf("%s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
 
 	return &Server{
-		router:    r,
-		botServer: botServer,
+		router:      r,
+		botServer:   botServer,
+		tlsCertFile: cfg.TLS.CertFile,
+		tlsKeyFile:  cfg.TLS.KeyFile,
 		httpServer: &http.Server{
 			Addr:         addr,
 			Handler:      r,
@@ -398,7 +402,21 @@ func (s *Server) Handler() http.Handler {
 	return s.router
 }
 
+// ListenAndServe starts the server.
+// If tls.cert_file and tls.key_file are both configured, it serves HTTPS/WSS.
+// If the files are configured but missing or unreadable, it returns an error
+// immediately — it never silently falls back to plain HTTP.
+// Leave both fields empty to run as plain HTTP (e.g. behind a reverse proxy).
 func (s *Server) ListenAndServe() error {
+	if s.tlsCertFile != "" && s.tlsKeyFile != "" {
+		if _, err := os.Stat(s.tlsCertFile); err != nil {
+			return fmt.Errorf("TLS cert file not found (%s): %w", s.tlsCertFile, err)
+		}
+		if _, err := os.Stat(s.tlsKeyFile); err != nil {
+			return fmt.Errorf("TLS key file not found (%s): %w", s.tlsKeyFile, err)
+		}
+		return s.httpServer.ListenAndServeTLS(s.tlsCertFile, s.tlsKeyFile)
+	}
 	return s.httpServer.ListenAndServe()
 }
 
