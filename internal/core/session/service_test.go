@@ -2,16 +2,23 @@ package session
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	logging.Init("info", "console") //nolint:errcheck
+	os.Exit(m.Run())
+}
 
 func TestService_CreateSession(t *testing.T) {
 	jwtManager := jwt.NewJWTManager("test-secret", "aftertalk", 2*time.Hour)
@@ -80,7 +87,7 @@ func TestService_CreateSession(t *testing.T) {
 
 			ctx := context.Background()
 
-			service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+			service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 			resp, err := service.CreateSession(ctx, tt.req)
 
@@ -126,7 +133,7 @@ func TestService_CreateSession_DBError(t *testing.T) {
 
 	// Now create a service and try to create another session
 	// This should succeed since the database is functional
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	// Use a different session ID
 	req.Participants = []ParticipantRequest{
@@ -166,7 +173,7 @@ func TestService_CreateSession_JWTError(t *testing.T) {
 	}
 
 	// Now create a service with the real repo
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	// This should succeed since JWT generation works
 	resp, err := service.CreateSession(ctx, req)
@@ -194,7 +201,7 @@ func TestService_GetSession(t *testing.T) {
 		t.Fatalf("failed to create session: %v", err)
 	}
 
-	service := NewService(repo, nil, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, nil, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	retrieved, err := service.GetSession(ctx, sessionID)
 	assert.NoError(t, err)
@@ -212,7 +219,7 @@ func TestService_GetSession_NotFound(t *testing.T) {
 	tokenCache := cache.NewTokenCache()
 
 	ctx := context.Background()
-	service := NewService(repo, nil, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, nil, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	_, err := service.GetSession(ctx, "non-existent-session")
 	assert.Error(t, err)
@@ -237,7 +244,7 @@ func TestService_EndSession(t *testing.T) {
 		t.Fatalf("failed to create session: %v", err)
 	}
 
-	service := NewService(repo, nil, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, nil, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	err = service.EndSession(ctx, sessionID)
 	assert.NoError(t, err)
@@ -255,7 +262,7 @@ func TestService_EndSession_NotFound(t *testing.T) {
 	tokenCache := cache.NewTokenCache()
 
 	ctx := context.Background()
-	service := NewService(repo, nil, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, nil, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	err := service.EndSession(ctx, "non-existent-session")
 	assert.Error(t, err)
@@ -276,7 +283,7 @@ func TestService_EndSession_DBError(t *testing.T) {
 
 	sessionCache := cache.NewSessionCache()
 
-	service := NewService(repo, nil, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, nil, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 	err := service.EndSession(ctx, sessionID)
 
 	assert.Error(t, err)
@@ -304,7 +311,7 @@ func TestService_ValidateParticipant_Success(t *testing.T) {
 
 	tokenCache.SetToken(validTokenJTI, "session-1", 2*time.Hour)
 
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	result, err := service.ValidateParticipant(ctx, validTokenJTI)
 	require.NoError(t, err)
@@ -326,7 +333,7 @@ func TestService_ValidateParticipant_TokenNotFound(t *testing.T) {
 
 	ctx := context.Background()
 
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	_, err := service.ValidateParticipant(ctx, "non-existent-jti")
 	assert.Error(t, err)
@@ -351,7 +358,7 @@ func TestService_ValidateParticipant_TokenExpired(t *testing.T) {
 
 	tokenCache.SetToken(expiredTokenJTI, "session-1", 2*time.Hour)
 
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	_, err := service.ValidateParticipant(ctx, expiredTokenJTI)
 	assert.Error(t, err)
@@ -377,7 +384,7 @@ func TestService_ValidateParticipant_TokenAlreadyUsed(t *testing.T) {
 
 	tokenCache.SetToken(usedTokenJTI, "session-1", 2*time.Hour)
 
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	_, err := service.ValidateParticipant(ctx, usedTokenJTI)
 	assert.Error(t, err)
@@ -393,7 +400,7 @@ func TestService_ValidateParticipant_DBError(t *testing.T) {
 
 	ctx := context.Background()
 
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	_, err := service.ValidateParticipant(ctx, "some-jti")
 	assert.Error(t, err)
@@ -424,7 +431,7 @@ func TestService_ConnectParticipant_Success(t *testing.T) {
 
 	// Note: The service ConnectParticipant method has a bug - it calls GetParticipantsBySession
 	// instead of GetParticipantByJTI. This test verifies the bug exists.
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	err = service.ConnectParticipant(ctx, participantID)
 	assert.Error(t, err)
@@ -440,7 +447,7 @@ func TestService_ConnectParticipant_NoParticipants(t *testing.T) {
 
 	ctx := context.Background()
 
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	err := service.ConnectParticipant(ctx, "non-existent-participant")
 	require.Error(t, err)
@@ -467,7 +474,7 @@ func TestService_ConnectParticipant_SessionCacheError(t *testing.T) {
 	participant := NewParticipant(participantID, sessionID, "user-1", "moderator", "token-jti-1", now.Add(2*time.Hour))
 	repo.CreateParticipant(ctx, participant)
 
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	err := service.ConnectParticipant(ctx, participantID)
 	assert.Error(t, err)
@@ -494,7 +501,7 @@ func TestService_ConnectParticipant_SessionNotActive(t *testing.T) {
 	participant := NewParticipant(participantID, sessionID, "user-1", "moderator", "token-jti-1", now.Add(2*time.Hour))
 	repo.CreateParticipant(ctx, participant)
 
-	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	err := service.ConnectParticipant(ctx, participantID)
 	assert.Error(t, err)

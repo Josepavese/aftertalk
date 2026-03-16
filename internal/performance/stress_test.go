@@ -133,7 +133,7 @@ func TestHighFrequencySessionCreation(t *testing.T) {
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
-	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil)
+	service := session.NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	sessionCount := sessionsPerHour * 2
 	sessionPerThread := sessionCount / threads

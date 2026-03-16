@@ -190,6 +190,8 @@ func main() {
 	)
 
 	// Wire persistent webhook retry if a URL is configured.
+	// IMPORTANT: the retrier must always be wired when a webhook URL is set.
+	// Without it, webhook delivery is fire-and-forget and will be lost on restart.
 	if cfg.Webhook.URL != "" {
 		timeout := cfg.Webhook.Timeout
 		if timeout == 0 {
@@ -221,7 +223,12 @@ func main() {
 		cfg.JWT.Expiration,
 		cfg.Processing,
 		cfg.Templates,
+		cfg.Session,
 	)
+	sessionService.SetLastActivityProvider(transcriptionRepo)
+	sessionService.StartSessionReaper(ctx)
+	sessionService.RecoverProcessingSessions(ctx)
+	sessionService.RestoreInactivityTimers(ctx)
 
 	// Start embedded TURN server if enabled.
 	// When running, automatically appends the TURN server entry to ICEServers

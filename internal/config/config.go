@@ -41,6 +41,7 @@ type Config struct {
 	Webhook     WebhookConfig
 	Logging     LoggingConfig
 	HTTP        HTTPConfig
+	TLS         TLSConfig
 	WebSocket   WebSocketConfig
 	Database    DatabaseConfig
 	JWT         JWTConfig
@@ -60,6 +61,16 @@ type DatabaseConfig struct {
 type HTTPConfig struct {
 	Host string `koanf:"host"`
 	Port int    `koanf:"port"`
+}
+
+// TLSConfig enables HTTPS/WSS directly on the Aftertalk server.
+// When CertFile and KeyFile are both set and the files exist, the server
+// calls ListenAndServeTLS instead of ListenAndServe.
+// Leave empty to run as plain HTTP (e.g. when TLS is terminated by a
+// reverse proxy such as Apache or nginx in front of Aftertalk).
+type TLSConfig struct {
+	CertFile string `koanf:"cert_file"`
+	KeyFile  string `koanf:"key_file"`
 }
 
 type WebSocketConfig struct {
@@ -212,7 +223,15 @@ type ProcessingConfig struct {
 }
 
 type SessionConfig struct {
-	MaxDuration               time.Duration `koanf:"max_duration"`
+	// MaxDuration is the maximum lifetime of an active session. When a session
+	// exceeds this duration it is automatically ended by the session reaper
+	// background goroutine. Set to 0 to disable auto-timeout (default: 2h).
+	MaxDuration time.Duration `koanf:"max_duration"`
+	// InactivityTimeout is how long a session can be idle (no audio received)
+	// before it is automatically ended. The timer resets on every audio chunk.
+	// Restored across restarts via DB-backed last-activity lookup.
+	// Set to 0 to disable inactivity-based auto-end (default: 10m).
+	InactivityTimeout         time.Duration `koanf:"inactivity_timeout"`
 	MaxParticipantsPerSession int           `koanf:"max_participants_per_session"`
 }
 
@@ -380,6 +399,7 @@ func Default() *Config {
 		},
 		Session: SessionConfig{
 			MaxDuration:               2 * time.Hour,
+			InactivityTimeout:         10 * time.Minute,
 			MaxParticipantsPerSession: 10,
 		},
 		Retention: RetentionConfig{

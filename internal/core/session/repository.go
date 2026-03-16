@@ -482,6 +482,51 @@ func (r *SessionRepository) List(ctx context.Context, status string, limit, offs
 	return sessions, total, nil
 }
 
+// ListActive returns all sessions with status 'active', ordered by created_at asc.
+// Used by the session reaper to find expired sessions.
+func (r *SessionRepository) ListActive(ctx context.Context) ([]*Session, error) {
+	query := `SELECT id, status, created_at, ended_at, participant_count, template_id, metadata
+		FROM sessions WHERE status = 'active' ORDER BY created_at ASC`
+
+	rows, err := r.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("list active sessions: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // rows.Close error is not actionable here
+
+	var sessions []*Session
+	for rows.Next() {
+		var s Session
+		var statusStr, createdAt, endedAt sql.NullString
+		var templateID, metadata sql.NullString
+		if err := rows.Scan(&s.ID, &statusStr, &createdAt, &endedAt, &s.ParticipantCount, &templateID, &metadata); err != nil {
+			return nil, fmt.Errorf("scan session: %w", err)
+		}
+		s.Status = SessionStatus(statusStr.String)
+		if createdAt.Valid {
+			if t, err := time.Parse(time.RFC3339, createdAt.String); err == nil {
+				s.CreatedAt = t
+			}
+		}
+		if endedAt.Valid {
+			if t, err := time.Parse(time.RFC3339, endedAt.String); err == nil {
+				s.EndedAt = &t
+			}
+		}
+		if templateID.Valid {
+			s.TemplateID = templateID.String
+		}
+		if metadata.Valid {
+			s.Metadata = metadata.String
+		}
+		sessions = append(sessions, &s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active sessions: %w", err)
+	}
+	return sessions, nil
+}
+
 // Delete removes a session and its related data (participants, audio_streams).
 // Transcriptions and minutes are kept for audit purposes unless explicitly deleted.
 func (r *SessionRepository) Delete(ctx context.Context, id string) error {
