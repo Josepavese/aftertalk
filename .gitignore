@@ -34,3 +34,6 @@ coverage_total.txt
 # Logs
 *.log
 scripts/__pycache__/
+
+# Deploy system (secrets + local tooling — never commit)
+deploy/

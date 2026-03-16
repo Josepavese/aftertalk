@@ -105,6 +105,12 @@ POST /v1/sessions/{id}/end
             └─ webhook.Client.Send() / SendNotification()
 
 Inactivity timeout: 10 minutes of silence → auto-EndSession()
+Session reaper: sweep every 5 min → EndSession() for sessions older than max_duration
+
+Session status transitions:
+  active → processing → completed   (normal path)
+  active → processing → error       (LLM/transcription failure; session.Fail())
+  processing → completed/error      (recovered at boot by RecoverProcessingSessions)
 ```
 
 ---

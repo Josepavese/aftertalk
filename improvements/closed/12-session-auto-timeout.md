@@ -1,6 +1,6 @@
 # Improvement 12: Auto-Timeout Sessione (MaxDuration)
 
-## Stato: APERTO
+## Stato: COMPLETATO
 
 ## Contesto
 

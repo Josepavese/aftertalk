@@ -108,6 +108,20 @@ aftertalk/
 - **Privacy-First**: No persistent audio, append-only transcriptions
 - **Human-in-the-loop**: Minutes always editable by professionals
 
+## TLS / HTTPS
+
+By default Aftertalk serves plain HTTP, suitable when behind a reverse proxy (Apache, nginx) that handles TLS termination.
+
+To run with native HTTPS/WSS, add to `aftertalk.yaml`:
+
+```yaml
+tls:
+  cert_file: /path/to/cert.pem
+  key_file:  /path/to/key.pem
+```
+
+If the files are configured but missing at startup, the server exits with an explicit error — it never silently falls back to plain HTTP.
+
 ## Documentation
 
 - [Wiki](docs/wiki/)
