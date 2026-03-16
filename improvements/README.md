@@ -87,3 +87,13 @@
 ### Open
 
 - **[09-code-quality-bugs.md](09-code-quality-bugs.md)** — 9 bugs found during wiki reverse engineering (race condition, nil context, hardcoded dev path, JWT expiry ignored, wrong HTTP status codes, HTTP client no timeout, stub LLM wrong keys, log stdlib, SDK typo)
+
+- **[10-linter-warnings.md](10-linter-warnings.md)** — fix warning funzionali golangci-lint (errcheck, gosec, noctx, errorlint, forcetypeassert, rowserrcheck, staticcheck); configurazione aggressiva `default: all` mantenuta
+
+- **[11-webhook-metadata.md](11-webhook-metadata.md)** — includere `session_metadata` e sommario partecipanti in `MinutesPayload` e `NotificationPayload`; prerequisito per integrazione MondoPsicologi
+
+- **[12-session-auto-timeout.md](12-session-auto-timeout.md)** — collegare `SessionConfig.MaxDuration` (già in config, non ancora letto) a un background reaper nel service; SSOT già rispettato, manca solo il wiring
+
+- **[13-php-sdk.md](13-php-sdk.md)** — PHP SDK `aftertalk/aftertalk-php` per integratori backend; affianca `@aftertalk/sdk` JS/TS; copre creazione sessioni, token, fine sessione, verifica webhook HMAC
+
+- **[14-integration-guide-mondopsicologi.md](14-integration-guide-mondopsicologi.md)** — guida all'integrazione per piattaforme telemedicina con backend PHP e WebRTC custom; pattern: chi crea la sessione, race condition, assegnazione ruoli, metadata, webhook; dipende da #11 e #13
