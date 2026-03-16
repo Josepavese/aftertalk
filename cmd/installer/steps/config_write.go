@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"text/template"
 
 	instconfig "github.com/Josepavese/aftertalk/cmd/installer/config"
@@ -114,6 +116,19 @@ func runConfigWrite(_ context.Context, cfg *instconfig.InstallConfig, log Logger
 		} else {
 			log.Info("written: " + envPath)
 		}
+	}
+
+	// Chown config files to service user so the process can read them.
+	// Without this, files written by root are inaccessible to the service user.
+	if u, err := user.Lookup(cfg.ServiceUser); err == nil {
+		uid, _ := strconv.Atoi(u.Uid)
+		gid, _ := strconv.Atoi(u.Gid)
+		for _, p := range []string{cfgPath, envPath} {
+			if chownErr := os.Chown(p, uid, gid); chownErr != nil {
+				log.Warn(fmt.Sprintf("chown %s: %v", p, chownErr))
+			}
+		}
+		log.Info(fmt.Sprintf("chown %s: %s", cfg.ServiceUser, cfgPath))
 	}
 
 	return nil
