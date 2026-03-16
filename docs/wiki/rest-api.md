@@ -251,13 +251,41 @@ See [webhook.md](webhook.md) for the complete flow.
 
 ---
 
+## TLS Configuration
+
+By default Aftertalk listens on plain HTTP/WS, which is the expected setup when running behind a reverse proxy (Apache, nginx). For standalone deploys without a proxy, native TLS can be enabled via the `tls:` section in `aftertalk.yaml`:
+
+```yaml
+tls:
+  cert_file: /etc/aftertalk/certs/cert.pem
+  key_file:  /etc/aftertalk/certs/key.pem
+```
+
+Behavior:
+- Both fields set **and files exist on disk** → server starts HTTPS/WSS (`ListenAndServeTLS`).
+- Fields set but **files missing** → server exits with an explicit error. It never silently falls back to HTTP.
+- Fields empty (default) → plain HTTP/WS.
+
+When TLS is active, the signaling WebSocket endpoint is available as `wss://` instead of `ws://`.
+
+See [deployment.md](deployment.md) for TLS options in production.
+
+---
+
 ## WebSocket / Signaling
 
 ### GET /signaling  (or /ws)
 WebSocket for WebRTC signaling. Authenticated via JWT token in the query string.
 
 ```
+# plain HTTP
 ws://localhost:8080/signaling?token=eyJ...
+
+# with native TLS enabled
+wss://yourdomain.com/signaling?token=eyJ...
+
+# behind Apache/nginx reverse proxy
+wss://yourdomain.com/aftertalk/signaling?token=eyJ...
 ```
 
 Messages sent by the client:
