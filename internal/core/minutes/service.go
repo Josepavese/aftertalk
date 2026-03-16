@@ -84,7 +84,11 @@ func (s *Service) WithWebhookRetrier(r *webhook.Retrier) {
 
 // GenerateMinutes calls the LLM to produce structured minutes for a session.
 // The prompt and expected JSON schema are derived from the provided template.
-func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig) (*Minutes, error) {
+// sessCtx carries the opaque metadata and participant list set at session-creation
+// time; it is propagated unchanged to every webhook delivery so recipients can
+// associate the minutes with their own data model (e.g. appointment_id, user IDs)
+// without maintaining a separate session-id → context mapping table.
+func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext) (*Minutes, error) {
 	logging.Infof("Generating minutes for session %s (template=%s)", sessionID, tmpl.ID)
 
 	m := NewMinutes(uuid.New().String(), sessionID, tmpl.ID)
@@ -154,7 +158,7 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 	}
 
 	logging.Infof("Minutes generated successfully for session %s", sessionID)
-	go s.deliverWebhook(sessionID, m) //nolint:contextcheck,gosec // webhook delivery is intentionally fire-and-forget, must outlive the request context
+	go s.deliverWebhook(sessionID, m, sessCtx) //nolint:contextcheck,gosec // webhook delivery is intentionally fire-and-forget, must outlive the request context
 
 	return m, nil
 }
@@ -164,21 +168,23 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 //   - "push" (legacy): full minutes JSON POSTed to the webhook URL.
 //   - "notify_pull": a signed notification carrying only a retrieval URL is POSTed;
 //     the recipient must call GET /v1/minutes/pull/{token} to fetch the data.
-func (s *Service) deliverWebhook(sessionID string, m *Minutes) {
+func (s *Service) deliverWebhook(sessionID string, m *Minutes, sessCtx webhook.SessionContext) {
 	if s.webhookClient == nil {
 		return
 	}
 
 	if s.webhookConfig != nil && s.webhookConfig.Mode == webhookModeNotifyPull {
-		s.deliverNotification(sessionID, m)
+		s.deliverNotification(sessionID, m, sessCtx)
 		return
 	}
 
-	// Legacy push mode: send full minutes payload.
+	// Push mode: send full minutes payload together with session context.
 	payload := &webhook.MinutesPayload{
-		SessionID: sessionID,
-		Minutes:   m,
-		Timestamp: time.Now(),
+		SessionID:       sessionID,
+		Minutes:         m,
+		Timestamp:       time.Now(),
+		SessionMetadata: sessCtx.Metadata,
+		Participants:    sessCtx.Participants,
 	}
 
 	if s.webhookRetrier != nil {
@@ -210,7 +216,7 @@ func (s *Service) deliverWebhook(sessionID string, m *Minutes) {
 //     The payload is HMAC-SHA256 signed if a secret is configured.
 //  4. The actual minutes data is transmitted only when the recipient calls
 //     the retrieval URL — at which point it is deleted from the DB.
-func (s *Service) deliverNotification(sessionID string, m *Minutes) {
+func (s *Service) deliverNotification(sessionID string, m *Minutes, sessCtx webhook.SessionContext) {
 	ttl := s.webhookConfig.TokenTTL
 	if ttl == 0 {
 		ttl = time.Hour
@@ -230,10 +236,12 @@ func (s *Service) deliverNotification(sessionID string, m *Minutes) {
 
 	retrieveURL := s.webhookConfig.PullBaseURL + "/v1/minutes/pull/" + tok.ID
 	payload := &webhook.NotificationPayload{
-		SessionID:   sessionID,
-		RetrieveURL: retrieveURL,
-		ExpiresAt:   tok.ExpiresAt,
-		Timestamp:   time.Now(),
+		SessionID:       sessionID,
+		RetrieveURL:     retrieveURL,
+		ExpiresAt:       tok.ExpiresAt,
+		Timestamp:       time.Now(),
+		SessionMetadata: sessCtx.Metadata,
+		Participants:    sessCtx.Participants,
 	}
 
 	if s.webhookRetrier != nil {

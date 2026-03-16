@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strings"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -119,9 +120,9 @@ func TestSessionHandler_CreateSession(t *testing.T) {
 				},
 			},
 			mockSetup:      func(m *MockSessionService) {},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, "at least 2 participants required", rec.Body.String())
+				assert.Equal(t, "at least 2 participants required", strings.TrimSpace(rec.Body.String()))
 			},
 		},
 		{
@@ -130,7 +131,7 @@ func TestSessionHandler_CreateSession(t *testing.T) {
 			mockSetup:      func(m *MockSessionService) {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, "Invalid request body", rec.Body.String())
+				assert.Equal(t, "Invalid request body", strings.TrimSpace(rec.Body.String()))
 			},
 		},
 	}
@@ -200,7 +201,7 @@ func TestSessionHandler_GetSession(t *testing.T) {
 			},
 			expectedStatus: http.StatusNotFound,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, "failed to get session: failed to get session", rec.Body.String())
+				assert.Equal(t, "failed to get session: failed to get session", strings.TrimSpace(rec.Body.String()))
 			},
 		},
 		{
@@ -209,7 +210,7 @@ func TestSessionHandler_GetSession(t *testing.T) {
 			mockSetup:      func(m *MockSessionService) {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, "Session ID required", rec.Body.String())
+				assert.Equal(t, "Session ID required", strings.TrimSpace(rec.Body.String()))
 			},
 		},
 	}

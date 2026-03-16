@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"strings"
 	"context"
 	"encoding/json"
 	"errors"
@@ -106,7 +107,7 @@ func TestTranscriptionHandler_GetTranscriptions(t *testing.T) {
 			mockSetup:      func(m *MockTranscriptionService) {},
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, "Session ID required", rec.Body.String())
+				assert.Equal(t, "Session ID required", strings.TrimSpace(rec.Body.String()))
 			},
 		},
 	}
@@ -185,7 +186,7 @@ func TestTranscriptionHandler_GetTranscriptionByID(t *testing.T) {
 			mockSetup:       func(m *MockTranscriptionService) {},
 			expectedStatus:  http.StatusBadRequest,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
-				assert.Equal(t, "Transcription ID required", rec.Body.String())
+				assert.Equal(t, "Transcription ID required", strings.TrimSpace(rec.Body.String()))
 			},
 		},
 	}

@@ -10,13 +10,14 @@ import (
 	"time"
 
 	_ "github.com/Josepavese/aftertalk/internal/core"
+	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/core/minutes"
 	"github.com/Josepavese/aftertalk/internal/core/session"
 	"github.com/Josepavese/aftertalk/internal/core/transcription"
-	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
 	"github.com/Josepavese/aftertalk/internal/storage/sqlite"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
+	"github.com/Josepavese/aftertalk/pkg/webhook"
 )
 
 var testDBPath string
@@ -268,7 +269,7 @@ func BenchmarkMinutesGeneration(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := service.GenerateMinutes(context.Background(), sessionID, transcriptionText, tmpl)
+		_, err := service.GenerateMinutes(context.Background(), sessionID, transcriptionText, tmpl, webhook.SessionContext{})
 		if err != nil {
 			b.Fatalf("Failed to generate minutes: %v", err)
 		}

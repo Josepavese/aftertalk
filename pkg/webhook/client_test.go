@@ -200,7 +200,7 @@ func TestClient_Send_Non2xxStatusCode(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for non-2xx status code, got nil")
 	}
-	if !strings.Contains(err.Error(), "webhook returned status") {
+	if !strings.Contains(err.Error(), "webhook returned bad status") {
 		t.Errorf("Expected error to mention 'webhook returned status', got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "400") {
@@ -226,7 +226,7 @@ func TestClient_Send_500StatusCode(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for 500 status code, got nil")
 	}
-	if !strings.Contains(err.Error(), "webhook returned status") {
+	if !strings.Contains(err.Error(), "webhook returned bad status") {
 		t.Errorf("Expected error to mention 'webhook returned status', got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "500") {
@@ -340,7 +340,7 @@ func TestClient_Send_ResponseBodyHandling(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for 409 status code, got nil")
 	}
-	expectedMsg := "webhook returned status 409: " + responseBody
+	expectedMsg := "webhook returned bad status 409: " + responseBody
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Expected error message to contain %s, got: %v", expectedMsg, err)
 	}
@@ -497,5 +497,129 @@ func TestClient_Send_ZeroTimeout(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "timeout") && !strings.Contains(err.Error(), "deadline exceeded") {
 		t.Errorf("Expected timeout/deadline error, got: %v", err)
+	}
+}
+
+// --- SessionContext and payload enrichment tests ---
+
+func TestSessionContext_EmptyOmittedFromJSON(t *testing.T) {
+	payload := &MinutesPayload{
+		SessionID: "sess-1",
+		Minutes:   map[string]string{},
+		Timestamp: time.Now(),
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := m["session_metadata"]; ok {
+		t.Error("session_metadata should be omitted when empty")
+	}
+	if _, ok := m["participants"]; ok {
+		t.Error("participants should be omitted when empty")
+	}
+}
+
+func TestMinutesPayload_SessionContextRoundtrip(t *testing.T) {
+	payload := &MinutesPayload{
+		SessionID:       "sess-1",
+		Minutes:         map[string]string{"summary": "ok"},
+		Timestamp:       time.Now(),
+		SessionMetadata: `{"appointment_id":"appt_123","doctor_id":"doc_456"}`,
+		Participants: []ParticipantSummary{
+			{UserID: "doc_456", Role: "terapeuta"},
+			{UserID: "pat_789", Role: "paziente"},
+		},
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded MinutesPayload
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.SessionMetadata != payload.SessionMetadata {
+		t.Errorf("SessionMetadata: got %q, want %q", decoded.SessionMetadata, payload.SessionMetadata)
+	}
+	if len(decoded.Participants) != 2 {
+		t.Fatalf("Participants: got %d, want 2", len(decoded.Participants))
+	}
+	if decoded.Participants[0].UserID != "doc_456" || decoded.Participants[0].Role != "terapeuta" {
+		t.Errorf("Participants[0]: got %+v", decoded.Participants[0])
+	}
+}
+
+func TestNotificationPayload_SessionContextRoundtrip(t *testing.T) {
+	payload := &NotificationPayload{
+		SessionID:       "sess-1",
+		RetrieveURL:     "https://aftertalk.example/v1/minutes/pull/tok_abc",
+		ExpiresAt:       time.Now().Add(time.Hour),
+		Timestamp:       time.Now(),
+		SessionMetadata: `{"appointment_id":"appt_999"}`,
+		Participants: []ParticipantSummary{
+			{UserID: "usr_1", Role: "terapeuta"},
+		},
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded NotificationPayload
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.SessionMetadata != payload.SessionMetadata {
+		t.Errorf("SessionMetadata: got %q, want %q", decoded.SessionMetadata, payload.SessionMetadata)
+	}
+	if len(decoded.Participants) != 1 || decoded.Participants[0].Role != "terapeuta" {
+		t.Errorf("Participants: got %+v", decoded.Participants)
+	}
+}
+
+func TestMinutesPayload_DeliveredWithSessionContext(t *testing.T) {
+	var received MinutesPayload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, 5*time.Second)
+	payload := &MinutesPayload{
+		SessionID:       "sess-deliver",
+		Minutes:         map[string]string{"section": "content"},
+		Timestamp:       time.Now(),
+		SessionMetadata: `{"appointment_id":"appt_001","doctor_id":"doc_001"}`,
+		Participants: []ParticipantSummary{
+			{UserID: "doc_001", Role: "terapeuta"},
+			{UserID: "pat_002", Role: "paziente"},
+		},
+	}
+	if err := client.Send(context.Background(), payload); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if received.SessionMetadata != payload.SessionMetadata {
+		t.Errorf("server received SessionMetadata %q, want %q", received.SessionMetadata, payload.SessionMetadata)
+	}
+	if len(received.Participants) != 2 {
+		t.Errorf("server received %d participants, want 2", len(received.Participants))
+	}
+}
+
+func TestSessionContext_ZeroValue(t *testing.T) {
+	var ctx SessionContext
+	if ctx.Metadata != "" {
+		t.Error("zero-value Metadata should be empty string")
+	}
+	if ctx.Participants != nil {
+		t.Error("zero-value Participants should be nil")
 	}
 }

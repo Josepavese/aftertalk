@@ -12,6 +12,7 @@ import (
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
 	"github.com/Josepavese/aftertalk/pkg/audio"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
+	"github.com/Josepavese/aftertalk/pkg/webhook"
 	"github.com/google/uuid"
 )
 
@@ -45,7 +46,11 @@ type TranscriptionServiceInterface interface {
 }
 
 type MinutesServiceInterface interface {
-	GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig) (interface{}, error)
+	// GenerateMinutes calls the LLM to produce structured minutes. sessCtx carries
+	// the opaque session metadata and participant list set at session-creation time;
+	// it is propagated unchanged to webhook deliveries so recipients can correlate
+	// the minutes with their own data model without a second API call.
+	GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext) (interface{}, error)
 	GetMinutes(ctx context.Context, sessionID string) (interface{}, error)
 }
 
@@ -481,7 +486,21 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 		logging.Warnf("Template %q not found for session=%s, using %q", session.TemplateID, sessionID, tmpl.ID)
 	}
 
-	_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl)
+	// Build the session context that will be propagated to webhook payloads.
+	// Participants are loaded here so webhook recipients can correlate the delivery
+	// with their own data model (e.g. appointment_id, doctor_id) without a second call.
+	sessCtx := webhook.SessionContext{Metadata: session.Metadata}
+	if participants, pErr := s.repo.GetParticipantsBySession(ctx, sessionID); pErr != nil {
+		logging.Warnf("generateMinutesForSession: could not load participants for session=%s: %v", sessionID, pErr)
+	} else {
+		summaries := make([]webhook.ParticipantSummary, len(participants))
+		for i, p := range participants {
+			summaries[i] = webhook.ParticipantSummary{UserID: p.UserID, Role: p.Role}
+		}
+		sessCtx.Participants = summaries
+	}
+
+	_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx)
 	if err != nil {
 		logging.Errorf("Failed to generate minutes for session=%s: %v", sessionID, err)
 		return
