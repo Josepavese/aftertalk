@@ -19,11 +19,14 @@ const defaultPort = 9977
 
 // Agent serves the HTTP install API and streams log events via SSE.
 type Agent struct {
-	cfg    *instconfig.InstallConfig
-	port   int
-	mu     sync.Mutex
-	events []Event
-	done   chan struct{}
+	cfg      *instconfig.InstallConfig
+	port     int
+	mu       sync.Mutex
+	events   []Event
+	doneOnce sync.Once
+	done     chan struct{}
+	running  bool
+	srvCtx   context.Context // server lifetime context
 }
 
 // Event is a single log line emitted during installation.
@@ -53,6 +56,8 @@ func New(cfg *instconfig.InstallConfig, port int) *Agent {
 
 // ListenAndServe starts the HTTP server. It blocks until the context is done.
 func (a *Agent) ListenAndServe(ctx context.Context) error {
+	a.srvCtx = ctx
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/run", a.handleRun)
 	mux.HandleFunc("/status", a.handleStatus)
@@ -77,25 +82,39 @@ func (a *Agent) ListenAndServe(ctx context.Context) error {
 	return nil
 }
 
-// handleRun triggers an install run. POST /run accepts an optional JSON body
-// with override fields (currently unused — config is fixed at startup).
+// handleRun triggers an install run. POST /run.
+// Only one run can be active at a time; subsequent calls return 409.
 func (a *Agent) handleRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
 	}
 
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		http.Error(w, "run already in progress", http.StatusConflict)
+		return
+	}
+	a.running = true
+	a.mu.Unlock()
+
 	log := &sseLogger{agent: a}
 	runner := steps.NewRunner(a.cfg, log)
 
+	// Use the server context (not the request context) so that the install
+	// continues even if the HTTP client disconnects.
+	runCtx := a.srvCtx
+
 	go func() {
-		results := runner.Run(r.Context())
+		results := runner.Run(runCtx)
 		for _, res := range results {
 			if res.Err != nil {
 				log.Error(fmt.Sprintf("[%s] FAILED: %v", res.StepID, res.Err))
 			}
 		}
-		close(a.done)
+		// doneOnce ensures close(a.done) is called at most once.
+		a.doneOnce.Do(func() { close(a.done) })
 	}()
 
 	w.Header().Set("Content-Type", "application/json")

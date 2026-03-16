@@ -111,7 +111,5 @@ func loadFromEnvFile(path string) (*instconfig.InstallConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read env file %s: %w", path, err)
 	}
-	cfg := instconfig.Default()
-	instconfig.FromEnvMap(m, cfg)
-	return cfg, nil
+	return instconfig.FromEnvMap(m), nil
 }

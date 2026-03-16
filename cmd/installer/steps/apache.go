@@ -29,12 +29,15 @@ const apacheProxyBlock = `
     # <<< Aftertalk reverse proxy
 `
 
+// apacheWSBlock uses a plain string (not fmt.Sprintf) to avoid mixing Apache's
+// %{VAR} syntax with Go format verbs. The port placeholder PORT is replaced
+// with strings.ReplaceAll before writing.
 const apacheWSBlock = `
     # >>> Aftertalk WebSocket proxy — managed by aftertalk-installer
     RewriteEngine On
-    RewriteCond %%{HTTP:Upgrade} websocket [NC]
-    RewriteCond %%{HTTP:Connection} upgrade [NC]
-    RewriteRule ^/aftertalk/(ws|signaling)(.*) ws://127.0.0.1:%d/$1$2 [P,L]
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteCond %{HTTP:Connection} upgrade [NC]
+    RewriteRule ^/aftertalk/(ws|signaling)(.*) ws://127.0.0.1:PORT/$1$2 [P,L]
     # <<< Aftertalk WebSocket proxy
 `
 
@@ -57,8 +60,9 @@ func runApache(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) e
 	}
 
 	// Find the closing </VirtualHost> tag and inject before it.
+	portStr := fmt.Sprintf("%d", cfg.HTTPPort)
 	proxyBlock := fmt.Sprintf(apacheProxyBlock, cfg.HTTPPort, cfg.HTTPPort)
-	wsBlock := fmt.Sprintf(apacheWSBlock, cfg.HTTPPort)
+	wsBlock := strings.ReplaceAll(apacheWSBlock, "PORT", portStr)
 	injection := proxyBlock + wsBlock
 
 	var out bytes.Buffer
