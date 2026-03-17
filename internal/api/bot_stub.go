@@ -19,12 +19,12 @@ type BotServer struct {
 	SignalingServer *webrtc.SignalingServer
 }
 
-func NewBotServer(sessionService *session.Service, jwtManager *jwt.JWTManager, tokenCache *cache.TokenCache, iceServers []config.ICEServerConfig) *BotServer {
+func NewBotServer(sessionService *session.Service, jwtManager *jwt.JWTManager, tokenCache *cache.TokenCache, iceServers []config.ICEServerConfig, iceUDPPortMin, iceUDPPortMax uint16) *BotServer {
 	webrtcManager := webrtc.NewManager(func(sessionID, participantID, role string, payload []byte) {
 		if err := sessionService.ProcessAudioChunk(sessionID, participantID, payload); err != nil {
 			logging.Errorf("ProcessAudioChunk error session=%s participant=%s: %v", sessionID, participantID, err)
 		}
-	}, iceServers)
+	}, iceServers, iceUDPPortMin, iceUDPPortMax)
 
 	signalingServer := webrtc.NewSignalingServer(webrtcManager, func(tokenString string) (*webrtc.Claims, error) {
 		claims, err := jwtManager.Validate(tokenString)

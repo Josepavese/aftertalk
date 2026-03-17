@@ -280,6 +280,11 @@ type WebRTCConfig struct {
 	ICEProviderName string            `koanf:"ice_provider"`
 	ICEServers      []ICEServerConfig `koanf:"ice_servers"`
 	TURN            TURNServerConfig  `koanf:"turn"`
+	// ICEUDPPortMin/Max pins Pion's ephemeral UDP port range for ICE candidates.
+	// Only these ports need to be open in the firewall (ufw allow MIN:MAX/udp).
+	// Defaults: 49200–49209.
+	ICEUDPPortMin uint16 `koanf:"ice_udp_port_min"`
+	ICEUDPPortMax uint16 `koanf:"ice_udp_port_max"`
 }
 
 // TURNServerConfig configures the optional embedded TURN server (pion/turn).
@@ -396,6 +401,8 @@ func Default() *Config {
 				EnableUDP:  true,
 				EnableTCP:  true,
 			},
+			ICEUDPPortMin: 49200,
+			ICEUDPPortMax: 49209,
 		},
 		Session: SessionConfig{
 			MaxDuration:               2 * time.Hour,
