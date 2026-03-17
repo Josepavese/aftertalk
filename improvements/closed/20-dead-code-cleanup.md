@@ -83,3 +83,20 @@ grep -rn "TODO\|FIXME\|HACK\|errOpus\|decodeOpus\|OpusEncoder" --include="*.go" 
 ```
 
 L'ultimo grep deve tornare vuoto o solo commenti legittimi.
+
+---
+
+## Status: closed
+
+**Analisi avvocato del diavolo — tutti i punti già risolti da improvement #16:**
+
+| Punto | Stato | Note |
+|-------|-------|------|
+| 1. `decodeOpus` / `ConvertToPCM` / `errOpusDecodingNotImplemented` | ✓ rimosso in #16 | `PCMConverter` struct NON rimossa: usata in `session/service.go:83` |
+| 2. `OpusEncoder` / `NewOpusEncoder` / `errOpusEncodingNotSupported` | ✓ rimosso in #16 | |
+| 3. `ogg_opus.go` con `DecodeFramesToWAVffmpeg` | ✓ file eliminato in #16 | |
+| 4. `errOpusEncodingNotSupported` orfano | ✓ rimosso con #2 | |
+| 5. import `math` orfano | ✗ non rimosso — ancora necessario | `ConvertToInt16` usa `math.Max/Min`, chiamata da `session/service.go` |
+| 6. debug log `debug_wav=%s` | ✓ rimosso in #16 | Log `wav_bytes/frames_decoded` rimasto: logging operativo legittimo |
+
+Verifica finale: `go build ./... && go vet ./... && go test ./...` — tutti i package OK, zero errori.

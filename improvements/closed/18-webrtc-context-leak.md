@@ -98,3 +98,24 @@ con `go tool pprof` che le goroutine di WebRTC vengano terminate entro il timeou
 - Eliminazione goroutine/resource leak su disconnessione brusca
 - Comportamento corretto sotto stress (molte sessioni parallele)
 - Rimozione del `//nolint:contextcheck` sleazy
+
+---
+
+## Status: closed
+
+**Implementazione:**
+- `HandleWebSocket`: `ctx, cancel := context.WithCancel(context.Background())` — context indipendente dal request context (che si cancella subito dopo l'upgrade)
+- `handleMessages(ctx, cancel, ...)`: riceve context e cancel; chiama `cancel()` nel defer prima del cleanup
+- `handleMessage(ctx, ...)` → `handleJoin(ctx, ...)` / `handleOffer(ctx, ...)`: context propagato lungo tutta la catena
+- `Manager.CreatePeer`: lancia goroutine `<-ctx.Done() → peer.PC.Close()` per chiusura immediata su disconnect brusco
+- Rimossi entrambi i `context.TODO()` e il `//nolint:contextcheck`
+
+**Analisi avvocato del diavolo:**
+- Double-close su RemovePeer + ctx cancel: Pion `PC.Close()` è idempotente → OK
+- ErrPeerAlreadyExists path: goroutine cleanup NON lanciata → nessun leak
+- Goroutine cleanup non permane: `cancel()` sempre chiamata nel defer di handleMessages
+
+**Test:** `internal/bot/webrtc/peer_context_test.go` — 3 casi:
+- ContextCancel: verifica `SignalingState == "closed"` entro 500ms dalla cancel
+- NormalRemoval: RemovePeer poi cancel → no panic
+- ErrAlreadyExists: duplicate CreatePeer → nessuna goroutine extra

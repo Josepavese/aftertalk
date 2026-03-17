@@ -94,3 +94,16 @@ Oppure lasciare in `LLMConfig` e accedere via template `index`.
 - YAML generato è auto-documentante e completo per tutti i provider
 - Operatore può modificare il YAML post-install senza dover trovare l'env file
 - Nessuna confusione su "perché la sezione anthropic: non c'è nel file?"
+
+---
+
+## Status: closed
+
+**Implementazione in `config_write.go`:**
+- STT: whisper-local (invariato), google (invariato), **AWS aggiunto** (access_key_id + secret + region), Azure (aggiunto region)
+- LLM: ollama (invariato), **openai con model**, **anthropic nuovo**, **azure nuovo** (api_key + endpoint + model)
+- Template usa `{{ if eq .LLMProvider "..." }}` invece di `{{ range $k,$v := .LLMConfig }}` — provider-specifico corretto
+- `index .STTConfig/LLMConfig "KEY"` su nil map restituisce `""` in Go templates (verificato)
+- Non aggiunto `LLMModel` a `InstallConfig`: già accessibile via `index .LLMConfig "LLM_MODEL"` nel template
+
+**Test:** `config_write_test.go` — 10 casi (4 STT + 4 LLM + nil safety + no cross-contamination)
