@@ -201,35 +201,24 @@ func TestSTTProviderInterface(t *testing.T) {
 
 func TestSTTConfigDefaults(t *testing.T) {
 	tests := []struct {
-		name     string
-		cfg      *stt.STTConfig
-		expected string
+		name    string
+		cfg     *stt.STTConfig
+		wantErr bool
 	}{
-		{"empty provider", &stt.STTConfig{}, ""},
-		{"google provider", &stt.STTConfig{Provider: "google"}, "google"},
-		{"aws provider", &stt.STTConfig{Provider: "aws"}, "aws"},
-		{"azure provider", &stt.STTConfig{Provider: "azure"}, "azure"},
-		{"unsupported provider", &stt.STTConfig{Provider: "unsupported"}, "unsupported"},
+		{"empty provider returns error", &stt.STTConfig{}, true},
+		{"google provider", &stt.STTConfig{Provider: "google"}, false},
+		{"aws provider", &stt.STTConfig{Provider: "aws"}, false},
+		{"azure provider", &stt.STTConfig{Provider: "azure"}, false},
+		{"unsupported provider returns error", &stt.STTConfig{Provider: "unsupported"}, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := stt.NewProvider(tt.cfg)
-			if tt.expected == "" {
-				// Empty provider falls back to stub — no error expected
-				if err != nil {
-					t.Errorf("Expected no error for empty provider (stub fallback), got: %v", err)
-				}
-			} else if tt.expected != "unsupported" {
-				// For valid providers, expect no error
-				if err != nil {
-					t.Errorf("Expected provider %s, got error: %v", tt.expected, err)
-				}
-			} else {
-				// For unsupported provider, expect an error
-				if err == nil {
-					t.Error("Expected error for unsupported provider")
-				}
+			if tt.wantErr && err == nil {
+				t.Errorf("provider=%q: expected error, got nil", tt.cfg.Provider)
+			} else if !tt.wantErr && err != nil {
+				t.Errorf("provider=%q: unexpected error: %v", tt.cfg.Provider, err)
 			}
 		})
 	}

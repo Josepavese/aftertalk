@@ -1,49 +1,18 @@
 package stt
 
 import (
-	"context"
 	"errors"
 	"fmt"
-
-	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 var (
-	errWhisperURLRequired    = errors.New("whisper-local: STT_WHISPER_URL is required")
+	errWhisperURLRequired  = errors.New("whisper-local: STT_WHISPER_URL is required")
+	errSTTProviderRequired = errors.New("stt.provider is required — supported: google, aws, azure, whisper-local")
 	errUnsupportedSTTProvider = errors.New("unsupported STT provider")
 )
 
-// StubSTTProvider is the no-op provider used when no real STT is configured.
-// It returns a labeled transcription segment without calling any external API.
-type StubSTTProvider struct{}
-
-func NewStubSTTProvider() *StubSTTProvider {
-	return &StubSTTProvider{}
-}
-
-func (p *StubSTTProvider) Transcribe(_ context.Context, audioData *AudioData) (*TranscriptionResult, error) {
-	logging.Warnf("STT stub: session=%s participant=%s role=%s frames=%d bytes=%d duration=%dms offset=%dms",
-		audioData.SessionID, audioData.ParticipantID, audioData.Role,
-		len(audioData.Frames), len(audioData.Data), audioData.Duration, audioData.OffsetMs)
-
-	result := NewTranscriptionResult(p.Name())
-	result.Duration = audioData.Duration
-	result.AddSegment(&TranscriptionSegment{
-		SessionID:  audioData.SessionID,
-		Role:       audioData.Role,
-		StartMs:    audioData.OffsetMs,
-		EndMs:      audioData.OffsetMs + audioData.Duration,
-		Text:       fmt.Sprintf("[stub: %dms di audio da %s]", audioData.Duration, audioData.Role),
-		Confidence: 1.0,
-	})
-	return result, nil
-}
-
-func (p *StubSTTProvider) Name() string      { return "stub" }
-func (p *StubSTTProvider) IsAvailable() bool { return true }
-
 // NewProvider selects and returns the STT provider based on cfg.
-// Falls back to StubSTTProvider when provider name is empty or unrecognized.
+// Returns an error if provider is not set or unrecognised — no stub fallback.
 func NewProvider(cfg *STTConfig) (STTProvider, error) {
 	switch cfg.Provider {
 	case "google":
@@ -58,8 +27,8 @@ func NewProvider(cfg *STTConfig) (STTProvider, error) {
 			return nil, errWhisperURLRequired
 		}
 		return p, nil
-	case "", "stub":
-		return NewStubSTTProvider(), nil
+	case "":
+		return nil, errSTTProviderRequired
 	default:
 		return nil, fmt.Errorf("%w: %s", errUnsupportedSTTProvider, cfg.Provider)
 	}

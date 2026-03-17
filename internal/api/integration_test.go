@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 	"github.com/Josepavese/aftertalk/internal/api"
 	"github.com/Josepavese/aftertalk/internal/api/handler"
@@ -70,8 +69,8 @@ func newTestEnv(t *testing.T) *testEnv {
 	tokenCache := cache.NewTokenCache()
 	audioBuffer := cache.NewAudioBufferCache()
 
-	sttProvider, _ := stt.NewProvider(&stt.STTConfig{Provider: "stub"})
-	llmProvider, _ := llm.NewProvider(&llm.LLMConfig{Provider: "stub"})
+	sttProvider := &fakeSTTProvider{}
+	llmProvider := &fakeLLMProvider{}
 
 	txRepo := transcription.NewTranscriptionRepository(db.DB)
 	txSvc := transcription.NewService(txRepo, sttProvider, nil)
@@ -582,3 +581,31 @@ func TestAPI_PublicRoutes_NoAuth(t *testing.T) {
 		assert.NotEqual(t, http.StatusUnauthorized, resp.StatusCode, "path=%s should be public", path)
 	}
 }
+
+// ── Test-only fake providers ──────────────────────────────────────────────────
+// These implement the STTProvider and LLMProvider interfaces locally in the
+// test package so integration tests do not depend on real external services.
+
+type fakeSTTProvider struct{}
+
+func (f *fakeSTTProvider) Transcribe(_ context.Context, audio *stt.AudioData) (*stt.TranscriptionResult, error) {
+	r := stt.NewTranscriptionResult("fake-stt")
+	r.AddSegment(&stt.TranscriptionSegment{
+		SessionID: audio.SessionID,
+		Role:      audio.Role,
+		StartMs:   audio.OffsetMs,
+		EndMs:     audio.OffsetMs + audio.Duration,
+		Text:      "test transcription",
+	})
+	return r, nil
+}
+func (f *fakeSTTProvider) Name() string      { return "fake-stt" }
+func (f *fakeSTTProvider) IsAvailable() bool { return true }
+
+type fakeLLMProvider struct{}
+
+func (f *fakeLLMProvider) Generate(_ context.Context, _ string) (string, error) {
+	return `{"sections":{"themes":[]},"citations":[]}`, nil
+}
+func (f *fakeLLMProvider) Name() string      { return "fake-llm" }
+func (f *fakeLLMProvider) IsAvailable() bool { return true }

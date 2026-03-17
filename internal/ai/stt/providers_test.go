@@ -199,7 +199,7 @@ func TestAzureSTTProvider_Transcribe(t *testing.T) {
 
 func TestSTTNewProviderFactory(t *testing.T) {
 	cases := []struct{ provider string; wantErr bool }{
-		{"stub", false}, {"", false}, {"unsupported", true},
+		{"", true}, {"unsupported", true},
 	}
 	for _, c := range cases {
 		p, err := stt.NewProvider(&stt.STTConfig{Provider: c.provider})
