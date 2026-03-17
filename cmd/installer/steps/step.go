@@ -162,13 +162,15 @@ func (r *Runner) Run(ctx context.Context) []RunResult {
 // Steps are always executed in this order.
 func Registry() []*Step {
 	return []*Step{
-		stepPrereqs(),
-		stepUser(),
-		stepConfigWrite(),
-		stepBinary(),
-		stepFirewall(),
-		stepService(),
-		stepApache(),
-		stepVerify(),
+		stepPrereqs(),   // 00 — system packages
+		stepOllama(),    // 10 — Ollama LLM daemon + model pull
+		stepWhisper(),   // 15 — whisper-local STT server
+		stepUser(),      // 20 — service user + directories
+		stepConfigWrite(), // 30 — aftertalk.yaml + env file
+		stepBinary(),    // 40 — aftertalk server binary
+		stepFirewall(),  // 50 — open port
+		stepService(),   // 60 — systemd/launchd/windows service
+		stepApache(),    // 70 — Apache reverse proxy injection
+		stepVerify(),    // 90 — health check
 	}
 }

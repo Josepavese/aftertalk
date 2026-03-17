@@ -77,7 +77,9 @@ func Interactive() (*InstallConfig, error) {
 		cfg.STTConfig["AZURE_SPEECH_KEY"] = askSecret("Azure Speech Key")
 		cfg.STTConfig["AZURE_SPEECH_REGION"] = ask("Azure Region", "eastus")
 	case "whisper-local":
-		cfg.STTConfig["WHISPER_LOCAL_URL"] = ask("Whisper server URL", "http://localhost:9000")
+		fmt.Println("  The installer will set up whisper-local automatically.")
+		cfg.WhisperModel = ask("Whisper model (tiny|base|small|medium|large)", cfg.WhisperModel)
+		cfg.WhisperURL = ask("Whisper server URL (where aftertalk connects)", cfg.WhisperURL)
 	}
 
 	section("LLM (Minutes Generation)")
@@ -96,8 +98,9 @@ func Interactive() (*InstallConfig, error) {
 		cfg.LLMConfig["LLM_MODEL"] = ask("Deployment name", "gpt-4")
 		cfg.LLMConfig["AZURE_OPENAI_ENDPOINT"] = ask("Azure OpenAI endpoint", "")
 	case "ollama":
-		cfg.LLMConfig["OLLAMA_BASE_URL"] = ask("Ollama base URL", "http://localhost:11434")
-		cfg.LLMConfig["LLM_MODEL"] = ask("Model", "llama3")
+		fmt.Println("  The installer will set up Ollama automatically.")
+		cfg.OllamaModel = ask("Ollama model to pull", cfg.OllamaModel)
+		cfg.OllamaURL = ask("Ollama base URL", cfg.OllamaURL)
 	}
 
 	section("Webhook")
