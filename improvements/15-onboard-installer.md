@@ -1,6 +1,6 @@
 # Improvement 15 — Standalone Onboard Installer
 
-## Status: open
+## Status: closed
 
 ## Problem
 
