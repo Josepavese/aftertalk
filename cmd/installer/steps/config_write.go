@@ -41,10 +41,19 @@ jwt:
 
 stt:
   provider: "{{ .STTProvider }}"
-
+{{ if eq .STTProvider "whisper-local" }}  whisper_local:
+    url: "{{ .WhisperURL }}"
+{{ end }}{{ range $k,$v := .STTConfig }}{{ if eq $k "GOOGLE_APPLICATION_CREDENTIALS" }}  google:
+    credentials_file: "{{ $v }}"
+{{ end }}{{ if eq $k "AZURE_SPEECH_KEY" }}  azure:
+    key: "{{ $v }}"
+{{ end }}{{ end }}
 llm:
   provider: "{{ .LLMProvider }}"
-{{ range $k,$v := .LLMConfig }}{{ if eq $k "LLM_API_KEY" }}  openai:
+{{ if eq .LLMProvider "ollama" }}  ollama:
+    base_url: "{{ .OllamaURL }}"
+    model:    "{{ .OllamaModel }}"
+{{ end }}{{ range $k,$v := .LLMConfig }}{{ if eq $k "LLM_API_KEY" }}  openai:
     api_key: "{{ $v }}"
 {{ end }}{{ end }}
 webhook:

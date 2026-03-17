@@ -123,7 +123,7 @@ type STTConfig struct {
 	Google       GoogleSTTConfig
 	AWS          AWSSTTConfig
 	Azure        AzureSTTConfig
-	WhisperLocal WhisperLocalSTTConfig
+	WhisperLocal WhisperLocalSTTConfig `koanf:"whisper_local"`
 }
 
 type GoogleSTTConfig struct {
@@ -154,7 +154,7 @@ type LLMConfig struct {
 	OpenAI    OpenAIConfig
 	Anthropic AnthropicConfig
 	Azure     AzureLLMConfig
-	Ollama    OllamaLLMConfig
+	Ollama    OllamaLLMConfig `koanf:"ollama"`
 }
 
 type OllamaLLMConfig struct {

@@ -21,12 +21,16 @@ type InstallConfig struct {
 	JWTExpiry string // Go duration string, e.g. "8h"
 
 	// STT provider
-	STTProvider string            // google | aws | azure | whisper-local
-	STTConfig   map[string]string // provider-specific env vars
+	STTProvider  string            // google | aws | azure | whisper-local
+	STTConfig    map[string]string // provider-specific env vars
+	WhisperModel string            // faster-whisper model size (default: base)
+	WhisperURL   string            // URL aftertalk uses to reach whisper server
 
 	// LLM provider
 	LLMProvider string
 	LLMConfig   map[string]string // LLM_API_KEY, LLM_MODEL, etc.
+	OllamaModel string            // Ollama model to pull and use (default: qwen2.5:1.5b)
+	OllamaURL   string            // Ollama base URL (default: http://localhost:11434)
 
 	// Webhook
 	WebhookURL        string
@@ -62,7 +66,11 @@ func Default() *InstallConfig {
 		JWTIssuer:                "aftertalk",
 		JWTExpiry:                "8h",
 		STTProvider:              "whisper-local",
+		WhisperModel:             "base",
+		WhisperURL:               "http://localhost:9001",
 		LLMProvider:              "ollama",
+		OllamaModel:              "qwen2.5:1.5b",
+		OllamaURL:                "http://localhost:11434",
 		WebhookMode:              "push",
 		WebhookTokenTTL:          "1h",
 		WebhookMaxRetries:        3,
