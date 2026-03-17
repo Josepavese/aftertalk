@@ -58,6 +58,9 @@ func localBinaryPath(name string) (string, error) {
 	return candidate, nil
 }
 
+// copyFile copies src to dst atomically using a temp file + rename.
+// This avoids "text file busy" when overwriting a running executable: the old
+// inode stays alive for the running process while the new inode is placed.
 func copyFile(src, dst string) error {
 	in, err := os.Open(src) //nolint:gosec
 	if err != nil {
@@ -68,14 +71,30 @@ func copyFile(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dst), err)
 	}
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("create %s: %w", dst, err)
-	}
-	defer out.Close()
 
-	if _, err := io.Copy(out, in); err != nil {
-		return fmt.Errorf("copy: %w", err)
+	// Write to a temp file in the same directory so rename is atomic.
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".aftertalk-bin-*")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) //nolint:errcheck // cleanup if rename fails
+
+	if err := tmp.Chmod(0o755); err != nil {
+		tmp.Close()
+		return fmt.Errorf("chmod temp: %w", err)
+	}
+	if _, err := io.Copy(tmp, in); err != nil {
+		tmp.Close()
+		return fmt.Errorf("copy to temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("flush temp: %w", err)
+	}
+
+	// Atomic replace — safe even if the binary is currently running.
+	if err := os.Rename(tmpName, dst); err != nil {
+		return fmt.Errorf("rename %s → %s: %w", tmpName, dst, err)
 	}
 	return nil
 }
@@ -98,15 +117,27 @@ func downloadBinary(ctx context.Context, url, dest string, log Logger) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
-	f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) //nolint:gosec
+	tmp, err := os.CreateTemp(filepath.Dir(dest), ".aftertalk-bin-*")
 	if err != nil {
-		return fmt.Errorf("create %s: %w", dest, err)
+		return fmt.Errorf("create temp: %w", err)
 	}
-	defer f.Close()
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) //nolint:errcheck
 
-	n, err := io.Copy(f, resp.Body)
+	if err := tmp.Chmod(0o755); err != nil {
+		tmp.Close()
+		return fmt.Errorf("chmod temp: %w", err)
+	}
+	n, err := io.Copy(tmp, resp.Body)
 	if err != nil {
-		return fmt.Errorf("write %s: %w", dest, err)
+		tmp.Close()
+		return fmt.Errorf("write %s: %w", tmpName, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("flush: %w", err)
+	}
+	if err := os.Rename(tmpName, dest); err != nil {
+		return fmt.Errorf("rename → %s: %w", dest, err)
 	}
 	log.Info(fmt.Sprintf("binary installed (%d bytes) → %s", n, dest))
 	return nil

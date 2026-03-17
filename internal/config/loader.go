@@ -16,7 +16,7 @@ var (
 	errJWTSecretDefault                    = errors.New("JWT secret must be changed from default value")
 	errAPIKeyDefault                       = errors.New("API key must be changed from default value")
 	errJWTExpirationPositive               = errors.New("JWT expiration must be positive")
-	errWebhookURLRequired                  = errors.New("webhook URL is required")
+	// errWebhookURLRequired intentionally removed: empty webhook URL is allowed (delivery disabled).
 	errWebhookTimeoutPositive              = errors.New("webhook timeout must be positive")
 	errMaxConcurrentTranscriptionsPositive = errors.New("max concurrent transcriptions must be positive")
 	errInvalidHTTPPort                     = errors.New("invalid HTTP port")
@@ -119,10 +119,6 @@ func validate(cfg *Config) error { //nolint:gocyclo // validation function needs
 
 	if cfg.JWT.Expiration <= 0 {
 		return errJWTExpirationPositive
-	}
-
-	if cfg.Webhook.URL == "" {
-		return errWebhookURLRequired
 	}
 
 	if cfg.Webhook.Timeout <= 0 {
