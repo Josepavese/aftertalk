@@ -5,7 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	kazopus "github.com/kazzmir/opus-go/opus"
+	kazopus  "github.com/kazzmir/opus-go/opus"
+	concentus "github.com/lostromb/concentus/go/opus"
 )
 
 var (
@@ -45,37 +46,37 @@ func (d *OpusDecoder) Decode(opusData []byte) ([]int16, error) {
 }
 
 // DecodeFramesToWAV decodes a slice of raw Opus RTP payloads and returns a
-// 16-bit little-endian WAV file at the given sample rate.
+// 16-bit little-endian WAV file at the requested sampleRate (typically 16 kHz).
+//
+// Uses concentus (pure-Go, full CELT+SILK support) to decode Chrome WebRTC
+// Opus frames. Decodes at 48 kHz then downsamples to sampleRate.
 func DecodeFramesToWAV(frames [][]byte, sampleRate int) ([]byte, error) {
-	dec, err := kazopus.NewDecoder(48000, 1) // Opus RTP is always 48 kHz mono
+	dec, err := concentus.NewOpusDecoder(48000, 1)
 	if err != nil {
 		return nil, fmt.Errorf("opus: create decoder: %w", err)
 	}
 
-	var allPCM []int16
-	framePCM := make([]int16, OpusFrameSize)
+	// Max Opus frame = 120 ms at 48 kHz = 5760 samples.
+	pcmBuf := make([]int16, 5760)
+	// Collect 48 kHz samples, then downsample.
+	allPCM48k := make([]int16, 0, len(frames)*960)
+
 	for _, frame := range frames {
 		if len(frame) == 0 {
 			continue
 		}
-		n, err := dec.Decode(frame, framePCM, OpusFrameSize, false)
-		if err != nil {
-			continue // skip bad frames
+		n, decErr := dec.Decode(frame, 0, len(frame), pcmBuf, 0, 5760, false)
+		if decErr != nil || n == 0 {
+			continue
 		}
-		allPCM = append(allPCM, framePCM[:n]...)
+		allPCM48k = append(allPCM48k, pcmBuf[:n]...)
 	}
 
-	// Downsample 48000 → 16000 using a box filter (average 3 consecutive samples).
-	// This suppresses high-frequency content above 8 kHz before decimation,
-	// avoiding aliasing artefacts that degrade STT accuracy.
-	if sampleRate == 16000 {
-		n := len(allPCM) / 3
-		downsampled := make([]int16, n)
-		for i := range downsampled {
-			avg := (int32(allPCM[i*3]) + int32(allPCM[i*3+1]) + int32(allPCM[i*3+2])) / 3
-			downsampled[i] = int16(avg) //nolint:gosec // clamped by division; value fits int16
-		}
-		allPCM = downsampled
+	// Downsample 48 kHz → sampleRate by taking every Nth sample.
+	ratio := 48000 / sampleRate
+	allPCM := make([]int16, 0, len(allPCM48k)/ratio)
+	for i := 0; i < len(allPCM48k); i += ratio {
+		allPCM = append(allPCM, allPCM48k[i])
 	}
 
 	return encodeWAV(allPCM, sampleRate), nil

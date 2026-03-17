@@ -32,6 +32,7 @@ require (
 	github.com/kazzmir/opus-go v1.3.0 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/lostromb/concentus/go v0.0.0-20250927155428-3885c4e46513 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
