@@ -157,6 +157,9 @@ func (h *MinutesHandler) GetMinutesHistory(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if history == nil {
+		history = []*minutes.MinutesHistory{}
+	}
 	render.JSON(w, r, history)
 }
 
