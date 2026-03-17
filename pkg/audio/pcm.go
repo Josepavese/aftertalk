@@ -9,8 +9,6 @@ import (
 	"math"
 )
 
-var errOpusDecodingNotImplemented = errors.New("opus decoding not yet implemented - requires opus library")
-
 const (
 	SampleRate = 48000
 	Channels   = 1
@@ -26,10 +24,6 @@ func NewPCMConverter(sampleRate, channels int) *PCMConverter {
 		sampleRate: sampleRate,
 		channels:   channels,
 	}
-}
-
-func (c *PCMConverter) ConvertToPCM(opusData []byte) ([]int16, error) {
-	return decodeOpus(opusData, c.sampleRate, c.channels)
 }
 
 func (c *PCMConverter) ConvertToFloat32(pcmData []int16) []float32 {
@@ -48,10 +42,6 @@ func (c *PCMConverter) ConvertToInt16(floatData []float32) []int16 {
 		ints[i] = int16(scaled)
 	}
 	return ints
-}
-
-func decodeOpus(opusData []byte, sampleRate, channels int) ([]int16, error) {
-	return nil, errOpusDecodingNotImplemented
 }
 
 func ReadPCM(r io.Reader) ([]int16, error) {

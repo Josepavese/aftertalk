@@ -104,7 +104,7 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audioData *AudioData
 	sampleRate := 16000
 
 	if len(audioData.Frames) > 0 {
-		wav, err := audio.DecodeFramesToWAVffmpeg(ctx, audioData.Frames, 16000)
+		wav, err := audio.DecodeFramesToWAV(audioData.Frames, 16000)
 		if err != nil {
 			return nil, fmt.Errorf("google stt: opus→wav: %w", err)
 		}

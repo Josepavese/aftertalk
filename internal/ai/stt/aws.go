@@ -116,7 +116,7 @@ func (p *AWSSTTProvider) Transcribe(ctx context.Context, audioData *AudioData) (
 	var wav []byte
 	if len(audioData.Frames) > 0 {
 		var err error
-		wav, err = audio.DecodeFramesToWAVffmpeg(ctx, audioData.Frames, 16000)
+		wav, err = audio.DecodeFramesToWAV(audioData.Frames, 16000)
 		if err != nil {
 			return nil, fmt.Errorf("aws stt: opus→wav: %w", err)
 		}
