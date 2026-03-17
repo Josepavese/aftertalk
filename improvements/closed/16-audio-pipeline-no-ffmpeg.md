@@ -103,3 +103,12 @@ go test ./pkg/audio/... -v
 go test ./internal/ai/stt/... -v
 which ffmpeg  # non deve essere richiesto
 ```
+
+---
+
+## Status: closed
+
+Implementato e verificato con test reali (encode→decode roundtrip con kazopus).
+Tutti i 5 provider STT (whisper-local, google, aws, azure, stub) usano `DecodeFramesToWAV`.
+File `ogg_opus.go` eliminato. Dead code in `pcm.go` e `opus.go` rimosso.
+Test in `pkg/audio/opus_test.go`: 5 casi inclusi edge case (frames vuoti, frame corrotti, box filter).

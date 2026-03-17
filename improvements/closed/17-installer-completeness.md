@@ -123,3 +123,22 @@ Solo se non viene rimossa la dipendenza ffmpeg (altrimenti questo punto è N/A):
 - Operatore informato immediatamente se STT/LLM non partono post-install
 - Support per deployment multi-lingua senza edit manuale systemd
 - Nessun caso "installazione completata ma non funziona" silenzioso
+
+---
+
+## Status: closed
+
+Implementato:
+- `config.go`: campo `WhisperLanguage string` + default `"it"`
+- `env.go`: `WHISPER_LANGUAGE` in `FromEnvMap` e `WriteEnvFile`
+- `prompt.go`: domanda `Whisper language (it|en|fr|de|es|auto)` nel wizard
+- `whisper.go`: `{{.Language}}` in systemd unit e macOS plist (era `it` hardcoded)
+- `ollama.go`: verifica `ollama list` dopo pull; errore esplicito se modello mancante
+- `verify.go`: `checkEndpoint` helper + warn se whisper-local/ollama non raggiungibili post-install
+- Punto E (ffmpeg nei prereqs) non necessario: rimosso da improvement #16
+
+**Analisi avvocato del diavolo post-implementazione:**
+- `goto` in `verify.go` rimosso: refactoring in `waitAftertalkHealthy` + `checkDependencies`
+- `WhisperLanguage` propagato correttamente a `whisper_server.py` (letto via `os.environ.get("WHISPER_LANGUAGE", "")`)
+- `ollama list` check usa `SplitN(model,":",2)[0]` — corretto anche per modelli senza tag
+- Test aggiunti: `cmd/installer/config/config_test.go` e `cmd/installer/steps/verify_test.go` (13 test, httptest, roundtrip env file)
