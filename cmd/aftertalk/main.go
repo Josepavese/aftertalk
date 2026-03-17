@@ -86,9 +86,10 @@ func main() {
 	if err = runMigrations(ctx, db); err != nil {
 		logger.Fatalf("Failed to run migrations: %v", err)
 	}
-	migrateWebhookEvents(ctx, db)      // idempotent: adds payload + next_retry_at columns
-	migrateRetrievalTokens(ctx, db)    // idempotent: adds retrieval_tokens table
-	migrateWebhookPayloadType(ctx, db) // idempotent: adds payload_type column to webhook_events
+	migrateWebhookEvents(ctx, db)           // idempotent: adds payload + next_retry_at columns
+	migrateRetrievalTokens(ctx, db)         // idempotent: adds retrieval_tokens table
+	migrateWebhookPayloadType(ctx, db)      // idempotent: adds payload_type column to webhook_events
+	migrateTranscriptionLanguage(ctx, db)   // idempotent: adds language column to transcriptions
 	logger.Info("Migrations completed")
 
 	sessionCache := cache.NewSessionCache()
@@ -252,7 +253,7 @@ func main() {
 		logger.Fatalf("Failed to init ICE provider: %v", err)
 	}
 
-	botServer := api.NewBotServer(sessionService, jwtManager, tokenCache, iceServers)
+	botServer := api.NewBotServer(sessionService, jwtManager, tokenCache, iceServers, cfg.WebRTC.ICEUDPPortMin, cfg.WebRTC.ICEUDPPortMax)
 
 	minutesHandler := handler.NewMinutesHandlerWithConfig(minutesService, deleteOnPull)
 	rtcHandler := handler.NewRTCConfigHandler(cfg, iceProvider)
@@ -490,5 +491,17 @@ func migrateWebhookPayloadType(ctx context.Context, db *sqlite.DB) {
 		return innerErr
 	}); err != nil {
 		logging.Warnf("migrateWebhookPayloadType: column may already exist: %v", err)
+	}
+}
+
+// migrateTranscriptionLanguage adds the language column to transcriptions,
+// storing the ISO 639-1 code detected by the STT provider. Idempotent.
+func migrateTranscriptionLanguage(ctx context.Context, db *sqlite.DB) {
+	if err := db.RunInTx(ctx, func(tx *sql.Tx) error {
+		_, innerErr := tx.ExecContext(ctx,
+			`ALTER TABLE transcriptions ADD COLUMN language TEXT NOT NULL DEFAULT ''`)
+		return innerErr
+	}); err != nil {
+		logging.Warnf("migrateTranscriptionLanguage: column may already exist: %v", err)
 	}
 }

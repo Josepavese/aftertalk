@@ -43,6 +43,7 @@ type AudioData struct {
 type TranscriptionServiceInterface interface {
 	TranscribeAudio(ctx context.Context, audioData *AudioData) error
 	GetTranscriptionsAsText(ctx context.Context, sessionID string) (string, error)
+	GetDetectedLanguageForSession(ctx context.Context, sessionID string) string
 }
 
 // LastActivityProvider is implemented by the transcription repository and used
@@ -56,7 +57,7 @@ type MinutesServiceInterface interface {
 	// the opaque session metadata and participant list set at session-creation time;
 	// it is propagated unchanged to webhook deliveries so recipients can correlate
 	// the minutes with their own data model without a second API call.
-	GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext) (interface{}, error)
+	GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string) (interface{}, error)
 	GetMinutes(ctx context.Context, sessionID string) (interface{}, error)
 }
 
@@ -632,6 +633,7 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 	}
 
 	var transcriptionText string
+	var detectedLanguage string
 	if s.transcription != nil {
 		var err error
 		transcriptionText, err = s.transcription.GetTranscriptionsAsText(ctx, sessionID)
@@ -641,6 +643,10 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 		}
 		if transcriptionText == "" {
 			logging.Warnf("No transcriptions found for session=%s", sessionID)
+		}
+		detectedLanguage = s.transcription.GetDetectedLanguageForSession(ctx, sessionID)
+		if detectedLanguage != "" {
+			logging.Infof("Detected language for session=%s: %s", sessionID, detectedLanguage)
 		}
 	}
 
@@ -679,7 +685,7 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 	}
 
 	if s.minutes != nil {
-		_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx)
+		_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage)
 		if err != nil {
 			logging.Errorf("Failed to generate minutes for session=%s: %v", sessionID, err)
 			failSession(session)

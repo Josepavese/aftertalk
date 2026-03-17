@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/logging"
@@ -111,7 +112,9 @@ func (p *WhisperLocalProvider) Transcribe(ctx context.Context, audioData *AudioD
 		return nil, fmt.Errorf("whisper-local: decode response: %w", err)
 	}
 
-	return p.toTranscriptionResult(audioData, &wr), nil
+	result := p.toTranscriptionResult(audioData, &wr)
+	result.DetectedLanguage = wr.Language
+	return result, nil
 }
 
 func (p *WhisperLocalProvider) buildMultipartBody(ctx context.Context, audioData *AudioData) (io.Reader, string, error) {
@@ -130,6 +133,13 @@ func (p *WhisperLocalProvider) buildMultipartBody(ctx context.Context, audioData
 		}
 		audioBytes = wav
 		logging.Infof("WhisperLocal: wav_bytes=%d frames_decoded=%d", len(wav), len(audioData.Frames))
+		// Debug: dump WAV to /tmp when AFTERTALK_DUMP_AUDIO=true
+		if os.Getenv("AFTERTALK_DUMP_AUDIO") == "true" {
+			dumpPath := fmt.Sprintf("/tmp/at_audio_%s_%s_%d.wav", audioData.SessionID[:8], audioData.ParticipantID[:8], time.Now().UnixMilli())
+			if dumpErr := os.WriteFile(dumpPath, wav, 0o644); dumpErr == nil {
+				logging.Infof("WhisperLocal: audio dumped to %s", dumpPath)
+			}
+		}
 	} else {
 		audioBytes = audioData.Data
 	}
@@ -186,9 +196,13 @@ func (p *WhisperLocalProvider) toTranscriptionResult(audioData *AudioData, wr *w
 	result.Duration = int(wr.Duration * 1000)
 
 	if len(wr.Segments) > 0 {
+		filtered := 0
 		for _, seg := range wr.Segments {
-			// Skip low-quality segments (likely silence or noise)
-			if seg.NoSpeechProb > 0.8 {
+			// Skip only near-certain silence/hallucination (no_speech_prob > 0.95).
+			// Lower thresholds (e.g. 0.8) drop too many real-speech segments from
+			// lower-quality WebRTC audio.
+			if seg.NoSpeechProb > 0.95 {
+				filtered++
 				continue
 			}
 
@@ -201,6 +215,10 @@ func (p *WhisperLocalProvider) toTranscriptionResult(audioData *AudioData, wr *w
 				Text:       seg.Text,
 				Confidence: confidence,
 			})
+		}
+		if filtered > 0 {
+			logging.Infof("WhisperLocal: filtered %d/%d segments (no_speech_prob>0.95) for session=%s",
+				filtered, len(wr.Segments), audioData.SessionID)
 		}
 		return result
 	}

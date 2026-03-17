@@ -23,6 +23,17 @@ func NewService(repo *TranscriptionRepository, provider stt.STTProvider, retryCo
 	}
 }
 
+// GetDetectedLanguageForSession returns the language code detected by the STT
+// provider for the most recent transcription segment of the given session.
+// Returns "" if unknown.
+func (s *Service) GetDetectedLanguageForSession(ctx context.Context, sessionID string) string {
+	lang, err := s.repo.GetDetectedLanguage(ctx, sessionID)
+	if err != nil {
+		return ""
+	}
+	return lang
+}
+
 func (s *Service) TranscribeAudio(ctx context.Context, audioData *stt.AudioData) error {
 	logging.Infof("Transcribing audio for session %s, participant %s", audioData.SessionID, audioData.ParticipantID)
 
@@ -58,6 +69,7 @@ func (s *Service) TranscribeAudio(ctx context.Context, audioData *stt.AudioData)
 		)
 		transcription.SetConfidence(segment.Confidence)
 		transcription.SetProvider(result.Provider)
+		transcription.Language = result.DetectedLanguage
 		transcription.MarkReady()
 
 		if err := s.repo.Create(ctx, transcription); err != nil {

@@ -18,6 +18,7 @@ type Transcription struct {
 	Role         string              `json:"role"`
 	Text         string              `json:"text"`
 	Provider     string              `json:"provider"`
+	Language     string              `json:"language,omitempty"` // ISO 639-1 code detected by STT (e.g. "it")
 	Status       TranscriptionStatus `json:"status"`
 	SegmentIndex int                 `json:"segment_index"`
 	StartMs      int                 `json:"start_ms"`

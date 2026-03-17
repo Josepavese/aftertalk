@@ -88,7 +88,7 @@ func (s *Service) WithWebhookRetrier(r *webhook.Retrier) {
 // time; it is propagated unchanged to every webhook delivery so recipients can
 // associate the minutes with their own data model (e.g. appointment_id, user IDs)
 // without maintaining a separate session-id → context mapping table.
-func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext) (*Minutes, error) {
+func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string) (*Minutes, error) {
 	logging.Infof("Generating minutes for session %s (template=%s)", sessionID, tmpl.ID)
 
 	m := NewMinutes(uuid.New().String(), sessionID, tmpl.ID)
@@ -124,7 +124,7 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 			}
 		}
 
-		prompt := llm.GenerateMinutesPrompt(transcriptionText, tmpl)
+		prompt := llm.GenerateMinutesPrompt(transcriptionText, tmpl, detectedLanguage)
 		response, err = s.llmProvider.Generate(ctx, prompt)
 		if err == nil {
 			break
