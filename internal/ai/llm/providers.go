@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/logging"
@@ -273,114 +272,8 @@ func (p *AzureOpenAIProvider) IsAvailable() bool {
 	return p.apiKey != "" && p.endpoint != "" && p.deployment != ""
 }
 
-// StubLLMProvider is the no-op provider used when no real LLM is configured.
-// It returns a minimal valid JSON minutes structure without calling any external API.
-// Replace this provider with a real implementation when an LLM backend is available.
-type StubLLMProvider struct{}
-
-func NewStubLLMProvider() *StubLLMProvider {
-	return &StubLLMProvider{}
-}
-
-func (p *StubLLMProvider) Generate(_ context.Context, prompt string) (string, error) { //nolint:gocognit // stub parsing logic
-	logging.Warnf("LLM stub: building minutes from transcript\n--- PROMPT ---\n%s\n--- END PROMPT ---", prompt)
-
-	// Extract transcript lines between "TRANSCRIPT:\n" and "\n\nGenerate"
-	transcript := ""
-	if start := strings.Index(prompt, "TRANSCRIPT:\n"); start != -1 {
-		rest := prompt[start+len("TRANSCRIPT:\n"):]
-		if cut, _, found := strings.Cut(rest, "\n\nGenerate"); found {
-			transcript = strings.TrimSpace(cut)
-		} else {
-			transcript = strings.TrimSpace(rest)
-		}
-	}
-
-	// Build contents_reported and citations from each transcript line
-	type entry struct {
-		Text      string `json:"text"`
-		Timestamp int    `json:"timestamp"`
-	}
-	type citation struct {
-		Text        string `json:"text"`
-		Role        string `json:"role"`
-		TimestampMs int    `json:"timestamp_ms"`
-	}
-
-	var contents []entry
-	var citations []citation
-
-	for line := range strings.SplitSeq(transcript, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		// Format: [MM:SS role]: text
-		role := ""
-		text := line
-		if idx := strings.Index(line, "]: "); idx != -1 {
-			header := line[1:idx] // strip leading [
-			parts := strings.SplitN(header, " ", 2)
-			if len(parts) == 2 {
-				role = parts[1]
-				text = line[idx+3:]
-			}
-		}
-		contents = append(contents, entry{Text: text, Timestamp: 0})
-		citations = append(citations, citation{TimestampMs: 0, Text: text, Role: role})
-	}
-
-	if len(contents) == 0 {
-		contents = []entry{}
-	}
-	if len(citations) == 0 {
-		citations = []citation{}
-	}
-
-	// Build sections map by parsing the JSON schema embedded in the prompt.
-	// The schema block looks like:  "sections": {\n    "key": [...],\n  }
-	// Fall back to a generic "transcript" key if parsing yields nothing.
-	sections := make(map[string]interface{})
-	if start := strings.Index(prompt, "\"sections\": {\n"); start != -1 {
-		rest := prompt[start+len("\"sections\": {\n"):]
-		if schemaBody, _, found := strings.Cut(rest, "\n  }"); found {
-			for line := range strings.SplitSeq(schemaBody, "\n") {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "\"") {
-					if before, _, ok := strings.Cut(line[1:], "\": "); ok {
-						sections[before] = []interface{}{}
-					}
-				}
-			}
-		}
-	}
-	if len(sections) == 0 {
-		sections["transcript"] = contents
-	} else {
-		// Populate the first section with the transcript contents.
-		for k := range sections {
-			sections[k] = contents
-			break
-		}
-	}
-
-	result := map[string]interface{}{
-		"sections":  sections,
-		"citations": citations,
-	}
-
-	out, err := json.Marshal(result)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal stub result: %w", err)
-	}
-	return string(out), nil
-}
-
-func (p *StubLLMProvider) Name() string      { return "stub" }
-func (p *StubLLMProvider) IsAvailable() bool { return true }
-
 // NewProvider selects and returns the LLM provider based on cfg.
-// Falls back to StubLLMProvider when provider name is empty or unrecognized.
+// Returns an error if provider is not set or unrecognised — no stub fallback.
 func NewProvider(cfg *LLMConfig) (LLMProvider, error) {
 	switch cfg.Provider {
 	case "openai":
@@ -391,9 +284,9 @@ func NewProvider(cfg *LLMConfig) (LLMProvider, error) {
 		return NewAzureOpenAIProvider(cfg.Azure.APIKey, cfg.Azure.Endpoint, cfg.Azure.Deployment), nil
 	case "ollama":
 		return NewOllamaProvider(cfg.Ollama)
-	case "", "stub":
-		return NewStubLLMProvider(), nil
+	case "":
+		return nil, errors.New("llm.provider is required — supported: openai, anthropic, azure, ollama") //nolint:err113
 	default:
-		return nil, fmt.Errorf("unsupported LLM provider: %s", cfg.Provider) //nolint:err113 // dynamic error needed for provider name
+		return nil, fmt.Errorf("unsupported LLM provider: %s", cfg.Provider) //nolint:err113
 	}
 }

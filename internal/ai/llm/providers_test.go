@@ -444,8 +444,8 @@ func TestAnthropicProvider_Generate_HTTPError(t *testing.T) {
 	if result != "" {
 		t.Errorf("Expected empty result on error, got: %s", result)
 	}
-	if !strings.Contains(err.Error(), "Anthropic API error") {
-		t.Error("Expected error to mention Anthropic API error")
+	if !strings.Contains(err.Error(), "anthropic API error") {
+		t.Error("Expected error to mention anthropic API error")
 	}
 }
 
@@ -615,8 +615,8 @@ func TestAzureOpenAIProvider_Generate_HTTPError(t *testing.T) {
 	if result != "" {
 		t.Errorf("Expected empty result on error, got: %s", result)
 	}
-	if !strings.Contains(err.Error(), "Azure OpenAI API error") {
-		t.Error("Expected error to mention Azure OpenAI API error")
+	if !strings.Contains(err.Error(), "azure OpenAI API error") {
+		t.Error("Expected error to mention azure OpenAI API error")
 	}
 }
 

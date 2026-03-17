@@ -98,11 +98,9 @@ func validate(cfg *Config) error { //nolint:gocyclo // validation function needs
 		"aws":           true,
 		"azure":         true,
 		"whisper-local": true,
-		"stub":          true,
-		"":              true,
 	}
 	if !validSTTProviders[cfg.STT.Provider] {
-		return fmt.Errorf("%w: %s", errInvalidSTTProvider, cfg.STT.Provider)
+		return fmt.Errorf("%w: %s (supported: google, aws, azure, whisper-local)", errInvalidSTTProvider, cfg.STT.Provider)
 	}
 
 	validLLMProviders := map[string]bool{
@@ -110,11 +108,9 @@ func validate(cfg *Config) error { //nolint:gocyclo // validation function needs
 		"anthropic": true,
 		"azure":     true,
 		"ollama":    true,
-		"stub":      true,
-		"":          true,
 	}
 	if !validLLMProviders[cfg.LLM.Provider] {
-		return fmt.Errorf("%w: %s", errInvalidLLMProvider, cfg.LLM.Provider)
+		return fmt.Errorf("%w: %s (supported: openai, anthropic, azure, ollama)", errInvalidLLMProvider, cfg.LLM.Provider)
 	}
 
 	if cfg.JWT.Expiration <= 0 {

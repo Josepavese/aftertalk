@@ -21,7 +21,7 @@ type InstallConfig struct {
 	JWTExpiry string // Go duration string, e.g. "8h"
 
 	// STT provider
-	STTProvider string            // google | aws | azure | whisper-local | stub
+	STTProvider string            // google | aws | azure | whisper-local
 	STTConfig   map[string]string // provider-specific env vars
 
 	// LLM provider
@@ -61,8 +61,8 @@ func Default() *InstallConfig {
 		HTTPPort:                 8080,
 		JWTIssuer:                "aftertalk",
 		JWTExpiry:                "8h",
-		STTProvider:              "stub",
-		LLMProvider:              "stub",
+		STTProvider:              "whisper-local",
+		LLMProvider:              "ollama",
 		WebhookMode:              "push",
 		WebhookTokenTTL:          "1h",
 		WebhookMaxRetries:        3,

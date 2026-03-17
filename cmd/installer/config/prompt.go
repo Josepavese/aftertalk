@@ -62,7 +62,7 @@ func Interactive() (*InstallConfig, error) {
 	cfg.JWTExpiry = ask("JWT expiry", cfg.JWTExpiry)
 
 	section("Speech-to-Text (STT)")
-	fmt.Println("  Providers: google | aws | azure | whisper-local | stub")
+	fmt.Println("  Providers: google | aws | azure | whisper-local")
 	cfg.STTProvider = ask("STT provider", cfg.STTProvider)
 	cfg.STTConfig = make(map[string]string)
 	switch cfg.STTProvider {
@@ -81,7 +81,7 @@ func Interactive() (*InstallConfig, error) {
 	}
 
 	section("LLM (Minutes Generation)")
-	fmt.Println("  Providers: openai | anthropic | azure | ollama | stub")
+	fmt.Println("  Providers: openai | anthropic | azure | ollama")
 	cfg.LLMProvider = ask("LLM provider", cfg.LLMProvider)
 	cfg.LLMConfig = make(map[string]string)
 	switch cfg.LLMProvider {
