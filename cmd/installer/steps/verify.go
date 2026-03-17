@@ -29,6 +29,9 @@ func runVerify(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) e
 		if err != nil {
 			return fmt.Errorf("build health request: %w", err)
 		}
+		if cfg.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+		}
 		client := &http.Client{Timeout: 3 * time.Second}
 		resp, err := client.Do(req)
 		if err == nil {

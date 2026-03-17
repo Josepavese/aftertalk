@@ -1,8 +1,8 @@
 import {
-  AfterthalkClient,
+  AftertalkClient,
   AftertalkError,
+  type CreateSessionResponse,
   type Minutes,
-  type Session,
   type Template,
   type WebRTCConnection,
 } from '@aftertalk/sdk';
@@ -30,8 +30,8 @@ function log(msg: string) {
 
 // ─── App state ────────────────────────────────────────────────────────────────
 
-let client: AfterthalkClient | null = null;
-let currentSession: Session | null = null;
+let client: AftertalkClient | null = null;
+let currentSession: CreateSessionResponse | null = null;
 let currentConnection: WebRTCConnection | null = null;
 let templates: Template[] = [];
 
@@ -57,7 +57,7 @@ async function init() {
 
 function setupClient(apiKey: string) {
   const baseUrl = window.location.origin;
-  client = new AfterthalkClient({ baseUrl, apiKey });
+  client = new AftertalkClient({ baseUrl, apiKey });
   loadConfig();
 }
 
@@ -127,28 +127,32 @@ async function onConnect() {
       ],
     });
 
-    const token = currentSession.participants[0]?.token;
+    const sess = currentSession;
+    if (!sess) throw new Error('Session not created');
+
+    const token = sess.participants[0]?.token;
     if (!token) throw new Error('No participant token received');
 
-    setText('session-id', currentSession.sessionId);
-    log(`Session created: ${currentSession.sessionId}`);
+    setText('session-id', sess.sessionId);
+    log(`Session created: ${sess.sessionId ?? 'unknown'}`);
 
     log('Connecting WebRTC...');
     currentConnection = await client.connectWebRTC({
-      sessionId: currentSession.sessionId,
+      sessionId: sess.sessionId ?? '',
       token,
     });
 
-    currentConnection.on('connected', (sid) => {
+    const conn = currentConnection;
+    conn.on('connected', (sid: string) => {
       log(`WebRTC connected (${sid})`);
       show('end-btn');
       show('mute-btn');
       hide('connect-btn');
     });
 
-    currentConnection.on('ice-state-changed', (state) => log(`ICE: ${state}`));
-    currentConnection.on('disconnected', (reason) => log(`Disconnected: ${reason}`));
-    currentConnection.on('error', (err) => log(`WebRTC error: ${err.message}`));
+    conn.on('ice-state-changed', (state: string) => log(`ICE: ${state}`));
+    conn.on('disconnected', (reason: string) => log(`Disconnected: ${reason}`));
+    conn.on('error', (err: Error) => log(`WebRTC error: ${err.message}`));
 
   } catch (err) {
     log(`Connect error: ${formatError(err)}`);
