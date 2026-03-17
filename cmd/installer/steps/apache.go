@@ -49,45 +49,13 @@ func runApache(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) e
 		return nil
 	}
 
-	// Check if block is already present.
-	content, err := os.ReadFile(cfg.ApacheVhostConf) //nolint:gosec
-	if err != nil {
-		return fmt.Errorf("read %s: %w", cfg.ApacheVhostConf, err)
+	if err := injectApacheProxy(cfg, log); err != nil {
+		return err
 	}
-	if strings.Contains(string(content), installerMarker) {
-		log.Info("Apache vhost already contains aftertalk proxy block — skipping")
-		return nil
-	}
-
-	// Find the closing </VirtualHost> tag and inject before it.
-	portStr := fmt.Sprintf("%d", cfg.HTTPPort)
-	proxyBlock := fmt.Sprintf(apacheProxyBlock, cfg.HTTPPort, cfg.HTTPPort)
-	wsBlock := strings.ReplaceAll(apacheWSBlock, "PORT", portStr)
-	injection := proxyBlock + wsBlock
-
-	var out bytes.Buffer
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	injected := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !injected && strings.TrimSpace(line) == "</VirtualHost>" {
-			out.WriteString(injection)
-			injected = true
-		}
-		out.WriteString(line + "\n")
-	}
-	if !injected {
-		return fmt.Errorf("could not find </VirtualHost> in %s", cfg.ApacheVhostConf)
-	}
-
-	if err := os.WriteFile(cfg.ApacheVhostConf, out.Bytes(), 0o644); err != nil { //nolint:gosec
-		return fmt.Errorf("write %s: %w", cfg.ApacheVhostConf, err)
-	}
-	log.Info(fmt.Sprintf("injected proxy block into %s", cfg.ApacheVhostConf))
 
 	// Enable required modules.
 	for _, mod := range []string{"proxy", "proxy_http", "proxy_wstunnel", "rewrite"} {
-		cmd := exec.CommandContext(ctx, "a2enmod", mod)
+		cmd := exec.CommandContext(ctx, "a2enmod", mod) //nolint:gosec
 		if out, err := cmd.CombinedOutput(); err != nil {
 			log.Warn(fmt.Sprintf("a2enmod %s: %s", mod, out))
 		} else {
@@ -103,5 +71,56 @@ func runApache(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) e
 		return fmt.Errorf("systemctl reload apache2: %w\n%s", err, out)
 	}
 	log.Info("apache2 reloaded")
+	return nil
+}
+
+// injectApacheProxy modifies the vhost file to add the aftertalk proxy block.
+// Separated from runApache so it can be tested without apache2ctl/systemctl.
+func injectApacheProxy(cfg *instconfig.InstallConfig, log Logger) error {
+	content, err := os.ReadFile(cfg.ApacheVhostConf) //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("read %s: %w", cfg.ApacheVhostConf, err)
+	}
+	if strings.Contains(string(content), installerMarker) {
+		log.Info("Apache vhost already contains aftertalk proxy block — skipping")
+		return nil
+	}
+
+	// Find the closing </VirtualHost> tag of the SSL (port 443) block and inject before it.
+	// We use the LAST </VirtualHost>, which corresponds to the HTTPS block when the file
+	// contains both a port-80 redirect block and a port-443 SSL block.
+	portStr := fmt.Sprintf("%d", cfg.HTTPPort)
+	proxyBlock := fmt.Sprintf(apacheProxyBlock, cfg.HTTPPort, cfg.HTTPPort)
+	wsBlock := strings.ReplaceAll(apacheWSBlock, "PORT", portStr)
+	injection := proxyBlock + wsBlock
+
+	sc := bufio.NewScanner(bytes.NewReader(content))
+	var allLines []string
+	for sc.Scan() {
+		allLines = append(allLines, sc.Text())
+	}
+
+	lastClose := -1
+	for i, line := range allLines {
+		if strings.TrimSpace(line) == "</VirtualHost>" {
+			lastClose = i
+		}
+	}
+	if lastClose < 0 {
+		return fmt.Errorf("could not find </VirtualHost> in %s", cfg.ApacheVhostConf)
+	}
+
+	var out bytes.Buffer
+	for i, line := range allLines {
+		if i == lastClose {
+			out.WriteString(injection)
+		}
+		out.WriteString(line + "\n")
+	}
+
+	if err := os.WriteFile(cfg.ApacheVhostConf, out.Bytes(), 0o644); err != nil { //nolint:gosec
+		return fmt.Errorf("write %s: %w", cfg.ApacheVhostConf, err)
+	}
+	log.Info(fmt.Sprintf("injected proxy block into %s", cfg.ApacheVhostConf))
 	return nil
 }

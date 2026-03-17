@@ -23,8 +23,9 @@ type InstallConfig struct {
 	// STT provider
 	STTProvider  string            // google | aws | azure | whisper-local
 	STTConfig    map[string]string // provider-specific env vars
-	WhisperModel string            // faster-whisper model size (default: base)
-	WhisperURL   string            // URL aftertalk uses to reach whisper server
+	WhisperModel    string // faster-whisper model size (default: base)
+	WhisperURL      string // URL aftertalk uses to reach whisper server
+	WhisperLanguage string // STT language code (default: "it")
 
 	// LLM provider
 	LLMProvider string
@@ -43,6 +44,18 @@ type InstallConfig struct {
 	// Session tuning
 	SessionMaxDuration       string // e.g. "1h10m"
 	SessionInactivityTimeout string // e.g. "20m"
+
+	// WebRTC / ICE
+	ICEUDPPortMin uint16 // Pion ephemeral UDP port range min (default: 49200)
+	ICEUDPPortMax uint16 // Pion ephemeral UDP port range max (default: 49209)
+	TURNEnabled   bool
+	TURNListenAddr string
+	TURNPublicIP   string
+	TURNRealm      string
+	TURNAuthSecret string
+	TURNAuthTTL    int
+	TURNEnableUDP  bool
+	TURNEnableTCP  bool
 
 	// TLS (optional — leave empty to run behind reverse proxy)
 	TLSCertFile string
@@ -68,9 +81,12 @@ func Default() *InstallConfig {
 		STTProvider:              "whisper-local",
 		WhisperModel:             "base",
 		WhisperURL:               "http://localhost:9001",
+		WhisperLanguage:          "it",
 		LLMProvider:              "ollama",
 		OllamaModel:              "qwen2.5:1.5b",
 		OllamaURL:                "http://localhost:11434",
+		ICEUDPPortMin:            49200,
+		ICEUDPPortMax:            49209,
 		WebhookMode:              "push",
 		WebhookTokenTTL:          "1h",
 		WebhookMaxRetries:        3,

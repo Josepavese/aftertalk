@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strings"
 
 	instconfig "github.com/Josepavese/aftertalk/cmd/installer/config"
 )
@@ -45,7 +46,13 @@ func runOllama(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) e
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("ollama pull %s: %w\n%s", model, err, out)
 	}
-	log.Info(fmt.Sprintf("model ready: %s", model))
+
+	// Verify the model is actually in the list (guards against silent pull failures).
+	listOut, err := exec.CommandContext(ctx, "ollama", "list").Output()
+	if err != nil || !strings.Contains(string(listOut), strings.SplitN(model, ":", 2)[0]) {
+		return fmt.Errorf("ollama model %q not found after pull — disk full or download incomplete?", model)
+	}
+	log.Info(fmt.Sprintf("model verified: %s", model))
 	return nil
 }
 

@@ -80,6 +80,7 @@ func Interactive() (*InstallConfig, error) {
 		fmt.Println("  The installer will set up whisper-local automatically.")
 		cfg.WhisperModel = ask("Whisper model (tiny|base|small|medium|large)", cfg.WhisperModel)
 		cfg.WhisperURL = ask("Whisper server URL (where aftertalk connects)", cfg.WhisperURL)
+		cfg.WhisperLanguage = ask("Whisper language (it|en|fr|de|es|auto)", cfg.WhisperLanguage)
 	}
 
 	section("LLM (Minutes Generation)")
