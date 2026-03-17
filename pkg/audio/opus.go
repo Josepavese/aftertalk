@@ -9,9 +9,8 @@ import (
 )
 
 var (
-	errOpusEncodingNotSupported = errors.New("opus encoding requires external library - use github.com/hraban/opus")
-	errOpusEmptyFrame           = errors.New("empty opus frame")
-	errOpusFrameTooLarge        = errors.New("opus frame too large")
+	errOpusEmptyFrame    = errors.New("empty opus frame")
+	errOpusFrameTooLarge = errors.New("opus frame too large")
 )
 
 const (
@@ -66,11 +65,15 @@ func DecodeFramesToWAV(frames [][]byte, sampleRate int) ([]byte, error) {
 		allPCM = append(allPCM, framePCM[:n]...)
 	}
 
-	// Simple downsample 48000 → 16000 by taking every 3rd sample
+	// Downsample 48000 → 16000 using a box filter (average 3 consecutive samples).
+	// This suppresses high-frequency content above 8 kHz before decimation,
+	// avoiding aliasing artefacts that degrade STT accuracy.
 	if sampleRate == 16000 {
-		downsampled := make([]int16, 0, len(allPCM)/3)
-		for i := 0; i < len(allPCM); i += 3 {
-			downsampled = append(downsampled, allPCM[i])
+		n := len(allPCM) / 3
+		downsampled := make([]int16, n)
+		for i := range downsampled {
+			avg := (int32(allPCM[i*3]) + int32(allPCM[i*3+1]) + int32(allPCM[i*3+2])) / 3
+			downsampled[i] = int16(avg) //nolint:gosec // clamped by division; value fits int16
 		}
 		allPCM = downsampled
 	}
@@ -102,23 +105,6 @@ func encodeWAV(samples []int16, sampleRate int) []byte {
 	return buf
 }
 
-type OpusEncoder struct {
-	sampleRate int
-	channels   int
-	bitrate    int
-}
-
-func NewOpusEncoder(sampleRate, channels, bitrate int) *OpusEncoder {
-	return &OpusEncoder{
-		sampleRate: sampleRate,
-		channels:   channels,
-		bitrate:    bitrate,
-	}
-}
-
-func (e *OpusEncoder) Encode(pcmData []int16) ([]byte, error) {
-	return nil, errOpusEncodingNotSupported
-}
 
 func ValidateOpusFrame(frame []byte) error {
 	if len(frame) == 0 {

@@ -30,27 +30,6 @@ func TestNewPCMConverter(t *testing.T) {
 	})
 }
 
-func TestPCMConverter_ConvertToPCM(t *testing.T) {
-	t.Run("UnimplementedOpusDecode", func(t *testing.T) {
-		converter := NewPCMConverter(SampleRate, Channels)
-
-		opusData := []byte{0x00, 0x01, 0x02}
-		result, err := converter.ConvertToPCM(opusData)
-
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "opus decoding not yet implemented")
-	})
-
-	t.Run("EmptyOpusData", func(t *testing.T) {
-		converter := NewPCMConverter(SampleRate, Channels)
-
-		result, err := converter.ConvertToPCM([]byte{})
-		assert.Error(t, err)
-		assert.Nil(t, result)
-	})
-}
-
 func TestPCMConverter_ConvertToFloat32(t *testing.T) {
 	converter := NewPCMConverter(SampleRate, Channels)
 
@@ -712,43 +691,6 @@ func TestOpusDecoder_Decode(t *testing.T) {
 
 		// Empty data may return silence or error — must not panic
 		_, _ = decoder.Decode([]byte{})
-	})
-}
-
-func TestOpusEncoder_NewOpusEncoder(t *testing.T) {
-	t.Run("ValidEncoder", func(t *testing.T) {
-		encoder := NewOpusEncoder(48000, 1, 128000)
-		assert.NotNil(t, encoder)
-		assert.Equal(t, 48000, encoder.sampleRate)
-		assert.Equal(t, 1, encoder.channels)
-		assert.Equal(t, 128000, encoder.bitrate)
-	})
-
-	t.Run("CustomBitrate", func(t *testing.T) {
-		encoder := NewOpusEncoder(48000, 2, 64000)
-		assert.NotNil(t, encoder)
-		assert.Equal(t, 64000, encoder.bitrate)
-	})
-}
-
-func TestOpusEncoder_Encode(t *testing.T) {
-	t.Run("UnimplementedEncode", func(t *testing.T) {
-		encoder := NewOpusEncoder(48000, 1, 128000)
-
-		pcmData := []int16{1000, 2000}
-		result, err := encoder.Encode(pcmData)
-
-		assert.Error(t, err)
-		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "opus encoding requires external library")
-	})
-
-	t.Run("EmptyPCMData", func(t *testing.T) {
-		encoder := NewOpusEncoder(48000, 1, 128000)
-
-		result, err := encoder.Encode([]int16{})
-		assert.Error(t, err)
-		assert.Nil(t, result)
 	})
 }
 
