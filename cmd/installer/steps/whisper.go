@@ -44,8 +44,26 @@ func runWhisper(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) 
 		return fmt.Errorf("install python: %w", err)
 	}
 
-	// Create venv.
+	// Create venv (or recreate if a previous run left a broken venv without pip).
+	pip := filepath.Join(venvDir, "bin", "pip")
+	if runtime.GOOS == "windows" {
+		pip = filepath.Join(venvDir, "Scripts", "pip.exe")
+	}
+	venvExists := true
 	if _, err := os.Stat(venvDir); os.IsNotExist(err) {
+		venvExists = false
+	}
+	pipMissing := true
+	if _, err := os.Stat(pip); err == nil {
+		pipMissing = false
+	}
+	if !venvExists || pipMissing {
+		if venvExists && pipMissing {
+			log.Info("venv exists but pip missing (broken venv) — removing and recreating")
+			if err := os.RemoveAll(venvDir); err != nil {
+				return fmt.Errorf("remove broken venv: %w", err)
+			}
+		}
 		log.Info(fmt.Sprintf("creating Python venv: %s", venvDir))
 		cmd := exec.CommandContext(ctx, "python3", "-m", "venv", venvDir) //nolint:gosec
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -56,10 +74,6 @@ func runWhisper(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) 
 	}
 
 	// Install faster-whisper.
-	pip := filepath.Join(venvDir, "bin", "pip")
-	if runtime.GOOS == "windows" {
-		pip = filepath.Join(venvDir, "Scripts", "pip.exe")
-	}
 	log.Info("pip install faster-whisper")
 	cmd := exec.CommandContext(ctx, pip, "install", "-q", "faster-whisper") //nolint:gosec
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -82,18 +96,15 @@ func runWhisper(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) 
 }
 
 func installPython(ctx context.Context, log Logger) error {
-	if _, err := exec.LookPath("python3"); err == nil {
-		log.Info("python3 already installed")
-		return nil
-	}
 	switch runtime.GOOS {
 	case "linux":
-		log.Info("apt-get install python3 python3-venv python3-pip")
-		// Ensure universe repo is enabled on Ubuntu.
-		_ = exec.CommandContext(ctx, "add-apt-repository", "-y", "universe").Run()
+		// Always ensure python3-venv is installed — it is a separate apt package
+		// even when python3 itself is already present (Ubuntu 24.04 splits them).
+		pkgs := []string{"python3", "python3-venv", "python3-pip"}
+		log.Info(fmt.Sprintf("apt-get install %v", pkgs))
 		_ = exec.CommandContext(ctx, "apt-get", "update", "-q").Run()
-		cmd := exec.CommandContext(ctx, "apt-get", "install", "-y", "-q",
-			"python3", "python3-venv", "python3-pip")
+		args := append([]string{"install", "-y", "-q"}, pkgs...)
+		cmd := exec.CommandContext(ctx, "apt-get", args...) //nolint:gosec
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("apt-get: %w\n%s", err, out)
 		}
@@ -122,7 +133,7 @@ Type=simple
 User={{.User}}
 WorkingDirectory={{.Dir}}
 Environment=WHISPER_MODEL={{.Model}}
-Environment=WHISPER_LANGUAGE=it
+Environment=WHISPER_LANGUAGE={{.Language}}
 Environment=PORT=9001
 ExecStart={{.Python}} {{.Script}}
 Restart=on-failure
@@ -136,15 +147,16 @@ func installWhisperService(ctx context.Context, cfg *instconfig.InstallConfig, w
 	switch runtime.GOOS {
 	case "linux":
 		python := filepath.Join(venvDir, "bin", "python3")
-		type tmplData struct{ User, Dir, Model, Python, Script string }
+		type tmplData struct{ User, Dir, Model, Language, Python, Script string }
 		t := template.Must(template.New("unit").Parse(whisperServiceUnit))
 		var buf bytes.Buffer
 		if err := t.Execute(&buf, tmplData{
-			User:   cfg.ServiceUser,
-			Dir:    whisperDir,
-			Model:  cfg.WhisperModel,
-			Python: python,
-			Script: scriptPath,
+			User:     cfg.ServiceUser,
+			Dir:      whisperDir,
+			Model:    cfg.WhisperModel,
+			Language: cfg.WhisperLanguage,
+			Python:   python,
+			Script:   scriptPath,
 		}); err != nil {
 			return fmt.Errorf("render unit: %w", err)
 		}
@@ -175,12 +187,12 @@ func installWhisperService(ctx context.Context, cfg *instconfig.InstallConfig, w
   <key>ProgramArguments</key><array><string>%s</string><string>%s</string></array>
   <key>EnvironmentVariables</key><dict>
     <key>WHISPER_MODEL</key><string>%s</string>
-    <key>WHISPER_LANGUAGE</key><string>it</string>
+    <key>WHISPER_LANGUAGE</key><string>%s</string>
     <key>PORT</key><string>9001</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-</dict></plist>`, python, scriptPath, cfg.WhisperModel)
+</dict></plist>`, python, scriptPath, cfg.WhisperModel, cfg.WhisperLanguage)
 		if err := os.WriteFile(plistPath, []byte(plist), 0o644); err != nil { //nolint:gosec
 			return fmt.Errorf("write plist: %w", err)
 		}

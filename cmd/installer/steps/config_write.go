@@ -43,19 +43,32 @@ stt:
   provider: "{{ .STTProvider }}"
 {{ if eq .STTProvider "whisper-local" }}  whisper_local:
     url: "{{ .WhisperURL }}"
-{{ end }}{{ range $k,$v := .STTConfig }}{{ if eq $k "GOOGLE_APPLICATION_CREDENTIALS" }}  google:
-    credentials_file: "{{ $v }}"
-{{ end }}{{ if eq $k "AZURE_SPEECH_KEY" }}  azure:
-    key: "{{ $v }}"
-{{ end }}{{ end }}
+{{ end }}{{ if eq .STTProvider "google" }}  google:
+    credentials_file: "{{ index .STTConfig "GOOGLE_APPLICATION_CREDENTIALS" }}"
+{{ end }}{{ if eq .STTProvider "aws" }}  aws:
+    access_key_id:     "{{ index .STTConfig "AWS_ACCESS_KEY_ID" }}"
+    secret_access_key: "{{ index .STTConfig "AWS_SECRET_ACCESS_KEY" }}"
+    region:            "{{ index .STTConfig "AWS_REGION" }}"
+{{ end }}{{ if eq .STTProvider "azure" }}  azure:
+    key:    "{{ index .STTConfig "AZURE_SPEECH_KEY" }}"
+    region: "{{ index .STTConfig "AZURE_SPEECH_REGION" }}"
+{{ end }}
 llm:
   provider: "{{ .LLMProvider }}"
 {{ if eq .LLMProvider "ollama" }}  ollama:
     base_url: "{{ .OllamaURL }}"
     model:    "{{ .OllamaModel }}"
-{{ end }}{{ range $k,$v := .LLMConfig }}{{ if eq $k "LLM_API_KEY" }}  openai:
-    api_key: "{{ $v }}"
-{{ end }}{{ end }}
+{{ end }}{{ if eq .LLMProvider "openai" }}  openai:
+    api_key: "{{ index .LLMConfig "LLM_API_KEY" }}"
+    model:   "{{ index .LLMConfig "LLM_MODEL" }}"
+{{ end }}{{ if eq .LLMProvider "anthropic" }}  anthropic:
+    api_key: "{{ index .LLMConfig "LLM_API_KEY" }}"
+    model:   "{{ index .LLMConfig "LLM_MODEL" }}"
+{{ end }}{{ if eq .LLMProvider "azure" }}  azure:
+    api_key:  "{{ index .LLMConfig "LLM_API_KEY" }}"
+    endpoint: "{{ index .LLMConfig "AZURE_OPENAI_ENDPOINT" }}"
+    model:    "{{ index .LLMConfig "LLM_MODEL" }}"
+{{ end }}
 webhook:
   url:           "{{ .WebhookURL }}"
   mode:          "{{ .WebhookMode }}"
@@ -71,7 +84,20 @@ session:
 logging:
   level: info
   format: json
-`
+
+webrtc:
+  ice_udp_port_min: {{ .ICEUDPPortMin }}
+  ice_udp_port_max: {{ .ICEUDPPortMax }}
+{{ if .TURNEnabled }}  turn:
+    enabled: true
+    listen_addr: "{{ .TURNListenAddr }}"
+    public_ip:   "{{ .TURNPublicIP }}"
+    realm:       "{{ .TURNRealm }}"
+    auth_secret: "{{ .TURNAuthSecret }}"
+    auth_ttl:    {{ .TURNAuthTTL }}
+    enable_udp:  {{ .TURNEnableUDP }}
+    enable_tcp:  {{ .TURNEnableTCP }}
+{{ end }}`
 
 const yamlTLSAppend = `
 tls:
