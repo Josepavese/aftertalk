@@ -100,12 +100,16 @@ func (s *SignalingServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 	logging.Infof("Signaling connected: session=%s user=%s role=%s jti=%s",
 		claims.SessionID, claims.UserID, claims.Role, participantID)
 
+	// Create a context tied to the WebSocket connection lifetime.
+	// We cannot use r.Context() because it is cancelled as soon as HandleWebSocket returns.
+	ctx, cancel := context.WithCancel(context.Background())
 	cw := &connWriter{conn: conn}
-	go s.handleMessages(cw, claims.SessionID, participantID, claims.Role) //nolint:contextcheck // goroutine must outlive the HTTP handler
+	go s.handleMessages(ctx, cancel, cw, claims.SessionID, participantID, claims.Role)
 }
 
-func (s *SignalingServer) handleMessages(cw *connWriter, sessionID, participantID, role string) {
+func (s *SignalingServer) handleMessages(ctx context.Context, cancel context.CancelFunc, cw *connWriter, sessionID, participantID, role string) {
 	defer func() {
+		cancel() // signal peer cleanup goroutine
 		_ = cw.conn.Close() //nolint:errcheck // best-effort cleanup on disconnect
 		key := sessionID + ":" + participantID
 		s.mu.Lock()
@@ -131,17 +135,17 @@ func (s *SignalingServer) handleMessages(cw *connWriter, sessionID, participantI
 			continue
 		}
 
-		s.handleMessage(cw, sessionID, participantID, role, &msg)
+		s.handleMessage(ctx, cw, sessionID, participantID, role, &msg)
 	}
 }
 
-func (s *SignalingServer) handleMessage(cw *connWriter, sessionID, participantID, role string, msg *SignalingMessage) {
+func (s *SignalingServer) handleMessage(ctx context.Context, cw *connWriter, sessionID, participantID, role string, msg *SignalingMessage) {
 	switch msg.Type {
 	case "join":
-		s.handleJoin(cw, sessionID, participantID, role)
+		s.handleJoin(ctx, cw, sessionID, participantID, role)
 
 	case "offer":
-		s.handleOffer(cw, sessionID, participantID, role, msg.SDP)
+		s.handleOffer(ctx, cw, sessionID, participantID, role, msg.SDP)
 
 	case "answer":
 		s.handleAnswer(sessionID, participantID, msg.SDP)
@@ -154,10 +158,10 @@ func (s *SignalingServer) handleMessage(cw *connWriter, sessionID, participantID
 	}
 }
 
-func (s *SignalingServer) handleJoin(cw *connWriter, sessionID, participantID, role string) {
+func (s *SignalingServer) handleJoin(ctx context.Context, cw *connWriter, sessionID, participantID, role string) {
 	logging.Infof("Peer joining: session=%s participant=%s role=%s", sessionID, participantID, role)
 
-	peer, err := s.manager.CreatePeer(context.TODO(), sessionID, participantID, role)
+	peer, err := s.manager.CreatePeer(ctx, sessionID, participantID, role)
 	if err != nil {
 		logging.Errorf("Failed to create peer: %v", err)
 		return
@@ -201,10 +205,10 @@ func (s *SignalingServer) handleJoin(cw *connWriter, sessionID, participantID, r
 	}
 }
 
-func (s *SignalingServer) handleOffer(cw *connWriter, sessionID, participantID, role, sdp string) {
+func (s *SignalingServer) handleOffer(ctx context.Context, cw *connWriter, sessionID, participantID, role, sdp string) {
 	logging.Infof("Received offer from: session=%s participant=%s", sessionID, participantID)
 
-	peer, err := s.manager.CreatePeer(context.TODO(), sessionID, participantID, role)
+	peer, err := s.manager.CreatePeer(ctx, sessionID, participantID, role)
 	if err != nil {
 		logging.Errorf("Failed to create peer: %v", err)
 		return

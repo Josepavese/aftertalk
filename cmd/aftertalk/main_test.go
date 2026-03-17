@@ -310,7 +310,7 @@ func TestAPIServerCreation(t *testing.T) {
 	cfg := &config.Config{}
 	repo := session.NewSessionRepository(nil)
 	sessionService := session.NewService(repo, nil, nil, nil, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
-	botServer := api.NewBotServer(sessionService, nil, nil, nil)
+	botServer := api.NewBotServer(sessionService, nil, nil, nil, 0, 0)
 
 	apiServer := api.NewServer(cfg, sessionService, botServer)
 
@@ -323,7 +323,7 @@ func TestBotServerCreation(t *testing.T) {
 	jwtManager := jwt.NewJWTManager("test-secret", "test-issuer", 2*time.Hour)
 	tokenCache := cache.NewTokenCache()
 
-	botServer := api.NewBotServer(sessionService, jwtManager, tokenCache, nil)
+	botServer := api.NewBotServer(sessionService, jwtManager, tokenCache, nil, 0, 0)
 
 	assert.NotNil(t, botServer)
 }

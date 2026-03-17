@@ -165,17 +165,6 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 		return custommiddleware.APIKey(cfg.API.Key)(next)
 	}
 
-	// Static file server for test-ui
-	uiPath := findTestUIPath()
-	if uiPath != "" {
-		fs := http.FileServer(http.Dir(uiPath))
-		r.Get("/", fs.ServeHTTP)
-		r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
-			// strip the wildcard prefix so FileServer sees the plain path
-			http.StripPrefix("", fs).ServeHTTP(w, req)
-		})
-	}
-
 	// Build a lookup map for templates (templateID → TemplateConfig).
 	templateMap := make(map[string]config.TemplateConfig, len(cfg.Templates))
 	for _, t := range cfg.Templates {
@@ -351,6 +340,16 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 	r.Get("/signaling", func(w http.ResponseWriter, r *http.Request) {
 		botServer.HandleWebSocket(w, r)
 	})
+
+	// Static file server for test-ui.
+	// Using r.NotFound ensures the file server is only invoked when no API route matched,
+	// preventing the wildcard from shadowing /v1/*, /demo/*, /signaling etc.
+	uiPath := findTestUIPath()
+	if uiPath != "" {
+		fs := http.FileServer(http.Dir(uiPath))
+		r.Get("/", fs.ServeHTTP)
+		r.NotFound(fs.ServeHTTP)
+	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.HTTP.Host, cfg.HTTP.Port)
 

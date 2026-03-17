@@ -93,7 +93,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		cfg.Session,
 	)
 
-	botServer := api.NewBotServer(sessionSvc, jwtMgr, tokenCache, nil)
+	botServer := api.NewBotServer(sessionSvc, jwtMgr, tokenCache, nil, 0, 0)
 	minutesHandler := handler.NewMinutesHandler(minSvc)
 	rtcHandler := handler.NewRTCConfigHandler(cfg, webrtcpkg.NewStaticProvider(cfg.WebRTC.ICEServers))
 
@@ -316,7 +316,7 @@ func TestAPI_RTCConfig_WithLiveTURN(t *testing.T) {
 
 	rtcHandler := handler.NewRTCConfigHandler(e.cfg, webrtcpkg.NewEmbeddedProvider(ts, e.cfg.WebRTC.ICEServers))
 	server := api.NewServerWithDeps(e.cfg, e.sessionService,
-		api.NewBotServer(e.sessionService, e.jwtMgr, e.tokenCache, nil),
+		api.NewBotServer(e.sessionService, e.jwtMgr, e.tokenCache, nil, 0, 0),
 		nil, nil, rtcHandler)
 	srv := httptest.NewServer(server.Handler())
 	defer srv.Close()
