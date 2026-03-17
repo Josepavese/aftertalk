@@ -24,8 +24,8 @@ func NewTranscriptionRepository(db *sql.DB) *TranscriptionRepository {
 
 func (r *TranscriptionRepository) Create(ctx context.Context, transcription *Transcription) error {
 	query := `
-		INSERT INTO transcriptions (id, session_id, segment_index, role, start_ms, end_ms, text, confidence, provider, created_at, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO transcriptions (id, session_id, segment_index, role, start_ms, end_ms, text, confidence, provider, language, created_at, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := r.ExecContext(ctx, query,
@@ -38,6 +38,7 @@ func (r *TranscriptionRepository) Create(ctx context.Context, transcription *Tra
 		transcription.Text,
 		transcription.Confidence,
 		transcription.Provider,
+		transcription.Language,
 		transcription.CreatedAt.Format(time.RFC3339),
 		string(transcription.Status),
 	)
@@ -166,6 +167,26 @@ func (r *TranscriptionRepository) GetLastActivityTime(ctx context.Context, sessi
 		return time.Time{}, fmt.Errorf("parse last activity time: %w", err)
 	}
 	return t, nil
+}
+
+// GetDetectedLanguage returns the most recent non-empty STT-detected language
+// code for a session (e.g. "it", "en"). Returns "" if none is stored yet.
+func (r *TranscriptionRepository) GetDetectedLanguage(ctx context.Context, sessionID string) (string, error) {
+	var lang sql.NullString
+	err := r.QueryRowContext(ctx,
+		`SELECT language FROM transcriptions WHERE session_id = ? AND language != '' ORDER BY created_at DESC LIMIT 1`,
+		sessionID,
+	).Scan(&lang)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("get detected language: %w", err)
+	}
+	if !lang.Valid {
+		return "", nil
+	}
+	return lang.String, nil
 }
 
 // CountBySession returns the number of already-saved segments for a session,

@@ -33,13 +33,17 @@ func (a *TranscriptionAdapter) GetTranscriptionsAsText(ctx context.Context, sess
 	return a.Svc.GetTranscriptionsAsText(ctx, sessionID)
 }
 
+func (a *TranscriptionAdapter) GetDetectedLanguageForSession(ctx context.Context, sessionID string) string {
+	return a.Svc.GetDetectedLanguageForSession(ctx, sessionID)
+}
+
 // MinutesAdapter adapts minutes.Service to session.MinutesServiceInterface.
 type MinutesAdapter struct {
 	Svc *minutes.Service
 }
 
-func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext) (interface{}, error) {
-	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx)
+func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string) (interface{}, error) {
+	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage)
 }
 
 func (a *MinutesAdapter) GetMinutes(ctx context.Context, sessionID string) (interface{}, error) {

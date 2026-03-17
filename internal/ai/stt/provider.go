@@ -22,9 +22,10 @@ type STTProvider interface {
 }
 
 type TranscriptionResult struct {
-	Provider string
-	Segments []*TranscriptionSegment
-	Duration int
+	Provider         string
+	Segments         []*TranscriptionSegment
+	Duration         int
+	DetectedLanguage string // ISO 639-1 code detected by the STT provider (e.g. "it", "en")
 }
 
 type TranscriptionSegment struct {
