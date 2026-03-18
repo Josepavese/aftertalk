@@ -1,6 +1,6 @@
 # Improvement 21 — Per-Session Provider Profiles (STT & LLM)
 
-**Status:** In progress
+**Status:** Closed — implemented (2026-03-18)
 **Priority:** High
 **Area:** Config, Core, API, UI
 

@@ -25,8 +25,9 @@ type OllamaConfig struct {
 }
 
 type OpenAIConfig struct {
-	APIKey string
-	Model  string
+	APIKey  string
+	Model   string
+	BaseURL string // optional override, e.g. https://openrouter.ai/api
 }
 
 type AnthropicConfig struct {
