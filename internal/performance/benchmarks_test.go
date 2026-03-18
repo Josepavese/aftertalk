@@ -160,6 +160,14 @@ func teardownTestDB() {
 	os.Remove(testDBPath)
 }
 
+type benchStubLLM struct{}
+
+func (benchStubLLM) Generate(_ context.Context, _ string) (string, error) {
+	return `{"sections":{},"citations":[]}`, nil
+}
+func (benchStubLLM) Name() string        { return "stub" }
+func (benchStubLLM) IsAvailable() bool   { return true }
+
 func BenchmarkSessionCreation1000(b *testing.B) {
 	db := setupTestDB(b)
 	defer teardownTestDB()
@@ -244,7 +252,7 @@ func BenchmarkTranscriptionRetrieval(b *testing.B) {
 	defer teardownTestDB()
 
 	repo := transcription.NewTranscriptionRepository(db)
-	service := transcription.NewService(repo, nil, nil)
+	service := transcription.NewService(repo, nil)
 
 	b.ResetTimer()
 
@@ -263,7 +271,7 @@ func BenchmarkMinutesGeneration(b *testing.B) {
 	defer teardownTestDB()
 
 	repo := minutes.NewMinutesRepository(db)
-	service := minutes.NewService(repo, nil)
+	service := minutes.NewService(repo)
 
 	sessionID := "test-session"
 	transcriptionText := generateLargeTranscriptionText()
@@ -272,7 +280,7 @@ func BenchmarkMinutesGeneration(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := service.GenerateMinutes(context.Background(), sessionID, transcriptionText, tmpl, webhook.SessionContext{}, "", "")
+		_, err := service.GenerateMinutes(context.Background(), sessionID, transcriptionText, tmpl, webhook.SessionContext{}, "", &benchStubLLM{})
 		if err != nil {
 			b.Fatalf("Failed to generate minutes: %v", err)
 		}
@@ -284,7 +292,7 @@ func BenchmarkMinutesRetrieval(b *testing.B) {
 	defer teardownTestDB()
 
 	repo := minutes.NewMinutesRepository(db)
-	service := minutes.NewService(repo, nil)
+	service := minutes.NewService(repo)
 
 	b.ResetTimer()
 

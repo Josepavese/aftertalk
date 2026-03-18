@@ -74,10 +74,10 @@ func newTestEnv(t *testing.T) *testEnv {
 	llmProvider := &fakeLLMProvider{}
 
 	txRepo := transcription.NewTranscriptionRepository(db.DB)
-	txSvc := transcription.NewService(txRepo, stt.NewSTTRegistryFromProvider(sttProvider), nil)
+	txSvc := transcription.NewService(txRepo, nil)
 
 	minRepo := minutes.NewMinutesRepository(db.DB)
-	minSvc := minutes.NewService(minRepo, llm.NewLLMRegistryFromProvider(llmProvider))
+	minSvc := minutes.NewService(minRepo)
 
 	sessionRepo := session.NewSessionRepository(db.DB)
 	sessionSvc := session.NewService(
@@ -86,8 +86,8 @@ func newTestEnv(t *testing.T) *testEnv {
 		sessionCache,
 		tokenCache,
 		audioBuffer,
-		&api.TranscriptionAdapter{Svc: txSvc},
-		&api.MinutesAdapter{Svc: minSvc},
+		&api.TranscriptionAdapter{Svc: txSvc, STTRegistry: stt.NewSTTRegistryFromProvider(sttProvider)},
+		&api.MinutesAdapter{Svc: minSvc, LLMRegistry: llm.NewLLMRegistryFromProvider(llmProvider)},
 		cfg.JWT.Expiration,
 		cfg.Processing,
 		cfg.Templates,
