@@ -12,10 +12,12 @@ type LLMProfileEntry struct {
 	Model    string `json:"model,omitempty"`
 }
 
-// STTProfileEntry is a named STT provider profile (provider + optional model override).
+// STTProfileEntry is a named STT provider profile.
 type STTProfileEntry struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model,omitempty"`
+	URL      string `json:"url,omitempty"`     // optional endpoint override
+	APIKey   string `json:"api_key,omitempty"` // bearer token for cloud endpoints
 }
 
 // InstallConfig holds every configurable value that the installer needs.

@@ -28,7 +28,7 @@ func NewSTTRegistry(cfg *config.STTConfig) (*STTRegistry, error) {
 		Google:       GoogleConfig{CredentialsPath: cfg.Google.CredentialsPath},
 		AWS:          AWSConfig{AccessKeyID: cfg.AWS.AccessKeyID, SecretAccessKey: cfg.AWS.SecretAccessKey, Region: cfg.AWS.Region},
 		Azure:        AzureConfig{Key: cfg.Azure.Key, Region: cfg.Azure.Region},
-		WhisperLocal: WhisperLocalConfig{URL: cfg.WhisperLocal.URL, Model: cfg.WhisperLocal.Model, Language: cfg.WhisperLocal.Language, ResponseFormat: cfg.WhisperLocal.ResponseFormat, Endpoint: cfg.WhisperLocal.Endpoint},
+		WhisperLocal: WhisperLocalConfig{URL: cfg.WhisperLocal.URL, Model: cfg.WhisperLocal.Model, Language: cfg.WhisperLocal.Language, ResponseFormat: cfg.WhisperLocal.ResponseFormat, Endpoint: cfg.WhisperLocal.Endpoint, APIKey: cfg.WhisperLocal.APIKey},
 	}
 
 	if len(cfg.Profiles) == 0 {
@@ -49,9 +49,17 @@ func NewSTTRegistry(cfg *config.STTConfig) (*STTRegistry, error) {
 	for name, pcfg := range cfg.Profiles {
 		profileBase := *base
 		profileBase.Provider = pcfg.Provider
-		// Apply optional model override for whisper-local.
-		if pcfg.Model != "" && pcfg.Provider == "whisper-local" {
-			profileBase.WhisperLocal.Model = pcfg.Model
+		// Apply optional overrides for whisper-local profiles.
+		if pcfg.Provider == "whisper-local" {
+			if pcfg.Model != "" {
+				profileBase.WhisperLocal.Model = pcfg.Model
+			}
+			if pcfg.URL != "" {
+				profileBase.WhisperLocal.URL = pcfg.URL
+			}
+			if pcfg.APIKey != "" {
+				profileBase.WhisperLocal.APIKey = pcfg.APIKey
+			}
 		}
 		p, err := NewProvider(&profileBase)
 		if err != nil {

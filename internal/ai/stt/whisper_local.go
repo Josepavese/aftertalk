@@ -92,6 +92,9 @@ func (p *WhisperLocalProvider) Transcribe(ctx context.Context, audioData *AudioD
 		return nil, fmt.Errorf("whisper-local: new request: %w", err)
 	}
 	req.Header.Set("Content-Type", contentType)
+	if p.cfg.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.cfg.APIKey)
+	}
 
 	resp, err := p.client.Do(req)
 	if err != nil {

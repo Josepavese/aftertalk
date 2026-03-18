@@ -76,9 +76,9 @@ type AzureConfig struct {
 // Compatible servers: faster-whisper-server (fedirz/faster-whisper-server),
 // whisper.cpp server, or any OpenAI-compatible /v1/audio/transcriptions endpoint.
 type WhisperLocalConfig struct {
-	// URL is the base URL of the local server, e.g. "http://localhost:9000"
+	// URL is the base URL of the server, e.g. "http://localhost:9000" or "https://openrouter.ai/api"
 	URL string
-	// Model is the model name passed to the server, e.g. "large-v3", "Systran/faster-whisper-large-v3"
+	// Model is the model name passed to the server, e.g. "large-v3", "openai/whisper-1"
 	Model string
 	// Language forces a specific language (e.g. "it" for Italian). Empty = auto-detect.
 	Language string
@@ -87,4 +87,7 @@ type WhisperLocalConfig struct {
 	// Endpoint overrides the transcription path. Default: /v1/audio/transcriptions.
 	// Use /inference for whisper.cpp server.
 	Endpoint string
+	// APIKey is the bearer token sent as Authorization header.
+	// Required for cloud endpoints (OpenRouter, OpenAI API, etc.).
+	APIKey string
 }
