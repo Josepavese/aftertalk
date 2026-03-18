@@ -55,20 +55,26 @@ stt:
 {{ end }}
 llm:
   provider: "{{ .LLMProvider }}"
-{{ if eq .LLMProvider "ollama" }}  ollama:
+{{ if .LLMDefaultProfile }}  default_profile: "{{ .LLMDefaultProfile }}"
+{{ end }}{{ if eq .LLMProvider "ollama" }}  ollama:
     base_url: "{{ .OllamaURL }}"
     model:    "{{ .OllamaModel }}"
 {{ end }}{{ if eq .LLMProvider "openai" }}  openai:
     api_key: "{{ index .LLMConfig "LLM_API_KEY" }}"
     model:   "{{ index .LLMConfig "LLM_MODEL" }}"
-{{ end }}{{ if eq .LLMProvider "anthropic" }}  anthropic:
+{{ if index .LLMConfig "LLM_BASE_URL" }}    base_url: "{{ index .LLMConfig "LLM_BASE_URL" }}"
+{{ end }}{{ end }}{{ if eq .LLMProvider "anthropic" }}  anthropic:
     api_key: "{{ index .LLMConfig "LLM_API_KEY" }}"
     model:   "{{ index .LLMConfig "LLM_MODEL" }}"
 {{ end }}{{ if eq .LLMProvider "azure" }}  azure:
     api_key:  "{{ index .LLMConfig "LLM_API_KEY" }}"
     endpoint: "{{ index .LLMConfig "AZURE_OPENAI_ENDPOINT" }}"
     model:    "{{ index .LLMConfig "LLM_MODEL" }}"
-{{ end }}
+{{ end }}{{ if .LLMProfiles }}  profiles:
+{{ range $name, $p := .LLMProfiles }}    {{ $name }}:
+      provider: "{{ $p.Provider }}"
+{{ if $p.Model }}      model: "{{ $p.Model }}"
+{{ end }}{{ end }}{{ end }}
 webhook:
   url:           "{{ .WebhookURL }}"
   mode:          "{{ .WebhookMode }}"

@@ -6,6 +6,12 @@ package config
 
 import "time"
 
+// LLMProfileEntry is a named provider profile (provider + optional model override).
+type LLMProfileEntry struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+}
+
 // InstallConfig holds every configurable value that the installer needs.
 // It maps 1:1 to the fields written into aftertalk.yaml and install.env.
 type InstallConfig struct {
@@ -32,6 +38,9 @@ type InstallConfig struct {
 	LLMConfig   map[string]string // LLM_API_KEY, LLM_MODEL, etc.
 	OllamaModel string            // Ollama model to pull and use (default: qwen2.5:1.5b)
 	OllamaURL   string            // Ollama base URL (default: http://localhost:11434)
+
+	LLMDefaultProfile string                     // profile used when session omits llm_profile
+	LLMProfiles       map[string]LLMProfileEntry // named profiles, e.g. {"local": ..., "cloud": ...}
 
 	// Webhook
 	WebhookURL        string

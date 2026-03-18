@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -66,6 +67,13 @@ func FromEnvMap(m map[string]string) *InstallConfig {
 	cfg.LLMProvider = get("LLM_PROVIDER", cfg.LLMProvider)
 	cfg.OllamaModel = get("OLLAMA_MODEL", cfg.OllamaModel)
 	cfg.OllamaURL = get("OLLAMA_URL", cfg.OllamaURL)
+	cfg.LLMDefaultProfile = get("LLM_DEFAULT_PROFILE", "")
+	if raw := m["LLM_PROFILES_JSON"]; raw != "" {
+		var profiles map[string]LLMProfileEntry
+		if err := json.Unmarshal([]byte(raw), &profiles); err == nil {
+			cfg.LLMProfiles = profiles
+		}
+	}
 	cfg.WebhookURL = get("WEBHOOK_URL", "")
 	cfg.WebhookMode = get("WEBHOOK_MODE", cfg.WebhookMode)
 	cfg.WebhookSecret = get("WEBHOOK_SECRET", "")
@@ -94,7 +102,7 @@ func FromEnvMap(m map[string]string) *InstallConfig {
 	// LLM provider-specific keys
 	cfg.LLMConfig = make(map[string]string)
 	for _, k := range []string{
-		"LLM_API_KEY", "LLM_MODEL", "LLM_MAX_TOKENS",
+		"LLM_API_KEY", "LLM_MODEL", "LLM_MAX_TOKENS", "LLM_BASE_URL",
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY",
 		"AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT",
 	} {
@@ -133,6 +141,12 @@ func WriteEnvFile(path string, cfg *InstallConfig) error {
 	writeln("LLM_PROVIDER", cfg.LLMProvider)
 	writeln("OLLAMA_MODEL", cfg.OllamaModel)
 	writeln("OLLAMA_URL", cfg.OllamaURL)
+	writeln("LLM_DEFAULT_PROFILE", cfg.LLMDefaultProfile)
+	if len(cfg.LLMProfiles) > 0 {
+		if b, err := json.Marshal(cfg.LLMProfiles); err == nil {
+			writeln("LLM_PROFILES_JSON", string(b))
+		}
+	}
 	writeln("WEBHOOK_URL", cfg.WebhookURL)
 	writeln("WEBHOOK_MODE", cfg.WebhookMode)
 	writeln("WEBHOOK_SECRET", cfg.WebhookSecret)
