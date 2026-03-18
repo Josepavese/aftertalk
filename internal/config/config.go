@@ -118,12 +118,14 @@ type DemoConfig struct {
 	Enabled bool `koanf:"enabled"`
 }
 
-// STTProfileConfig selects a provider (and optionally overrides the model) for a
-// named quality/cost tier. Credentials and endpoint settings are inherited from
-// the parent STTConfig section — profiles only declare *which* provider to use.
+// STTProfileConfig selects a provider (and optionally overrides the model, URL,
+// and API key) for a named quality/cost tier. Fields left empty inherit from
+// the parent STTConfig section.
 type STTProfileConfig struct {
 	Provider string `koanf:"provider"` // whisper-local | google | aws | azure | stub
-	Model    string `koanf:"model"`    // optional model override (e.g. for whisper-local)
+	Model    string `koanf:"model"`    // optional model override
+	URL      string `koanf:"url"`      // optional URL override (e.g. https://openrouter.ai/api for cloud whisper)
+	APIKey   string `koanf:"api_key"`  // optional bearer token (required for cloud endpoints)
 }
 
 type STTConfig struct {
@@ -157,6 +159,7 @@ type WhisperLocalSTTConfig struct {
 	Language       string `koanf:"language"`
 	ResponseFormat string `koanf:"response_format"`
 	Endpoint       string `koanf:"endpoint"`
+	APIKey         string `koanf:"api_key"` // bearer token for cloud-compatible endpoints
 }
 
 // LLMProfileConfig selects a provider and optionally overrides the model for a

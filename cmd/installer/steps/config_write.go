@@ -59,6 +59,8 @@ stt:
 {{ range $name, $p := .STTProfiles }}    {{ $name }}:
       provider: "{{ $p.Provider }}"
 {{ if $p.Model }}      model: "{{ $p.Model }}"
+{{ end }}{{ if $p.URL }}      url: "{{ $p.URL }}"
+{{ end }}{{ if $p.APIKey }}      api_key: "{{ $p.APIKey }}"
 {{ end }}{{ end }}{{ end }}
 llm:
   provider: "{{ .LLMProvider }}"
