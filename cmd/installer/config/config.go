@@ -12,6 +12,12 @@ type LLMProfileEntry struct {
 	Model    string `json:"model,omitempty"`
 }
 
+// STTProfileEntry is a named STT provider profile (provider + optional model override).
+type STTProfileEntry struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+}
+
 // InstallConfig holds every configurable value that the installer needs.
 // It maps 1:1 to the fields written into aftertalk.yaml and install.env.
 type InstallConfig struct {
@@ -32,6 +38,9 @@ type InstallConfig struct {
 	WhisperModel    string // faster-whisper model size (default: base)
 	WhisperURL      string // URL aftertalk uses to reach whisper server
 	WhisperLanguage string // STT language code (default: "it")
+
+	STTDefaultProfile string                     // profile used when session omits stt_profile
+	STTProfiles       map[string]STTProfileEntry // named profiles
 
 	// LLM provider
 	LLMProvider string
