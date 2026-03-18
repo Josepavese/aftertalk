@@ -27,7 +27,9 @@ func setupTestDB(t *testing.T) *sql.DB {
 			ended_at TEXT,
 			participant_count INTEGER NOT NULL,
 			template_id TEXT NOT NULL DEFAULT '',
-			metadata TEXT
+			metadata TEXT,
+			stt_profile TEXT NOT NULL DEFAULT '',
+			llm_profile TEXT NOT NULL DEFAULT ''
 		)
 	`)
 	if err != nil {
@@ -79,7 +81,7 @@ func TestSessionRepository_Create(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UTC()
-	session := NewSession("test-session", 2, "")
+	session := NewSession("test-session", 2, "", "", "")
 	session.CreatedAt = now
 
 	err := repo.Create(ctx, session)
@@ -172,7 +174,7 @@ func TestSessionRepository_GetByID(t *testing.T) {
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.setupSession {
-				session := NewSession(tt.sessionID, 2, "")
+				session := NewSession(tt.sessionID, 2, "", "", "")
 				session.CreatedAt = now
 				if err := repo.Create(ctx, session); err != nil {
 					t.Fatalf("failed to setup test session: %v", err)
@@ -207,7 +209,7 @@ func TestSessionRepository_Update(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UTC()
-	session := NewSession("session-1", 2, "")
+	session := NewSession("session-1", 2, "", "", "")
 	session.CreatedAt = now
 	session.End()
 	session.StartProcessing()
@@ -257,7 +259,7 @@ func TestSessionRepository_CreateParticipant(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UTC()
-	session := NewSession("session-1", 2, "")
+	session := NewSession("session-1", 2, "", "", "")
 	session.CreatedAt = now
 
 	if err := repo.Create(ctx, session); err != nil {
@@ -312,7 +314,7 @@ func TestSessionRepository_GetParticipantByJTI(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().UTC()
-	session := NewSession("session-1", 2, "")
+	session := NewSession("session-1", 2, "", "", "")
 	session.CreatedAt = now
 
 	if err := repo.Create(ctx, session); err != nil {

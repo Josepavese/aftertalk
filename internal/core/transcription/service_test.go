@@ -87,7 +87,7 @@ func TestTranscribeAudio_Success(t *testing.T) {
 
 	mockProvider.On("Transcribe", ctx, audioData).Return(expectedResult, nil)
 
-	service := NewService(repo, mockProvider, retryConfig)
+	service := NewService(repo, stt.NewSTTRegistryFromProvider(mockProvider), retryConfig)
 
 	err := service.TranscribeAudio(ctx, audioData)
 	require.NoError(t, err)
@@ -155,7 +155,7 @@ func TestTranscribeAudio_RetryMultipleFailures(t *testing.T) {
 	mockProvider.On("Transcribe", ctx, audioData).Return(nil, errTestTranscription).Times(2)
 	mockProvider.On("Transcribe", ctx, audioData).Return(expectedResult, nil)
 
-	service := NewService(repo, mockProvider, retryConfig)
+	service := NewService(repo, stt.NewSTTRegistryFromProvider(mockProvider), retryConfig)
 
 	err := service.TranscribeAudio(ctx, audioData)
 	require.NoError(t, err)

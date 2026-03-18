@@ -35,7 +35,9 @@ func runMigrations(db *sql.DB) error {
 			ended_at TEXT,
 			participant_count INTEGER NOT NULL CHECK (participant_count >= 2),
 			template_id TEXT NOT NULL DEFAULT '',
-			metadata TEXT
+			metadata TEXT,
+			stt_profile TEXT NOT NULL DEFAULT '',
+			llm_profile TEXT NOT NULL DEFAULT ''
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_sessions_status_created ON sessions(status, created_at);
@@ -69,6 +71,7 @@ func runMigrations(db *sql.DB) error {
 			provider TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'ready', 'error')),
+			language TEXT NOT NULL DEFAULT '',
 			UNIQUE(session_id, segment_index)
 		);
 
@@ -269,7 +272,7 @@ func BenchmarkMinutesGeneration(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := service.GenerateMinutes(context.Background(), sessionID, transcriptionText, tmpl, webhook.SessionContext{})
+		_, err := service.GenerateMinutes(context.Background(), sessionID, transcriptionText, tmpl, webhook.SessionContext{}, "", "")
 		if err != nil {
 			b.Fatalf("Failed to generate minutes: %v", err)
 		}

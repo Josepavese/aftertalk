@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 	"github.com/Josepavese/aftertalk/internal/api"
 	"github.com/Josepavese/aftertalk/internal/api/handler"
@@ -73,10 +74,10 @@ func newTestEnv(t *testing.T) *testEnv {
 	llmProvider := &fakeLLMProvider{}
 
 	txRepo := transcription.NewTranscriptionRepository(db.DB)
-	txSvc := transcription.NewService(txRepo, sttProvider, nil)
+	txSvc := transcription.NewService(txRepo, stt.NewSTTRegistryFromProvider(sttProvider), nil)
 
 	minRepo := minutes.NewMinutesRepository(db.DB)
-	minSvc := minutes.NewService(minRepo, llmProvider)
+	minSvc := minutes.NewService(minRepo, llm.NewLLMRegistryFromProvider(llmProvider))
 
 	sessionRepo := session.NewSessionRepository(db.DB)
 	sessionSvc := session.NewService(
@@ -158,7 +159,8 @@ func runMigrations(ctx context.Context, db *sqlite.DB) error {
 		`CREATE TABLE IF NOT EXISTS sessions (
 			id TEXT PRIMARY KEY, status TEXT NOT NULL, created_at TEXT NOT NULL,
 			ended_at TEXT, participant_count INTEGER NOT NULL DEFAULT 0,
-			metadata TEXT, template_id TEXT
+			metadata TEXT, template_id TEXT,
+			stt_profile TEXT NOT NULL DEFAULT '', llm_profile TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS participants (
 			id TEXT PRIMARY KEY, session_id TEXT NOT NULL, user_id TEXT NOT NULL,

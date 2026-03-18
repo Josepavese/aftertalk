@@ -217,7 +217,7 @@ func TestLargeTranscriptionDataProcessing(t *testing.T) {
 			sessionID := randString(36)
 
 			// Create session
-			session := session.NewSession(sessionID, 2, "")
+			session := session.NewSession(sessionID, 2, "", "", "")
 			if err := sessionRepo.Create(context.Background(), session); err != nil {
 				results <- fmt.Errorf("session %d: %w", i, err)
 				return

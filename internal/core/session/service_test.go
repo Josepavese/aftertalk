@@ -126,7 +126,7 @@ func TestService_CreateSession_DBError(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session first to make sure we have data
-	session := NewSession("test-session", 2, "")
+	session := NewSession("test-session", 2, "", "", "")
 	if err := repo.Create(ctx, session); err != nil {
 		t.Fatalf("failed to create test session: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestService_CreateSession_JWTError(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a session first to ensure DB is functional
-	session := NewSession("test-session", 2, "")
+	session := NewSession("test-session", 2, "", "", "")
 	if err := repo.Create(ctx, session); err != nil {
 		t.Fatalf("failed to create test session: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestService_CreateSession_JWTError(t *testing.T) {
 func TestService_GetSession(t *testing.T) {
 	now := time.Now()
 	sessionID := uuid.New().String()
-	session := NewSession(sessionID, 2, "")
+	session := NewSession(sessionID, 2, "", "", "")
 	session.CreatedAt = now
 
 	db := setupTestDB(t)
@@ -229,7 +229,7 @@ func TestService_GetSession_NotFound(t *testing.T) {
 func TestService_EndSession(t *testing.T) {
 	now := time.Now()
 	sessionID := uuid.New().String()
-	session := NewSession(sessionID, 2, "")
+	session := NewSession(sessionID, 2, "", "", "")
 	session.CreatedAt = now
 
 	db := setupTestDB(t)
@@ -272,7 +272,7 @@ func TestService_EndSession_NotFound(t *testing.T) {
 func TestService_EndSession_DBError(t *testing.T) {
 	now := time.Now().UTC()
 	sessionID := uuid.New().String()
-	session := NewSession(sessionID, 2, "")
+	session := NewSession(sessionID, 2, "", "", "")
 	session.CreatedAt = now
 
 	db := setupTestDB(t)
@@ -420,7 +420,7 @@ func TestService_ConnectParticipant_Success(t *testing.T) {
 
 	ctx := context.Background()
 
-	session := NewSession(sessionID, 2, "")
+	session := NewSession(sessionID, 2, "", "", "")
 	session.CreatedAt = now
 	err := repo.Create(ctx, session)
 	assert.NoError(t, err)
@@ -467,7 +467,7 @@ func TestService_ConnectParticipant_SessionCacheError(t *testing.T) {
 
 	ctx := context.Background()
 
-	session := NewSession(sessionID, 2, "")
+	session := NewSession(sessionID, 2, "", "", "")
 	session.CreatedAt = now
 	repo.Create(ctx, session)
 
@@ -493,7 +493,7 @@ func TestService_ConnectParticipant_SessionNotActive(t *testing.T) {
 
 	ctx := context.Background()
 
-	session := NewSession(sessionID, 2, "")
+	session := NewSession(sessionID, 2, "", "", "")
 	session.CreatedAt = now
 	session.End()
 	repo.Create(ctx, session)
