@@ -20,15 +20,21 @@ type Session struct {
 	TemplateID       string        `json:"template_id,omitempty"`
 	Metadata         string        `json:"metadata,omitempty"`
 	ParticipantCount int           `json:"participant_count"`
+	// STTProfile and LLMProfile name the provider profiles to use for this session.
+	// Empty string means "use the registry default".
+	STTProfile string `json:"stt_profile,omitempty"`
+	LLMProfile string `json:"llm_profile,omitempty"`
 }
 
-func NewSession(id string, participantCount int, templateID string) *Session {
+func NewSession(id string, participantCount int, templateID, sttProfile, llmProfile string) *Session {
 	return &Session{
 		ID:               id,
 		Status:           StatusActive,
 		CreatedAt:        time.Now().UTC(),
 		ParticipantCount: participantCount,
 		TemplateID:       templateID,
+		STTProfile:       sttProfile,
+		LLMProfile:       llmProfile,
 	}
 }
 

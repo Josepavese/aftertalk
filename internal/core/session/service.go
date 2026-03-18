@@ -38,6 +38,9 @@ type AudioData struct {
 	// STT providers return segment timestamps relative to the audio file; this offset
 	// must be added to convert them to session-absolute timestamps.
 	OffsetMs int
+	// STTProfile selects the STT provider profile for this audio chunk.
+	// Empty string means "use the registry default".
+	STTProfile string
 }
 
 type TranscriptionServiceInterface interface {
@@ -57,7 +60,8 @@ type MinutesServiceInterface interface {
 	// the opaque session metadata and participant list set at session-creation time;
 	// it is propagated unchanged to webhook deliveries so recipients can correlate
 	// the minutes with their own data model without a second API call.
-	GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string) (interface{}, error)
+	// llmProfile selects the LLM provider profile; empty = registry default.
+	GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string, llmProfile string) (interface{}, error)
 	GetMinutes(ctx context.Context, sessionID string) (interface{}, error)
 }
 
@@ -183,7 +187,8 @@ type transcribeJob struct {
 	// OffsetMs: milliseconds from session start to the beginning of this audio chunk.
 	// Added to STT segment timestamps before storing, so all transcriptions share
 	// the same absolute timeline regardless of when each participant connected.
-	OffsetMs int
+	OffsetMs   int
+	STTProfile string // provider profile to use; empty = registry default
 }
 
 func NewService(
@@ -339,6 +344,7 @@ func (s *Service) processTranscriptionQueue() {
 				SampleRate:    16000,
 				Duration:      job.DurationMs,
 				OffsetMs:      job.OffsetMs,
+				STTProfile:    job.STTProfile,
 			}
 
 			if err := s.transcription.TranscribeAudio(ctx, audioData); err != nil {
@@ -413,6 +419,10 @@ type CreateSessionRequest struct {
 	Metadata         string               `json:"metadata,omitempty"`
 	Participants     []ParticipantRequest `json:"participants"`
 	ParticipantCount int                  `json:"participant_count"`
+	// STTProfile and LLMProfile select provider profiles defined in the server config.
+	// Leave empty to use the server's configured default_profile.
+	STTProfile string `json:"stt_profile,omitempty"`
+	LLMProfile string `json:"llm_profile,omitempty"`
 }
 
 type ParticipantRequest struct {
@@ -443,7 +453,7 @@ func (s *Service) CreateSession(ctx context.Context, req *CreateSessionRequest) 
 	}
 
 	sessionID := uuid.New().String()
-	session := NewSession(sessionID, req.ParticipantCount, req.TemplateID)
+	session := NewSession(sessionID, req.ParticipantCount, req.TemplateID, req.STTProfile, req.LLMProfile)
 	session.Metadata = req.Metadata
 
 	if err := s.repo.Create(ctx, session); err != nil {
@@ -483,6 +493,8 @@ func (s *Service) CreateSession(ctx context.Context, req *CreateSessionRequest) 
 		StartedAt:          session.CreatedAt,
 		ParticipantCount:   session.ParticipantCount,
 		ActiveParticipants: 0,
+		STTProfile:         session.STTProfile,
+		LLMProfile:         session.LLMProfile,
 	}, s.jwtExpiration)
 
 	return &CreateSessionResponse{
@@ -592,6 +604,11 @@ func (s *Service) processRemainingAudio(sessionID string) {
 				}
 			}
 
+			var sttProfileRemain string
+			if state, ok := s.sessionCache.GetSession(sessionID); ok {
+				sttProfileRemain = state.STTProfile
+			}
+
 			audioData := &AudioData{
 				SessionID:     sessionID,
 				ParticipantID: participantID,
@@ -601,6 +618,7 @@ func (s *Service) processRemainingAudio(sessionID string) {
 				SampleRate:    16000,
 				Duration:      buffer.DurationMs,
 				OffsetMs:      offsetMs,
+				STTProfile:    sttProfileRemain,
 			}
 
 			if err := s.transcription.TranscribeAudio(ctx, audioData); err != nil {
@@ -685,7 +703,7 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 	}
 
 	if s.minutes != nil {
-		_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage)
+		_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage, session.LLMProfile)
 		if err != nil {
 			logging.Errorf("Failed to generate minutes for session=%s: %v", sessionID, err)
 			failSession(session)
@@ -800,6 +818,11 @@ func (s *Service) ProcessAudioChunk(sessionID, participantID string, payload []b
 			}
 		}
 
+		var sttProfile string
+		if state, ok := s.sessionCache.GetSession(sessionID); ok {
+			sttProfile = state.STTProfile
+		}
+
 		job := &transcribeJob{
 			SessionID:     sessionID,
 			ParticipantID: participantID,
@@ -808,6 +831,7 @@ func (s *Service) ProcessAudioChunk(sessionID, participantID string, payload []b
 			OpusFrames:    framesCopy,
 			DurationMs:    buffer.DurationMs,
 			OffsetMs:      offsetMs,
+			STTProfile:    sttProfile,
 		}
 		copy(job.AudioData, buffer.Data)
 

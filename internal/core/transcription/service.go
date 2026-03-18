@@ -11,14 +11,14 @@ import (
 
 type Service struct {
 	repo        *TranscriptionRepository
-	sttProvider stt.STTProvider
+	sttRegistry *stt.STTRegistry
 	retryConfig *stt.RetryConfig
 }
 
-func NewService(repo *TranscriptionRepository, provider stt.STTProvider, retryConfig *stt.RetryConfig) *Service {
+func NewService(repo *TranscriptionRepository, registry *stt.STTRegistry, retryConfig *stt.RetryConfig) *Service {
 	return &Service{
 		repo:        repo,
-		sttProvider: provider,
+		sttRegistry: registry,
 		retryConfig: retryConfig,
 	}
 }
@@ -37,7 +37,7 @@ func (s *Service) GetDetectedLanguageForSession(ctx context.Context, sessionID s
 func (s *Service) TranscribeAudio(ctx context.Context, audioData *stt.AudioData) error {
 	logging.Infof("Transcribing audio for session %s, participant %s", audioData.SessionID, audioData.ParticipantID)
 
-	result, err := stt.TranscribeWithRetry(ctx, s.sttProvider, audioData, s.retryConfig)
+	result, err := stt.TranscribeWithRetry(ctx, s.sttRegistry.Get(audioData.STTProfile), audioData, s.retryConfig)
 	if err != nil {
 		logging.Errorf("Transcription failed: %v", err)
 		return fmt.Errorf("transcription failed: %w", err)
