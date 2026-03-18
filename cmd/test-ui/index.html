@@ -130,6 +130,10 @@
                     <option value="">Loading templates...</option>
                 </select>
             </div>
+            <div class="input-group" id="profileSelectors" style="display:none">
+                <select id="sttProfileSelect" title="STT profile"></select>
+                <select id="llmProfileSelect" title="LLM profile"></select>
+            </div>
             <div class="input-group">
                 <input type="text" id="roomCode" placeholder="Room code" value="room-1">
                 <input type="text" id="userName" placeholder="Your name" value="Alex">
@@ -330,6 +334,26 @@
                         ).join('');
                         if (cfg.default_template_id) sel.value = cfg.default_template_id;
                         onTemplateChange();
+
+                        // Populate provider profile selectors if profiles are defined.
+                        const sttSel = document.getElementById('sttProfileSelect');
+                        const llmSel = document.getElementById('llmProfileSelect');
+                        if (cfg.stt_profiles && cfg.stt_profiles.length) {
+                            sttSel.innerHTML = cfg.stt_profiles.map(p =>
+                                `<option value="${p}">STT: ${p}</option>`
+                            ).join('');
+                            if (cfg.default_stt_profile) sttSel.value = cfg.default_stt_profile;
+                        }
+                        if (cfg.llm_profiles && cfg.llm_profiles.length) {
+                            llmSel.innerHTML = cfg.llm_profiles.map(p =>
+                                `<option value="${p}">LLM: ${p}</option>`
+                            ).join('');
+                            if (cfg.default_llm_profile) llmSel.value = cfg.default_llm_profile;
+                        }
+                        if ((cfg.stt_profiles && cfg.stt_profiles.length > 1) ||
+                            (cfg.llm_profiles && cfg.llm_profiles.length > 1)) {
+                            document.getElementById('profileSelectors').style.display = '';
+                        }
                         return;
                     }
                 }
@@ -377,6 +401,8 @@
             const name = document.getElementById('userName').value.trim();
             const role = document.getElementById('userRole').value;
             const templateId = document.getElementById('templateSelect').value;
+            const sttProfile = document.getElementById('sttProfileSelect').value || undefined;
+            const llmProfile = document.getElementById('llmProfileSelect').value || undefined;
             if (!code || !name) return alert('Enter room code and name');
 
             document.getElementById('btnStart').disabled = true;
@@ -387,7 +413,7 @@
                 const res = await fetch(`${API}/test/start`, {
                     method: 'POST',
                     headers: {'Content-Type':'application/json', ...authHeader()},
-                    body: JSON.stringify({code, name, role, template_id: templateId})
+                    body: JSON.stringify({code, name, role, template_id: templateId, stt_profile: sttProfile, llm_profile: llmProfile})
                 });
                 if (!res.ok) throw new Error(await res.text());
                 const data = await res.json();

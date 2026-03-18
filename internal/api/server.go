@@ -181,9 +181,23 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 	// Never set Demo.Enabled=true in production.
 	r.Get("/demo/config", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		sttProfiles := make([]string, 0, len(cfg.STT.Profiles))
+		for name := range cfg.STT.Profiles {
+			sttProfiles = append(sttProfiles, name)
+		}
+		llmProfiles := make([]string, 0, len(cfg.LLM.Profiles))
+		for name := range cfg.LLM.Profiles {
+			llmProfiles = append(llmProfiles, name)
+		}
+
 		resp := map[string]interface{}{
-			"templates":           cfg.Templates,
-			"default_template_id": defaultTemplateID,
+			"templates":            cfg.Templates,
+			"default_template_id":  defaultTemplateID,
+			"stt_profiles":         sttProfiles,
+			"llm_profiles":         llmProfiles,
+			"default_stt_profile":  cfg.STT.DefaultProfile,
+			"default_llm_profile":  cfg.LLM.DefaultProfile,
 		}
 		if cfg.Demo.Enabled {
 			resp["api_key"] = cfg.API.Key
@@ -201,6 +215,8 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 			Name       string `json:"name"`
 			Role       string `json:"role"`
 			TemplateID string `json:"template_id"`
+			STTProfile string `json:"stt_profile"`
+			LLMProfile string `json:"llm_profile"`
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.Name == "" || body.Role == "" || body.Code == "" {
 			http.Error(w, "invalid request body: code, name and role are required", http.StatusBadRequest)
@@ -236,6 +252,8 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 			createReq := &session.CreateSessionRequest{
 				ParticipantCount: 2,
 				TemplateID:       body.TemplateID,
+				STTProfile:       body.STTProfile,
+				LLMProfile:       body.LLMProfile,
 				Participants: []session.ParticipantRequest{
 					{UserID: body.Name, Role: body.Role},
 					{UserID: "guest-" + otherRole, Role: otherRole},
