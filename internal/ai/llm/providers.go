@@ -277,7 +277,11 @@ func (p *AzureOpenAIProvider) IsAvailable() bool {
 func NewProvider(cfg *LLMConfig) (LLMProvider, error) {
 	switch cfg.Provider {
 	case "openai":
-		return NewOpenAIProvider(cfg.OpenAI.APIKey, cfg.OpenAI.Model), nil
+		p := NewOpenAIProvider(cfg.OpenAI.APIKey, cfg.OpenAI.Model)
+		if cfg.OpenAI.BaseURL != "" {
+			p.WithBaseURL(cfg.OpenAI.BaseURL)
+		}
+		return p, nil
 	case "anthropic":
 		return NewAnthropicProvider(cfg.Anthropic.APIKey, cfg.Anthropic.Model), nil
 	case "azure":

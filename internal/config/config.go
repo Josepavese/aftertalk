@@ -182,8 +182,9 @@ type OllamaLLMConfig struct {
 }
 
 type OpenAIConfig struct {
-	APIKey string `koanf:"api_key"`
-	Model  string `koanf:"model"`
+	APIKey  string `koanf:"api_key"`
+	Model   string `koanf:"model"`
+	BaseURL string `koanf:"base_url"` // optional override, e.g. https://openrouter.ai/api
 }
 
 type AnthropicConfig struct {

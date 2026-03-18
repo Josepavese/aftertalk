@@ -129,6 +129,18 @@ llm:
   openai:
     api_key: sk-...
     model: gpt-4o          # recommended; gpt-4 works too
+    base_url: ""           # optional: override API base (e.g. https://openrouter.ai/api)
+```
+
+#### OpenRouter (OpenAI-compatible)
+Any OpenAI-compatible API can be used via `base_url`:
+```yaml
+llm:
+  provider: openai
+  openai:
+    api_key: sk-or-v1-...
+    model: openai/gpt-4o-mini
+    base_url: https://openrouter.ai/api
 ```
 
 ### Anthropic
@@ -167,6 +179,58 @@ llm:
 ```
 Generates a synthetic summary from the transcription text without API calls.
 > Note: the Stub is optimized for the `therapy` template. For other templates, sections may not match.
+
+---
+
+## Provider Profiles (per-session routing)
+
+Named profiles allow different sessions to use different STT or LLM providers without restarting the server. Profiles are built once at startup; `Get(profileName)` is O(1).
+
+### STT Profiles
+```yaml
+stt:
+  default_profile: local        # used when session omits stt_profile
+  whisper_local:
+    url: http://localhost:9001
+  google:
+    credentials_path: /path/to/key.json
+  profiles:
+    local:
+      provider: whisper-local
+    cloud:
+      provider: google
+```
+
+### LLM Profiles
+```yaml
+llm:
+  default_profile: local        # used when session omits llm_profile
+  ollama:
+    base_url: http://localhost:11434
+    model: qwen2.5:3b
+  openai:
+    api_key: sk-...
+    model: gpt-4o-mini
+  profiles:
+    local:
+      provider: ollama
+    cloud:
+      provider: openai
+      model: gpt-4o             # optional model override
+```
+
+### Session creation with profile selection
+```json
+POST /v1/sessions
+{
+  "participant_count": 2,
+  "participants": [...],
+  "stt_profile": "cloud",
+  "llm_profile": "cloud"
+}
+```
+If `stt_profile` / `llm_profile` are omitted the configured `default_profile` is used.
+If no profiles are defined, the legacy single-provider mode is used (profile name `"default"`).
 
 ---
 
