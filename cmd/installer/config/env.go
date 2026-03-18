@@ -64,6 +64,13 @@ func FromEnvMap(m map[string]string) *InstallConfig {
 	cfg.WhisperModel = get("WHISPER_MODEL", cfg.WhisperModel)
 	cfg.WhisperURL = get("WHISPER_LOCAL_URL", cfg.WhisperURL)
 	cfg.WhisperLanguage = get("WHISPER_LANGUAGE", cfg.WhisperLanguage)
+	cfg.STTDefaultProfile = get("STT_DEFAULT_PROFILE", "")
+	if raw := m["STT_PROFILES_JSON"]; raw != "" {
+		var profiles map[string]STTProfileEntry
+		if err := json.Unmarshal([]byte(raw), &profiles); err == nil {
+			cfg.STTProfiles = profiles
+		}
+	}
 	cfg.LLMProvider = get("LLM_PROVIDER", cfg.LLMProvider)
 	cfg.OllamaModel = get("OLLAMA_MODEL", cfg.OllamaModel)
 	cfg.OllamaURL = get("OLLAMA_URL", cfg.OllamaURL)
@@ -138,6 +145,12 @@ func WriteEnvFile(path string, cfg *InstallConfig) error {
 	writeln("WHISPER_MODEL", cfg.WhisperModel)
 	writeln("WHISPER_LOCAL_URL", cfg.WhisperURL)
 	writeln("WHISPER_LANGUAGE", cfg.WhisperLanguage)
+	writeln("STT_DEFAULT_PROFILE", cfg.STTDefaultProfile)
+	if len(cfg.STTProfiles) > 0 {
+		if b, err := json.Marshal(cfg.STTProfiles); err == nil {
+			writeln("STT_PROFILES_JSON", string(b))
+		}
+	}
 	writeln("LLM_PROVIDER", cfg.LLMProvider)
 	writeln("OLLAMA_MODEL", cfg.OllamaModel)
 	writeln("OLLAMA_URL", cfg.OllamaURL)

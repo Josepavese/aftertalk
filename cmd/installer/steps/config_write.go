@@ -41,10 +41,13 @@ jwt:
 
 stt:
   provider: "{{ .STTProvider }}"
-{{ if eq .STTProvider "whisper-local" }}  whisper_local:
-    url: "{{ .WhisperURL }}"
+{{ if .STTDefaultProfile }}  default_profile: "{{ .STTDefaultProfile }}"
+{{ end }}{{ if eq .STTProvider "whisper-local" }}  whisper_local:
+    url:      "{{ .WhisperURL }}"
+    model:    "{{ .WhisperModel }}"
+    language: "{{ .WhisperLanguage }}"
 {{ end }}{{ if eq .STTProvider "google" }}  google:
-    credentials_file: "{{ index .STTConfig "GOOGLE_APPLICATION_CREDENTIALS" }}"
+    credentials_path: "{{ index .STTConfig "GOOGLE_APPLICATION_CREDENTIALS" }}"
 {{ end }}{{ if eq .STTProvider "aws" }}  aws:
     access_key_id:     "{{ index .STTConfig "AWS_ACCESS_KEY_ID" }}"
     secret_access_key: "{{ index .STTConfig "AWS_SECRET_ACCESS_KEY" }}"
@@ -52,7 +55,11 @@ stt:
 {{ end }}{{ if eq .STTProvider "azure" }}  azure:
     key:    "{{ index .STTConfig "AZURE_SPEECH_KEY" }}"
     region: "{{ index .STTConfig "AZURE_SPEECH_REGION" }}"
-{{ end }}
+{{ end }}{{ if .STTProfiles }}  profiles:
+{{ range $name, $p := .STTProfiles }}    {{ $name }}:
+      provider: "{{ $p.Provider }}"
+{{ if $p.Model }}      model: "{{ $p.Model }}"
+{{ end }}{{ end }}{{ end }}
 llm:
   provider: "{{ .LLMProvider }}"
 {{ if .LLMDefaultProfile }}  default_profile: "{{ .LLMDefaultProfile }}"

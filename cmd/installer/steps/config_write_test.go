@@ -36,7 +36,7 @@ func TestConfigWrite_STT_WhisperLocal(t *testing.T) {
 	yaml := renderYAML(t, cfg)
 	assert.Contains(t, yaml, `provider: "whisper-local"`)
 	assert.Contains(t, yaml, `whisper_local:`)
-	assert.Contains(t, yaml, `url: "http://localhost:9001"`)
+	assert.Contains(t, yaml, `"http://localhost:9001"`)
 	assert.NotContains(t, yaml, "google:")
 	assert.NotContains(t, yaml, "aws:")
 }
@@ -51,7 +51,7 @@ func TestConfigWrite_STT_Google(t *testing.T) {
 	yaml := renderYAML(t, cfg)
 	assert.Contains(t, yaml, `provider: "google"`)
 	assert.Contains(t, yaml, `google:`)
-	assert.Contains(t, yaml, `credentials_file: "/opt/aftertalk/gcp.json"`)
+	assert.Contains(t, yaml, `credentials_path: "/opt/aftertalk/gcp.json"`)
 	assert.NotContains(t, yaml, "whisper_local:")
 	assert.NotContains(t, yaml, "aws:")
 }
