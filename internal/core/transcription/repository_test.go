@@ -272,6 +272,7 @@ func createTranscriptionTable(db *sql.DB) error {
 			provider TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (datetime('now')),
 			status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'ready', 'error')),
+			language TEXT NOT NULL DEFAULT '',
 			UNIQUE(session_id, segment_index)
 		)
 	`
