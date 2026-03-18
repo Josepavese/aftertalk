@@ -13,6 +13,8 @@ type AudioData struct {
 	// OffsetMs: milliseconds from session start to the beginning of this audio chunk.
 	// Must be added to STT segment timestamps to produce session-absolute timestamps.
 	OffsetMs int
+	// STTProfile selects the provider profile from the STTRegistry; empty = default.
+	STTProfile string
 }
 
 type STTProvider interface {
