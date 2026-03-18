@@ -117,7 +117,7 @@ func main() {
 
 	retryConfig := stt.DefaultRetryConfig()
 
-	transcriptionService := transcription.NewService(transcriptionRepo, sttRegistry, retryConfig)
+	transcriptionService := transcription.NewService(transcriptionRepo, retryConfig)
 
 	llmRegistry, err := llm.NewLLMRegistry(&cfg.LLM)
 	if err != nil {
@@ -132,7 +132,6 @@ func main() {
 
 	minutesService := minutes.NewServiceWithDeps(
 		minutesRepo,
-		llmRegistry,
 		&minutes.RetryConfig{
 			MaxRetries:     cfg.Processing.LLMMaxRetries,
 			InitialBackoff: cfg.Processing.LLMInitialBackoff,
@@ -169,8 +168,8 @@ func main() {
 		logger.Infof("Webhook retry worker started (url=%s, mode=%s)", cfg.Webhook.URL, cfg.Webhook.Mode)
 	}
 
-	transcriptionAdapter := &api.TranscriptionAdapter{Svc: transcriptionService}
-	minutesAdapter := &api.MinutesAdapter{Svc: minutesService}
+	transcriptionAdapter := &api.TranscriptionAdapter{Svc: transcriptionService, STTRegistry: sttRegistry}
+	minutesAdapter := &api.MinutesAdapter{Svc: minutesService, LLMRegistry: llmRegistry}
 
 	sessionService := session.NewService(
 		sessionRepo,

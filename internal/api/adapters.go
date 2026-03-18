@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 
+	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/core/minutes"
@@ -12,12 +13,16 @@ import (
 )
 
 // TranscriptionAdapter adapts transcription.Service to session.TranscriptionServiceInterface.
+// It is the Middleware layer responsible for resolving the STT provider profile before
+// dispatching to the Logic layer (transcription.Service).
 type TranscriptionAdapter struct {
-	Svc *transcription.Service
+	Svc         *transcription.Service
+	STTRegistry *stt.STTRegistry
 }
 
 func (a *TranscriptionAdapter) TranscribeAudio(ctx context.Context, audioData *session.AudioData) error {
-	return a.Svc.TranscribeAudio(ctx, &stt.AudioData{
+	provider := a.STTRegistry.Get(audioData.STTProfile)
+	return a.Svc.TranscribeAudio(ctx, provider, &stt.AudioData{
 		SessionID:     audioData.SessionID,
 		ParticipantID: audioData.ParticipantID,
 		Role:          audioData.Role,
@@ -26,7 +31,6 @@ func (a *TranscriptionAdapter) TranscribeAudio(ctx context.Context, audioData *s
 		SampleRate:    audioData.SampleRate,
 		Duration:      audioData.Duration,
 		OffsetMs:      audioData.OffsetMs,
-		STTProfile:    audioData.STTProfile,
 	})
 }
 
@@ -39,12 +43,16 @@ func (a *TranscriptionAdapter) GetDetectedLanguageForSession(ctx context.Context
 }
 
 // MinutesAdapter adapts minutes.Service to session.MinutesServiceInterface.
+// It is the Middleware layer responsible for resolving the LLM provider profile before
+// dispatching to the Logic layer (minutes.Service).
 type MinutesAdapter struct {
-	Svc *minutes.Service
+	Svc         *minutes.Service
+	LLMRegistry *llm.LLMRegistry
 }
 
 func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string, llmProfile string) (interface{}, error) {
-	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage, llmProfile)
+	provider := a.LLMRegistry.Get(llmProfile)
+	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage, provider)
 }
 
 func (a *MinutesAdapter) GetMinutes(ctx context.Context, sessionID string) (interface{}, error) {

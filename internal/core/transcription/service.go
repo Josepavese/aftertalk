@@ -11,14 +11,12 @@ import (
 
 type Service struct {
 	repo        *TranscriptionRepository
-	sttRegistry *stt.STTRegistry
 	retryConfig *stt.RetryConfig
 }
 
-func NewService(repo *TranscriptionRepository, registry *stt.STTRegistry, retryConfig *stt.RetryConfig) *Service {
+func NewService(repo *TranscriptionRepository, retryConfig *stt.RetryConfig) *Service {
 	return &Service{
 		repo:        repo,
-		sttRegistry: registry,
 		retryConfig: retryConfig,
 	}
 }
@@ -34,10 +32,13 @@ func (s *Service) GetDetectedLanguageForSession(ctx context.Context, sessionID s
 	return lang
 }
 
-func (s *Service) TranscribeAudio(ctx context.Context, audioData *stt.AudioData) error {
+// TranscribeAudio transcribes the audio using the provided STT provider.
+// Provider resolution (profile → concrete provider) is the caller's responsibility
+// and must happen in the Middleware/Adapter layer, not here.
+func (s *Service) TranscribeAudio(ctx context.Context, provider stt.STTProvider, audioData *stt.AudioData) error {
 	logging.Infof("Transcribing audio for session %s, participant %s", audioData.SessionID, audioData.ParticipantID)
 
-	result, err := stt.TranscribeWithRetry(ctx, s.sttRegistry.Get(audioData.STTProfile), audioData, s.retryConfig)
+	result, err := stt.TranscribeWithRetry(ctx, provider, audioData, s.retryConfig)
 	if err != nil {
 		logging.Errorf("Transcription failed: %v", err)
 		return fmt.Errorf("transcription failed: %w", err)
