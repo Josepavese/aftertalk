@@ -36,17 +36,17 @@ type WebhookConfig struct {
 
 type Service struct {
 	repo           *MinutesRepository
-	llmProvider    llm.LLMProvider
+	llmRegistry    *llm.LLMRegistry
 	retryConfig    *RetryConfig
 	webhookClient  *webhook.Client
 	webhookConfig  *WebhookConfig
 	webhookRetrier *webhook.Retrier
 }
 
-func NewService(repo *MinutesRepository, provider llm.LLMProvider) *Service {
+func NewService(repo *MinutesRepository, registry *llm.LLMRegistry) *Service {
 	return &Service{
 		repo:        repo,
-		llmProvider: provider,
+		llmRegistry: registry,
 		retryConfig: &RetryConfig{
 			MaxRetries:     3,
 			InitialBackoff: 1 * time.Second,
@@ -55,10 +55,10 @@ func NewService(repo *MinutesRepository, provider llm.LLMProvider) *Service {
 	}
 }
 
-func NewServiceWithDeps(repo *MinutesRepository, provider llm.LLMProvider, retryConfig *RetryConfig, webhookConfig *WebhookConfig) *Service {
+func NewServiceWithDeps(repo *MinutesRepository, registry *llm.LLMRegistry, retryConfig *RetryConfig, webhookConfig *WebhookConfig) *Service {
 	s := &Service{
 		repo:        repo,
-		llmProvider: provider,
+		llmRegistry: registry,
 		retryConfig: retryConfig,
 	}
 	if webhookConfig != nil && webhookConfig.URL != "" {
@@ -88,11 +88,13 @@ func (s *Service) WithWebhookRetrier(r *webhook.Retrier) {
 // time; it is propagated unchanged to every webhook delivery so recipients can
 // associate the minutes with their own data model (e.g. appointment_id, user IDs)
 // without maintaining a separate session-id → context mapping table.
-func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string) (*Minutes, error) {
+func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string, llmProfile string) (*Minutes, error) {
 	logging.Infof("Generating minutes for session %s (template=%s)", sessionID, tmpl.ID)
 
+	provider := s.llmRegistry.Get(llmProfile)
+
 	m := NewMinutes(uuid.New().String(), sessionID, tmpl.ID)
-	m.Provider = s.llmProvider.Name()
+	m.Provider = provider.Name()
 
 	if err := s.repo.Create(ctx, m); err != nil {
 		return nil, fmt.Errorf("failed to create minutes: %w", err)
@@ -125,7 +127,7 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 		}
 
 		prompt := llm.GenerateMinutesPrompt(transcriptionText, tmpl, detectedLanguage)
-		response, err = s.llmProvider.Generate(ctx, prompt)
+		response, err = provider.Generate(ctx, prompt)
 		if err == nil {
 			break
 		}

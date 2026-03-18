@@ -19,6 +19,8 @@ type SessionState struct {
 	Status             string    `json:"status"`
 	ParticipantCount   int       `json:"participant_count"`
 	ActiveParticipants int       `json:"active_participants"`
+	STTProfile         string    `json:"stt_profile,omitempty"`
+	LLMProfile         string    `json:"llm_profile,omitempty"`
 }
 
 type SessionCache struct {

@@ -28,8 +28,8 @@ func NewSessionRepository(db *sql.DB) *SessionRepository {
 
 func (r *SessionRepository) Create(ctx context.Context, session *Session) error {
 	query := `
-		INSERT INTO sessions (id, status, created_at, ended_at, participant_count, template_id, metadata)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO sessions (id, status, created_at, ended_at, participant_count, template_id, metadata, stt_profile, llm_profile)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	var endedAt interface{}
@@ -45,6 +45,8 @@ func (r *SessionRepository) Create(ctx context.Context, session *Session) error 
 		session.ParticipantCount,
 		session.TemplateID,
 		session.Metadata,
+		session.STTProfile,
+		session.LLMProfile,
 	)
 
 	if err != nil {
@@ -56,14 +58,14 @@ func (r *SessionRepository) Create(ctx context.Context, session *Session) error 
 
 func (r *SessionRepository) GetByID(ctx context.Context, id string) (*Session, error) {
 	query := `
-		SELECT id, status, created_at, ended_at, participant_count, template_id, metadata
+		SELECT id, status, created_at, ended_at, participant_count, template_id, metadata, stt_profile, llm_profile
 		FROM sessions
 		WHERE id = ?
 	`
 
 	var session Session
 	var status, createdAt, endedAt sql.NullString
-	var templateID, metadata sql.NullString
+	var templateID, metadata, sttProfile, llmProfile sql.NullString
 
 	err := r.QueryRowContext(ctx, query, id).Scan(
 		&session.ID,
@@ -73,6 +75,8 @@ func (r *SessionRepository) GetByID(ctx context.Context, id string) (*Session, e
 		&session.ParticipantCount,
 		&templateID,
 		&metadata,
+		&sttProfile,
+		&llmProfile,
 	)
 
 	if err != nil {
@@ -98,6 +102,12 @@ func (r *SessionRepository) GetByID(ctx context.Context, id string) (*Session, e
 	}
 	if metadata.Valid {
 		session.Metadata = metadata.String
+	}
+	if sttProfile.Valid {
+		session.STTProfile = sttProfile.String
+	}
+	if llmProfile.Valid {
+		session.LLMProfile = llmProfile.String
 	}
 
 	return &session, nil
@@ -434,7 +444,7 @@ func (r *SessionRepository) List(ctx context.Context, status string, limit, offs
 		return nil, 0, fmt.Errorf("count sessions: %w", err)
 	}
 
-	query := "SELECT id, status, created_at, ended_at, participant_count, template_id, metadata FROM sessions" +
+	query := "SELECT id, status, created_at, ended_at, participant_count, template_id, metadata, stt_profile, llm_profile FROM sessions" +
 		where + " ORDER BY created_at DESC"
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
@@ -451,8 +461,8 @@ func (r *SessionRepository) List(ctx context.Context, status string, limit, offs
 	for rows.Next() {
 		var s Session
 		var statusStr, createdAt, endedAt sql.NullString
-		var templateID, metadata sql.NullString
-		if err := rows.Scan(&s.ID, &statusStr, &createdAt, &endedAt, &s.ParticipantCount, &templateID, &metadata); err != nil {
+		var templateID, metadata, sttProfile, llmProfile sql.NullString
+		if err := rows.Scan(&s.ID, &statusStr, &createdAt, &endedAt, &s.ParticipantCount, &templateID, &metadata, &sttProfile, &llmProfile); err != nil {
 			return nil, 0, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = SessionStatus(statusStr.String)
@@ -472,6 +482,12 @@ func (r *SessionRepository) List(ctx context.Context, status string, limit, offs
 		if metadata.Valid {
 			s.Metadata = metadata.String
 		}
+		if sttProfile.Valid {
+			s.STTProfile = sttProfile.String
+		}
+		if llmProfile.Valid {
+			s.LLMProfile = llmProfile.String
+		}
 		sessions = append(sessions, &s)
 	}
 
@@ -485,7 +501,7 @@ func (r *SessionRepository) List(ctx context.Context, status string, limit, offs
 // ListActive returns all sessions with status 'active', ordered by created_at asc.
 // Used by the session reaper to find expired sessions.
 func (r *SessionRepository) ListActive(ctx context.Context) ([]*Session, error) {
-	query := `SELECT id, status, created_at, ended_at, participant_count, template_id, metadata
+	query := `SELECT id, status, created_at, ended_at, participant_count, template_id, metadata, stt_profile, llm_profile
 		FROM sessions WHERE status = 'active' ORDER BY created_at ASC`
 
 	rows, err := r.QueryContext(ctx, query)
@@ -498,8 +514,8 @@ func (r *SessionRepository) ListActive(ctx context.Context) ([]*Session, error) 
 	for rows.Next() {
 		var s Session
 		var statusStr, createdAt, endedAt sql.NullString
-		var templateID, metadata sql.NullString
-		if err := rows.Scan(&s.ID, &statusStr, &createdAt, &endedAt, &s.ParticipantCount, &templateID, &metadata); err != nil {
+		var templateID, metadata, sttProfile, llmProfile sql.NullString
+		if err := rows.Scan(&s.ID, &statusStr, &createdAt, &endedAt, &s.ParticipantCount, &templateID, &metadata, &sttProfile, &llmProfile); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = SessionStatus(statusStr.String)
@@ -518,6 +534,12 @@ func (r *SessionRepository) ListActive(ctx context.Context) ([]*Session, error) 
 		}
 		if metadata.Valid {
 			s.Metadata = metadata.String
+		}
+		if sttProfile.Valid {
+			s.STTProfile = sttProfile.String
+		}
+		if llmProfile.Valid {
+			s.LLMProfile = llmProfile.String
 		}
 		sessions = append(sessions, &s)
 	}

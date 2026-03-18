@@ -90,6 +90,7 @@ func main() {
 	migrateRetrievalTokens(ctx, db)         // idempotent: adds retrieval_tokens table
 	migrateWebhookPayloadType(ctx, db)      // idempotent: adds payload_type column to webhook_events
 	migrateTranscriptionLanguage(ctx, db)   // idempotent: adds language column to transcriptions
+	migrateSessionProfiles(ctx, db)         // idempotent: adds stt_profile + llm_profile columns to sessions
 	logger.Info("Migrations completed")
 
 	sessionCache := cache.NewSessionCache()
@@ -102,32 +103,10 @@ func main() {
 	transcriptionRepo := transcription.NewTranscriptionRepository(db.DB)
 	minutesRepo := minutes.NewMinutesRepository(db.DB)
 
-	sttProvider, err := stt.NewProvider(&stt.STTConfig{
-		Provider: cfg.STT.Provider,
-		Google: stt.GoogleConfig{
-			CredentialsPath: cfg.STT.Google.CredentialsPath,
-		},
-		AWS: stt.AWSConfig{
-			AccessKeyID:     cfg.STT.AWS.AccessKeyID,
-			SecretAccessKey: cfg.STT.AWS.SecretAccessKey,
-			Region:          cfg.STT.AWS.Region,
-		},
-		Azure: stt.AzureConfig{
-			Key:    cfg.STT.Azure.Key,
-			Region: cfg.STT.Azure.Region,
-		},
-		WhisperLocal: stt.WhisperLocalConfig{
-			URL:            cfg.STT.WhisperLocal.URL,
-			Model:          cfg.STT.WhisperLocal.Model,
-			Language:       cfg.STT.WhisperLocal.Language,
-			ResponseFormat: cfg.STT.WhisperLocal.ResponseFormat,
-			Endpoint:       cfg.STT.WhisperLocal.Endpoint,
-		},
-	})
+	sttRegistry, err := stt.NewSTTRegistry(&cfg.STT)
 	if err != nil {
-		logger.Fatalf("Failed to initialize STT provider: %v", err)
+		logger.Fatalf("Failed to initialize STT registry: %v", err)
 	}
-	logger.Infof("STT provider: %s", sttProvider.Name())
 
 	// Health-check whisper-local at startup so the operator knows immediately
 	// if the Python server is not reachable, rather than discovering it on the
@@ -138,32 +117,12 @@ func main() {
 
 	retryConfig := stt.DefaultRetryConfig()
 
-	transcriptionService := transcription.NewService(transcriptionRepo, sttProvider, retryConfig)
+	transcriptionService := transcription.NewService(transcriptionRepo, sttRegistry, retryConfig)
 
-	llmProvider, err := llm.NewProvider(&llm.LLMConfig{
-		Provider: cfg.LLM.Provider,
-		OpenAI: llm.OpenAIConfig{
-			APIKey: cfg.LLM.OpenAI.APIKey,
-			Model:  cfg.LLM.OpenAI.Model,
-		},
-		Anthropic: llm.AnthropicConfig{
-			APIKey: cfg.LLM.Anthropic.APIKey,
-			Model:  cfg.LLM.Anthropic.Model,
-		},
-		Azure: llm.AzureLLMConfig{
-			APIKey:     cfg.LLM.Azure.APIKey,
-			Endpoint:   cfg.LLM.Azure.Endpoint,
-			Deployment: cfg.LLM.Azure.Deployment,
-		},
-		Ollama: llm.OllamaConfig{
-			BaseURL: cfg.LLM.Ollama.BaseURL,
-			Model:   cfg.LLM.Ollama.Model,
-		},
-	})
+	llmRegistry, err := llm.NewLLMRegistry(&cfg.LLM)
 	if err != nil {
-		logger.Fatalf("Failed to initialize LLM provider: %v", err)
+		logger.Fatalf("Failed to initialize LLM registry: %v", err)
 	}
-	logger.Infof("LLM provider: %s", llmProvider.Name())
 
 	// Resolve delete_on_pull: default true for notify_pull mode.
 	deleteOnPull := true
@@ -173,7 +132,7 @@ func main() {
 
 	minutesService := minutes.NewServiceWithDeps(
 		minutesRepo,
-		llmProvider,
+		llmRegistry,
 		&minutes.RetryConfig{
 			MaxRetries:     cfg.Processing.LLMMaxRetries,
 			InitialBackoff: cfg.Processing.LLMInitialBackoff,
@@ -503,5 +462,20 @@ func migrateTranscriptionLanguage(ctx context.Context, db *sqlite.DB) {
 		return innerErr
 	}); err != nil {
 		logging.Warnf("migrateTranscriptionLanguage: column may already exist: %v", err)
+	}
+}
+
+// migrateSessionProfiles adds stt_profile and llm_profile columns to sessions,
+// enabling per-session provider profile selection. Idempotent.
+func migrateSessionProfiles(ctx context.Context, db *sqlite.DB) {
+	for _, col := range []string{"stt_profile", "llm_profile"} {
+		col := col
+		if err := db.RunInTx(ctx, func(tx *sql.Tx) error {
+			_, innerErr := tx.ExecContext(ctx,
+				`ALTER TABLE sessions ADD COLUMN `+col+` TEXT NOT NULL DEFAULT ''`)
+			return innerErr
+		}); err != nil {
+			logging.Warnf("migrateSessionProfiles: %s may already exist: %v", col, err)
+		}
 	}
 }
