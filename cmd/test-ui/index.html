@@ -123,16 +123,26 @@
             </div>
             <div class="instructions">
                 Choose the <strong>template</strong>, enter a room code, your name and role, then click <strong>Join</strong>.<br>
-                Both participants use the same room code with different roles.
+                Both participants use the same room code with different roles.<br>
+                <span id="profileHint" style="display:none">The <strong>first participant</strong> to join sets the STT &amp; LLM provider for the session. The second joins as-is.</span>
             </div>
             <div class="input-group">
                 <select id="templateSelect" onchange="onTemplateChange()">
                     <option value="">Loading templates...</option>
                 </select>
             </div>
-            <div class="input-group" id="profileSelectors" style="display:none">
-                <select id="sttProfileSelect" title="STT profile"></select>
-                <select id="llmProfileSelect" title="LLM profile"></select>
+            <div id="profileSelectors" style="display:none;margin-bottom:12px">
+                <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Provider</div>
+                <div class="input-group" style="margin-bottom:0">
+                    <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:140px">
+                        <span style="font-size:13px;color:#64748b;white-space:nowrap">🎙️ STT</span>
+                        <select id="sttProfileSelect" style="flex:1"></select>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:140px">
+                        <span style="font-size:13px;color:#64748b;white-space:nowrap">🤖 LLM</span>
+                        <select id="llmProfileSelect" style="flex:1"></select>
+                    </div>
+                </div>
             </div>
             <div class="input-group">
                 <input type="text" id="roomCode" placeholder="Room code" value="room-1">
@@ -338,21 +348,28 @@
                         // Populate provider profile selectors if profiles are defined.
                         const sttSel = document.getElementById('sttProfileSelect');
                         const llmSel = document.getElementById('llmProfileSelect');
-                        if (cfg.stt_profiles && cfg.stt_profiles.length) {
+                        const profileLabel = p => {
+                            if (p === 'local')  return '🏠 Local';
+                            if (p === 'cloud')  return '☁️ Cloud';
+                            return p.charAt(0).toUpperCase() + p.slice(1);
+                        };
+                        const hasStt = cfg.stt_profiles && cfg.stt_profiles.length;
+                        const hasLlm = cfg.llm_profiles && cfg.llm_profiles.length;
+                        if (hasStt) {
                             sttSel.innerHTML = cfg.stt_profiles.map(p =>
-                                `<option value="${p}">STT: ${p}</option>`
+                                `<option value="${p}">${profileLabel(p)}</option>`
                             ).join('');
                             if (cfg.default_stt_profile) sttSel.value = cfg.default_stt_profile;
                         }
-                        if (cfg.llm_profiles && cfg.llm_profiles.length) {
+                        if (hasLlm) {
                             llmSel.innerHTML = cfg.llm_profiles.map(p =>
-                                `<option value="${p}">LLM: ${p}</option>`
+                                `<option value="${p}">${profileLabel(p)}</option>`
                             ).join('');
                             if (cfg.default_llm_profile) llmSel.value = cfg.default_llm_profile;
                         }
-                        if ((cfg.stt_profiles && cfg.stt_profiles.length > 1) ||
-                            (cfg.llm_profiles && cfg.llm_profiles.length > 1)) {
+                        if (hasStt || hasLlm) {
                             document.getElementById('profileSelectors').style.display = '';
+                            document.getElementById('profileHint').style.display = '';
                         }
                         return;
                     }
