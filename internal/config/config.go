@@ -118,12 +118,22 @@ type DemoConfig struct {
 	Enabled bool `koanf:"enabled"`
 }
 
+// STTProfileConfig selects a provider (and optionally overrides the model) for a
+// named quality/cost tier. Credentials and endpoint settings are inherited from
+// the parent STTConfig section — profiles only declare *which* provider to use.
+type STTProfileConfig struct {
+	Provider string `koanf:"provider"` // whisper-local | google | aws | azure | stub
+	Model    string `koanf:"model"`    // optional model override (e.g. for whisper-local)
+}
+
 type STTConfig struct {
-	Provider     string `koanf:"provider"`
-	Google       GoogleSTTConfig
-	AWS          AWSSTTConfig
-	Azure        AzureSTTConfig
-	WhisperLocal WhisperLocalSTTConfig `koanf:"whisper_local"`
+	Provider       string                      `koanf:"provider"`        // legacy default provider
+	DefaultProfile string                      `koanf:"default_profile"` // profile used when session omits stt_profile
+	Profiles       map[string]STTProfileConfig `koanf:"profiles"`        // named profiles (e.g. "local", "cloud")
+	Google         GoogleSTTConfig
+	AWS            AWSSTTConfig
+	Azure          AzureSTTConfig
+	WhisperLocal   WhisperLocalSTTConfig `koanf:"whisper_local"`
 }
 
 type GoogleSTTConfig struct {
@@ -149,12 +159,21 @@ type WhisperLocalSTTConfig struct {
 	Endpoint       string `koanf:"endpoint"`
 }
 
+// LLMProfileConfig selects a provider and optionally overrides the model for a
+// named tier. Credentials are inherited from the parent LLMConfig section.
+type LLMProfileConfig struct {
+	Provider string `koanf:"provider"` // openai | anthropic | azure | ollama | stub
+	Model    string `koanf:"model"`    // optional model override
+}
+
 type LLMConfig struct {
-	Provider  string `koanf:"provider"`
-	OpenAI    OpenAIConfig
-	Anthropic AnthropicConfig
-	Azure     AzureLLMConfig
-	Ollama    OllamaLLMConfig `koanf:"ollama"`
+	Provider       string                      `koanf:"provider"`        // legacy default provider
+	DefaultProfile string                      `koanf:"default_profile"` // profile used when session omits llm_profile
+	Profiles       map[string]LLMProfileConfig `koanf:"profiles"`        // named profiles (e.g. "local", "cloud")
+	OpenAI         OpenAIConfig
+	Anthropic      AnthropicConfig
+	Azure          AzureLLMConfig
+	Ollama         OllamaLLMConfig `koanf:"ollama"`
 }
 
 type OllamaLLMConfig struct {
