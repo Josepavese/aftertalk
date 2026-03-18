@@ -26,6 +26,7 @@ func (a *TranscriptionAdapter) TranscribeAudio(ctx context.Context, audioData *s
 		SampleRate:    audioData.SampleRate,
 		Duration:      audioData.Duration,
 		OffsetMs:      audioData.OffsetMs,
+		STTProfile:    audioData.STTProfile,
 	})
 }
 
@@ -42,8 +43,8 @@ type MinutesAdapter struct {
 	Svc *minutes.Service
 }
 
-func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string) (interface{}, error) {
-	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage)
+func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string, llmProfile string) (interface{}, error) {
+	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage, llmProfile)
 }
 
 func (a *MinutesAdapter) GetMinutes(ctx context.Context, sessionID string) (interface{}, error) {
