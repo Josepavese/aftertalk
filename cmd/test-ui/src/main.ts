@@ -111,8 +111,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // Restore saved config
-  el<HTMLInputElement>('apiKey').value        = ls('at_api_key');
-  el<HTMLInputElement>('middlewareUrl').value  = ls('at_middleware_url') || 'http://localhost:8081';
+  el<HTMLInputElement>('apiKey').value       = ls('at_api_key');
+  // Default middleware URL: same-origin path for HTTPS deployments (e.g. /aftertalk-middleware),
+  // or localhost:8081 when running at the root path (local dev).
+  const pagePath = window.location.pathname.replace(/\/$/, '');
+  const defaultMiddleware = pagePath
+    ? window.location.origin + pagePath + '-middleware'
+    : 'http://localhost:8081';
+  el<HTMLInputElement>('middlewareUrl').value = ls('at_middleware_url') || defaultMiddleware;
 
   el('apiKey').addEventListener('change',       onConfigChange);
   el('middlewareUrl').addEventListener('change', onConfigChange);
