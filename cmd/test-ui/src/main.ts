@@ -118,7 +118,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const defaultMiddleware = pagePath
     ? window.location.origin + pagePath + '-middleware'
     : 'http://localhost:8081';
-  el<HTMLInputElement>('middlewareUrl').value = ls('at_middleware_url') || defaultMiddleware;
+  const savedMiddleware = ls('at_middleware_url');
+  // Discard a saved HTTP middleware URL when the page itself is HTTPS (mixed-content block).
+  const middlewareOk = savedMiddleware && !(window.location.protocol === 'https:' && savedMiddleware.startsWith('http:'));
+  el<HTMLInputElement>('middlewareUrl').value = middlewareOk ? savedMiddleware : defaultMiddleware;
 
   el('apiKey').addEventListener('change',       onConfigChange);
   el('middlewareUrl').addEventListener('change', onConfigChange);
