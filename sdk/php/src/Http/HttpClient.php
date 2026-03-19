@@ -113,7 +113,8 @@ class HttpClient
         $data     = $raw !== '' ? json_decode($raw, true, 512, JSON_THROW_ON_ERROR) : [];
 
         if ($status >= 200 && $status < 300) {
-            return $data ?? [];
+            // The server wraps successful responses in {"data": ...} — unwrap transparently.
+            return $data['data'] ?? $data ?? [];
         }
 
         $message = $data['error'] ?? $data['message'] ?? "HTTP $status";

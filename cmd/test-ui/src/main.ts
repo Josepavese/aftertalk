@@ -103,7 +103,7 @@ let sessionId = '';
 
 document.addEventListener('DOMContentLoaded', async () => {
   // API key from URL param (?key=...) takes priority — saves to localStorage for next visits.
-  const urlKey = new URLSearchParams(window.location.search).get('key');
+  const urlKey = new URLSearchParams(window.location.search).get('token');
   if (urlKey) {
     localStorage.setItem('at_api_key', urlKey);
     // Clean the key from the URL bar without reloading.
