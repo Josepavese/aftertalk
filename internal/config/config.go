@@ -9,29 +9,29 @@ import (
 
 // RoleConfig defines a participant role within a template.
 type RoleConfig struct {
-	Key   string `koanf:"key"`   // machine key, e.g. "therapist"
-	Label string `koanf:"label"` // human label, e.g. "Terapeuta"
+	Key   string `koanf:"key"   json:"key"`   // machine key, e.g. "therapist"
+	Label string `koanf:"label" json:"label"` // human label, e.g. "Terapeuta"
 }
 
 // SectionConfig defines one section of the meeting minutes.
 type SectionConfig struct {
-	Key         string `koanf:"key"`         // JSON key in LLM output
-	Label       string `koanf:"label"`       // human-readable label
-	Description string `koanf:"description"` // instruction for the LLM
+	Key         string `koanf:"key"         json:"key"`
+	Label       string `koanf:"label"       json:"label"`
+	Description string `koanf:"description" json:"description"`
 	// Type controls the expected JSON shape:
 	//   "string_list"   → []string
 	//   "content_items" → [{"text":"...","timestamp":0}]
 	//   "progress"      → {"progress":[...],"issues":[...]}
-	Type string `koanf:"type"`
+	Type string `koanf:"type" json:"type"`
 }
 
 // TemplateConfig defines roles and minutes structure for a session context.
 type TemplateConfig struct {
-	ID          string          `koanf:"id"`
-	Name        string          `koanf:"name"`
-	Description string          `koanf:"description"`
-	Roles       []RoleConfig    `koanf:"roles"`
-	Sections    []SectionConfig `koanf:"sections"`
+	ID          string          `koanf:"id"          json:"id"`
+	Name        string          `koanf:"name"        json:"name"`
+	Description string          `koanf:"description" json:"description"`
+	Roles       []RoleConfig    `koanf:"roles"       json:"roles"`
+	Sections    []SectionConfig `koanf:"sections"    json:"sections"`
 }
 
 type Config struct {
@@ -51,7 +51,6 @@ type Config struct {
 	Retention   RetentionConfig
 	Session     SessionConfig
 	Performance PerformanceConfig
-	Demo        DemoConfig `koanf:"demo"`
 }
 
 type DatabaseConfig struct {
@@ -109,13 +108,6 @@ type CORSConfig struct {
 type RateLimitConfig struct {
 	Enabled           bool `koanf:"enabled"`
 	RequestsPerMinute int  `koanf:"requests_per_minute"`
-}
-
-// DemoConfig controls the embedded demo/test UI and its public endpoints.
-type DemoConfig struct {
-	// Enabled exposes /demo/config with the API key included — for local demos only.
-	// Never enable this in production.
-	Enabled bool `koanf:"enabled"`
 }
 
 // STTProfileConfig selects a provider (and optionally overrides the model, URL,
@@ -358,9 +350,6 @@ func Default() *Config {
 				Enabled:           true,
 				RequestsPerMinute: 100,
 			},
-		},
-		Demo: DemoConfig{
-			Enabled: false,
 		},
 		STT: STTConfig{
 			Provider: "google",
