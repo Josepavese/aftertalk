@@ -6,8 +6,9 @@ import (
 )
 
 var (
-	errWhisperURLRequired  = errors.New("whisper-local: STT_WHISPER_URL is required")
-	errSTTProviderRequired = errors.New("stt.provider is required — supported: google, aws, azure, whisper-local")
+	errWhisperURLRequired     = errors.New("whisper-local: STT_WHISPER_URL is required")
+	errOpenAICredRequired     = errors.New("openai STT: url and api_key are required")
+	errSTTProviderRequired    = errors.New("stt.provider is required — supported: google, aws, azure, whisper-local, openai")
 	errUnsupportedSTTProvider = errors.New("unsupported STT provider")
 )
 
@@ -25,6 +26,12 @@ func NewProvider(cfg *STTConfig) (STTProvider, error) {
 		p := NewWhisperLocalProvider(cfg.WhisperLocal)
 		if !p.IsAvailable() {
 			return nil, errWhisperURLRequired
+		}
+		return p, nil
+	case "openai":
+		p := NewOpenAISTTProvider(cfg.WhisperLocal)
+		if !p.IsAvailable() {
+			return nil, errOpenAICredRequired
 		}
 		return p, nil
 	case "":

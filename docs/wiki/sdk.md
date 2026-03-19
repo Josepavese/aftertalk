@@ -13,9 +13,9 @@ Requires: TypeScript 5+, modern browser or Node.js 18+ with fetch.
 ## Quick Start
 
 ```typescript
-import { AfterthalkClient } from '@aftertalk/sdk';
+import { AftertalkClient } from '@aftertalk/sdk';
 
-const client = new AfterthalkClient({
+const client = new AftertalkClient({
   baseUrl: 'http://localhost:8080',
   apiKey: 'your-api-key',
 });
@@ -48,7 +48,7 @@ console.log(minutes.sections);
 ## Client Configuration
 
 ```typescript
-interface AfterthalkClientConfig {
+interface AftertalkClientConfig {
   baseUrl: string;      // Required: server URL e.g. "http://localhost:8080"
   apiKey?: string;      // Required for all /v1/* endpoints
   timeout?: number;     // Request timeout ms (default: 30000)
@@ -58,7 +58,7 @@ interface AfterthalkClientConfig {
 
 ## REST API Clients
 
-The client exposes four sub-clients mirroring the REST API:
+The client exposes five sub-clients mirroring the REST API:
 
 ### `client.sessions`
 
@@ -86,7 +86,7 @@ await client.sessions.delete(sessionId);
 
 ```typescript
 // List transcriptions for a session
-const txns = await client.transcriptions.list(sessionId, { limit?, offset? });
+const txns = await client.transcriptions.listBySession(sessionId, { limit?, offset? });
 
 // Get a single transcription
 const txn = await client.transcriptions.get(transcriptionId);
@@ -102,6 +102,7 @@ const minutes = await client.minutes.getBySession(sessionId);
 const minutes = await client.minutes.get(minutesId);
 
 // Update minutes (saves previous version to history)
+// userId is passed as X-User-Id header to track the editor
 await client.minutes.update(minutesId, { sections }, userId?);
 
 // Delete minutes
@@ -114,12 +115,28 @@ const versions = await client.minutes.getVersions(minutesId);
 ### `client.config`
 
 ```typescript
-// Get available templates and default template ID
-const { templates, defaultTemplateId } = await client.config.getConfig();
+// Get available templates, default template ID, and provider profiles
+const { templates, defaultTemplateId, sttProfiles, llmProfiles } = await client.config.getConfig();
 
 // Get ICE servers for WebRTC
 const { iceServers } = await client.config.getRTCConfig();
 ```
+
+### `client.rooms`
+
+```typescript
+// Join or create a room session by code
+const { sessionId, token } = await client.rooms.join({
+  code:       'stanza-abc',
+  name:       'Dott. Rossi',
+  role:       'terapeuta',
+  templateId: 'therapy',
+  sttProfile: 'cloud',   // optional
+  llmProfile: 'cloud',   // optional
+});
+```
+
+The room join endpoint creates the session on the first call; subsequent participants with the same code receive their own token for the same session. Role is exclusive — two participants cannot share the same role in the same room.
 
 ## WebRTC
 
@@ -212,6 +229,42 @@ try {
 }
 ```
 
-## Known Issues
+## Per-session STT/LLM provider profiles
 
-> **Typo in class name**: The SDK exports `AfterthalkClient` and `AfterthalkClientConfig` (note the double-`h`). This is a known bug — the correct name should be `AftertalkClient`. The typo is consistent across the entire SDK surface.
+When the server is configured with named STT and/or LLM profiles (e.g. `local` vs `cloud`),
+you can select them at session-creation time:
+
+```typescript
+// Fetch available profiles from the server
+const { sttProfiles, sttDefaultProfile, llmProfiles, llmDefaultProfile } =
+  await client.config.getConfig();
+
+// Create a session with explicit provider profiles
+const session = await client.sessions.create({
+  participantCount: 2,
+  templateId: 'therapy',
+  participants: [
+    { userId: 'dott-rossi', role: 'therapist' },
+    { userId: 'paziente-1', role: 'patient' },
+  ],
+  sttProfile: 'cloud',   // e.g. Groq whisper-large-v3
+  llmProfile: 'cloud',   // e.g. OpenRouter minimax-m2.7
+});
+```
+
+Profile names are defined server-side in the `stt.profiles` / `llm.profiles` configuration
+sections. When omitted, the server falls back to its `stt.default_profile` /
+`llm.default_profile`. The profile used is persisted on the session and visible in logs and
+transcription records.
+
+---
+
+## Other SDKs
+
+| SDK | Target | Package |
+|-----|--------|---------|
+| `@aftertalk/sdk` (this page) | Frontend / Node.js | npm |
+| `aftertalk/aftertalk-php` | Backend PHP (Laravel, Symfony, …) | Composer / Packagist |
+| `aftertalk/aftertalk-go` | Backend Go server-side clients | Go module |
+
+See [sdk-php.md](sdk-php.md) for the PHP SDK documentation.

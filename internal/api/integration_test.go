@@ -217,15 +217,11 @@ func TestAPI_Health_ContentType(t *testing.T) {
 	assert.True(t, json.Valid(body) || len(body) > 0)
 }
 
-// ── Demo config ───────────────────────────────────────────────────────────
+// ── Public config endpoint ─────────────────────────────────────────────────
 
-func TestAPI_DemoConfig(t *testing.T) {
+func TestAPI_GetConfig_Public(t *testing.T) {
 	e := newTestEnv(t)
-	// Enable demo mode so the API key is exposed (as in local-demo use case).
-	// cfg is held by pointer so the handler closure sees this update at request time.
-	e.cfg.Demo.Enabled = true
-
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.url("/demo/config"), nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.url("/v1/config"), nil)
 	require.NoError(t, err)
 	resp, err := http.DefaultClient.Do(req) // no auth required
 	require.NoError(t, err)
@@ -234,20 +230,18 @@ func TestAPI_DemoConfig(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var body struct {
-		APIKey            string                  `json:"api_key"`
 		DefaultTemplateID string                  `json:"default_template_id"`
 		Templates         []config.TemplateConfig `json:"templates"`
 	}
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 
-	assert.Equal(t, "test-api-key", body.APIKey)
 	assert.NotEmpty(t, body.Templates)
 	assert.NotEmpty(t, body.DefaultTemplateID)
 }
 
-func TestAPI_DemoConfig_HasTherapyTemplate(t *testing.T) {
+func TestAPI_GetConfig_HasTherapyTemplate(t *testing.T) {
 	e := newTestEnv(t)
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.url("/demo/config"), nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, e.url("/v1/config"), nil)
 	require.NoError(t, err)
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -351,12 +345,12 @@ func TestAPI_RTCConfig_WithLiveTURN(t *testing.T) {
 	assert.True(t, foundTURN, "response must contain a TURN entry")
 }
 
-// ── Test-start room ───────────────────────────────────────────────────────
+// ── Rooms join ────────────────────────────────────────────────────────────
 
-func TestAPI_TestStart_CreatesSession(t *testing.T) {
+func TestAPI_RoomsJoin_CreatesSession(t *testing.T) {
 	e := newTestEnv(t)
 
-	resp := e.post(t, "/test/start", map[string]string{
+	resp := e.post(t, "/v1/rooms/join", map[string]string{
 		"code": "room-001", "name": "Alice", "role": "therapist", "template_id": "therapy",
 	})
 	defer resp.Body.Close()
@@ -372,33 +366,33 @@ func TestAPI_TestStart_CreatesSession(t *testing.T) {
 	assert.NotEmpty(t, result.Token)
 }
 
-func TestAPI_TestStart_SameRoomSameRole_TakenConflict(t *testing.T) {
+func TestAPI_RoomsJoin_SameRoomSameRole_TakenConflict(t *testing.T) {
 	e := newTestEnv(t)
 
-	r1 := e.post(t, "/test/start", map[string]string{"code": "room-002", "name": "Alice", "role": "therapist"})
+	r1 := e.post(t, "/v1/rooms/join", map[string]string{"code": "room-002", "name": "Alice", "role": "therapist"})
 	io.Copy(io.Discard, r1.Body) //nolint:errcheck
 	r1.Body.Close()
 	require.Equal(t, http.StatusOK, r1.StatusCode)
 
 	// Same role, different name → conflict.
-	r2 := e.post(t, "/test/start", map[string]string{"code": "room-002", "name": "Bob", "role": "therapist"})
+	r2 := e.post(t, "/v1/rooms/join", map[string]string{"code": "room-002", "name": "Bob", "role": "therapist"})
 	io.Copy(io.Discard, r2.Body) //nolint:errcheck
 	r2.Body.Close()
 	assert.Equal(t, http.StatusConflict, r2.StatusCode)
 }
 
-func TestAPI_TestStart_SameRoomSameRole_SameName_Reconnect(t *testing.T) {
+func TestAPI_RoomsJoin_SameRoomSameRole_SameName_Reconnect(t *testing.T) {
 	e := newTestEnv(t)
 	body := map[string]string{"code": "room-003", "name": "Alice", "role": "therapist"}
 
-	r1 := e.post(t, "/test/start", body) //nolint:bodyclose // body closed by decodeJSON
+	r1 := e.post(t, "/v1/rooms/join", body) //nolint:bodyclose // body closed by decodeJSON
 	var res1 struct {
 		SessionID string `json:"session_id"`
 		Token     string `json:"token"`
 	}
 	decodeJSON(t, r1, &res1)
 
-	r2 := e.post(t, "/test/start", body) //nolint:bodyclose // body closed by decodeJSON
+	r2 := e.post(t, "/v1/rooms/join", body) //nolint:bodyclose // body closed by decodeJSON
 	var res2 struct {
 		SessionID string `json:"session_id"`
 		Token     string `json:"token"`
@@ -409,17 +403,17 @@ func TestAPI_TestStart_SameRoomSameRole_SameName_Reconnect(t *testing.T) {
 	assert.Equal(t, res1.Token, res2.Token, "reconnection must return the same token")
 }
 
-func TestAPI_TestStart_TwoRoles_BothJoin(t *testing.T) {
+func TestAPI_RoomsJoin_TwoRoles_BothJoin(t *testing.T) {
 	e := newTestEnv(t)
 
-	r1 := e.post(t, "/test/start", map[string]string{"code": "room-004", "name": "Alice", "role": "therapist"}) //nolint:bodyclose // body closed by decodeJSON
+	r1 := e.post(t, "/v1/rooms/join", map[string]string{"code": "room-004", "name": "Alice", "role": "therapist"}) //nolint:bodyclose // body closed by decodeJSON
 	var res1 struct {
 		SessionID string `json:"session_id"`
 		Token     string `json:"token"`
 	}
 	decodeJSON(t, r1, &res1)
 
-	r2 := e.post(t, "/test/start", map[string]string{"code": "room-004", "name": "Bob", "role": "patient"}) //nolint:bodyclose // body closed by decodeJSON
+	r2 := e.post(t, "/v1/rooms/join", map[string]string{"code": "room-004", "name": "Bob", "role": "patient"}) //nolint:bodyclose // body closed by decodeJSON
 	var res2 struct {
 		SessionID string `json:"session_id"`
 		Token     string `json:"token"`
@@ -430,7 +424,7 @@ func TestAPI_TestStart_TwoRoles_BothJoin(t *testing.T) {
 	assert.NotEqual(t, res1.Token, res2.Token, "different roles → different tokens")
 }
 
-func TestAPI_TestStart_MissingFields_BadRequest(t *testing.T) {
+func TestAPI_RoomsJoin_MissingFields_BadRequest(t *testing.T) {
 	e := newTestEnv(t)
 
 	cases := []map[string]string{
@@ -440,7 +434,7 @@ func TestAPI_TestStart_MissingFields_BadRequest(t *testing.T) {
 		{},
 	}
 	for _, body := range cases {
-		resp := e.post(t, "/test/start", body)
+		resp := e.post(t, "/v1/rooms/join", body)
 		io.Copy(io.Discard, resp.Body) //nolint:errcheck
 		resp.Body.Close()
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "body=%v", body)
@@ -573,8 +567,8 @@ func TestAPI_MissingAPIKey_Unauthorized(t *testing.T) {
 
 func TestAPI_PublicRoutes_NoAuth(t *testing.T) {
 	e := newTestEnv(t)
-	// /demo/config and /test/start are public.
-	for _, path := range []string{"/demo/config"} {
+	// /v1/config and /v1/rtc-config are public (no API key required).
+	for _, path := range []string{"/v1/config", "/v1/rtc-config"} {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, e.url(path), nil)
 		require.NoError(t, err)
 		resp, err := http.DefaultClient.Do(req)

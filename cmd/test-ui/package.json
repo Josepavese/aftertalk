@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aftertalk/sdk": "file:../../sdk"
+    "@aftertalk/sdk": "file:../../sdk/ts"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

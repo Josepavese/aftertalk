@@ -1,954 +1,166 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aftertalk WebRTC Test</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        :root { --primary: #2563eb; --success: #16a34a; --error: #dc2626; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --border: #e2e8f0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-        .container { max-width: 820px; margin: 0 auto; padding: 20px; }
-        h1 { text-align: center; color: var(--primary); margin-bottom: 20px; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aftertalk — Dev Demo</title>
+  <style>
+    :root {
+      --bg:      #0f1117;
+      --surface: #1a1d27;
+      --border:  #2e3148;
+      --text:    #e2e8f0;
+      --muted:   #8892a4;
+      --accent:  #6c63ff;
+      --green:   #38a169;
+      --red:     #e53e3e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px; line-height: 1.6;
+    }
+    .container { max-width: 780px; margin: 0 auto; padding: 24px 16px; }
+    h1  { font-size: 1.3rem; margin-bottom: 2px; }
+    .subtitle { color: var(--muted); font-size: .8rem; margin-bottom: 24px; }
 
-        /* Tabs */
-        .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border); }
-        .tab-btn { padding: 10px 20px; border: none; background: none; cursor: pointer; font-size: 14px; font-weight: 600; color: #64748b; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: color .15s, border-color .15s; }
-        .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
-        .tab-pane { display: none; }
-        .tab-pane.active { display: block; }
+    /* Cards */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 14px; }
+    .card-title { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 14px; }
 
-        .step-card { background: var(--card); border-radius: 12px; padding: 20px; margin-bottom: 15px; border: 1px solid var(--border); }
-        .min-card { font-size: 14px; line-height: 1.6; }
-        .min-sec { margin-bottom: 12px; }
-        .min-sec ul { margin: 4px 0 0 8px; padding: 0; list-style: none; }
-        .min-sec li { margin-bottom: 4px; }
-        .min-sec ul.with-bullets { margin-left: 18px; list-style: disc; }
-        .min-ts { display: inline-block; background: #e8f4fd; color: #2563eb; border-radius: 4px; padding: 0 5px; font-size: 11px; font-family: monospace; margin-right: 6px; }
-        .step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-        .step-number { width:28px; height:28px; background: var(--primary); color:white; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:14px; flex-shrink:0; }
-        .step-number.done { background: var(--success); }
-        .status-badge { margin-left: auto; font-size:12px; padding:3px 10px; border-radius:12px; white-space:nowrap; }
-        .status-waiting { background:#f1f5f9; color:#64748b; }
-        .status-active { background:#dbeafe; color:var(--primary); }
-        .status-success { background:#dcfce7; color:var(--success); }
-        .instructions { background:#f8fafc; padding:12px; border-radius:6px; margin-bottom:12px; font-size:14px; }
-        input,select,button { padding:10px 14px; border:1px solid var(--border); border-radius:6px; font-size:14px; }
-        .api-key-bar { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px 14px; margin-bottom:15px; display:flex; align-items:center; gap:10px; font-size:13px; }
-        .api-key-bar label { color:#92400e; font-weight:600; white-space:nowrap; }
-        .api-key-bar input { flex:1; font-family:monospace; font-size:12px; padding:6px 10px; }
-        .api-key-bar .ok { color:#16a34a; font-weight:600; }
-        button { background:var(--primary); color:white; border:none; cursor:pointer; }
-        button:disabled { background:#94a3b8; cursor:default; }
-        button.danger { background: var(--error); }
-        button.secondary { background: #f1f5f9; color: var(--text); border: 1px solid var(--border); }
-        button.secondary:hover { background: #e2e8f0; }
-        .input-group { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
-        .input-group input,.input-group select { flex:1; min-width:150px; }
-        .invite-box { background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:12px; margin-top:12px; }
-        #log { background:#1e293b; color:#e2e8f0; padding:12px; border-radius:6px; height:150px; overflow-y:auto; font:12px monospace; }
-        .audio-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:10px; }
-        .audio-box { text-align:center; font-size:13px; color:#64748b; }
-        .recording-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--error); margin-right:4px; animation:blink 1s infinite; }
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-        .info-row { display:flex; gap:8px; font-size:12px; color:#64748b; flex-wrap:wrap; margin-top:8px; }
-        .info-pill { background:#f1f5f9; padding:3px 8px; border-radius:10px; }
-        .tmpl-badge { display:inline-block; background:#ede9fe; color:#6d28d9; font-size:11px; padding:2px 8px; border-radius:10px; margin-left:6px; }
+    /* Forms */
+    .row  { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .col  { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px; }
+    label { font-size: .75rem; color: var(--muted); }
+    input, select {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 7px 10px; font-size: 13px; width: 100%;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
 
-        /* Minutes Browser */
-        .browser-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
-        .browser-toolbar select,.browser-toolbar input { padding:7px 10px; font-size:13px; }
-        .session-list { display:flex; flex-direction:column; gap:8px; }
-        .session-row { background: var(--card); border: 1px solid var(--border); border-radius:10px; padding:14px 16px; cursor:pointer; transition:box-shadow .15s, border-color .15s; display:flex; align-items:center; gap:12px; }
-        .session-row:hover { border-color: #93c5fd; box-shadow: 0 2px 8px rgba(37,99,235,.08); }
-        .session-row.selected { border-color: var(--primary); background: #eff6ff; }
-        .session-status { font-size:11px; padding:3px 9px; border-radius:10px; white-space:nowrap; font-weight:600; }
-        .ss-completed { background:#dcfce7; color:#16a34a; }
-        .ss-processing { background:#dbeafe; color:var(--primary); }
-        .ss-active { background:#fef9c3; color:#854d0e; }
-        .ss-ended { background:#f1f5f9; color:#475569; }
-        .ss-error { background:#fee2e2; color:#dc2626; }
-        .session-meta { flex:1; min-width:0; }
-        .session-id { font-size:12px; font-family:monospace; color:#64748b; }
-        .session-date { font-size:12px; color:#94a3b8; margin-top:2px; }
-        .session-tmpl { font-size:11px; background:#ede9fe; color:#6d28d9; padding:2px 7px; border-radius:8px; margin-top:4px; display:inline-block; }
-        .pagination { display:flex; align-items:center; gap:8px; margin-top:14px; justify-content:center; font-size:13px; }
-        .pagination button { padding:6px 14px; font-size:13px; }
+    /* Buttons */
+    button {
+      padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer;
+      font-size: 13px; font-weight: 600; transition: opacity .15s;
+      background: var(--accent); color: #fff;
+    }
+    button:hover:not(:disabled) { opacity: .85; }
+    button:disabled { opacity: .4; cursor: default; }
+    button.danger   { background: var(--red); }
+    button.ghost    { background: var(--border); color: var(--text); }
 
-        /* Minutes detail panel */
-        .detail-panel { background: var(--card); border: 1px solid var(--border); border-radius:12px; padding:20px; margin-top:16px; }
-        .detail-header { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
-        .detail-header h3 { font-size:16px; flex:1; }
-        .detail-tabs { display:flex; gap:4px; margin-bottom:14px; border-bottom:1px solid var(--border); }
-        .detail-tab-btn { padding:7px 14px; border:none; background:none; cursor:pointer; font-size:13px; font-weight:600; color:#64748b; border-bottom:2px solid transparent; margin-bottom:-1px; }
-        .detail-tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
-        .detail-tab-pane { display:none; }
-        .detail-tab-pane.active { display:block; }
-        .versions-list { display:flex; flex-direction:column; gap:6px; }
-        .version-row { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:10px 14px; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px; }
-        .version-row:hover { border-color:#93c5fd; }
-        .version-row.selected { border-color:var(--primary); background:#eff6ff; }
-        .empty-state { text-align:center; color:#94a3b8; padding:40px 20px; font-size:14px; }
-        .spinner { display:inline-block; width:16px; height:16px; border:2px solid #e2e8f0; border-top-color:var(--primary); border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; margin-right:6px; }
-        @keyframes spin { to { transform:rotate(360deg); } }
-        .transcription-block { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:12px; font-size:13px; line-height:1.6; max-height:300px; overflow-y:auto; white-space:pre-wrap; }
-    </style>
+    /* Session info */
+    .meta { font-size: 12px; color: var(--muted); margin-bottom: 14px; font-family: monospace; }
+    #connStatus { font-size: 13px; margin-bottom: 14px; }
+
+    /* Minutes */
+    #minutesStatus { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+    .sec { margin-bottom: 14px; }
+    .sec strong { display: block; margin-bottom: 4px; color: var(--text); font-size: 13px; }
+    .sec ul { list-style: none; padding: 0; }
+    .sec li { padding: 3px 0 3px 12px; border-left: 2px solid var(--border); margin-bottom: 4px; font-size: 13px; color: #c8d3e0; }
+    .sec code { background: #1e2233; border-radius: 3px; padding: 1px 5px; font-size: 11px; color: var(--accent); margin-right: 6px; }
+    .muted { color: var(--muted); font-style: italic; font-size: 13px; }
+
+    /* Log */
+    #log { background: #090c14; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; height: 130px; overflow-y: auto; font: 12px/1.5 monospace; color: #7ecbff; }
+
+    /* Config note */
+    .note { font-size: 11px; color: var(--muted); margin-top: 8px; border-left: 2px solid var(--border); padding-left: 8px; line-height: 1.5; }
+    .note code { color: var(--accent); }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🧪 Aftertalk</h1>
-
-        <!-- API Key bar -->
-        <div class="api-key-bar">
-            <label>🔑 API Key:</label>
-            <input type="text" id="apiKeyInput" placeholder="Paste your API key" oninput="saveApiKey(this.value)">
-            <span id="apiKeyStatus"></span>
-        </div>
-
-        <!-- Tabs -->
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('test', this)">🎙️ New Session</button>
-            <button class="tab-btn" onclick="switchTab('browser', this); loadBrowser()">📋 Minutes Browser</button>
-        </div>
-
-        <!-- ═══ TAB: New Session ════════════════════════════════════════════ -->
-        <div class="tab-pane active" id="tab-test">
-
-        <!-- Step 1: Session setup -->
-        <div class="step-card" id="step1-card">
-            <div class="step-header">
-                <div class="step-number" id="step1-num">1</div>
-                <div style="font-size:16px;font-weight:600;">Session setup</div>
-                <span class="status-badge status-waiting" id="step1-status">Waiting</span>
-            </div>
-            <div class="instructions">
-                Choose the <strong>template</strong>, enter a room code, your name and role, then click <strong>Join</strong>.<br>
-                Both participants use the same room code with different roles.<br>
-                <span id="profileHint" style="display:none">The <strong>first participant</strong> to join sets the STT &amp; LLM provider for the session. The second joins as-is.</span>
-            </div>
-            <div class="input-group">
-                <select id="templateSelect" onchange="onTemplateChange()">
-                    <option value="">Loading templates...</option>
-                </select>
-            </div>
-            <div id="profileSelectors" style="display:none;margin-bottom:12px">
-                <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Provider</div>
-                <div class="input-group" style="margin-bottom:0">
-                    <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:140px">
-                        <span style="font-size:13px;color:#64748b;white-space:nowrap">🎙️ STT</span>
-                        <select id="sttProfileSelect" style="flex:1"></select>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:140px">
-                        <span style="font-size:13px;color:#64748b;white-space:nowrap">🤖 LLM</span>
-                        <select id="llmProfileSelect" style="flex:1"></select>
-                    </div>
-                </div>
-            </div>
-            <div class="input-group">
-                <input type="text" id="roomCode" placeholder="Room code" value="room-1">
-                <input type="text" id="userName" placeholder="Your name" value="Alex">
-                <select id="userRole"></select>
-            </div>
-            <button id="btnStart" onclick="startSession()">🚀 Join</button>
-        </div>
-
-        <!-- Step 2: WebRTC connection -->
-        <div class="step-card" id="step2-card">
-            <div class="step-header">
-                <div class="step-number" id="step2-num">2</div>
-                <div style="font-size:16px;font-weight:600;">Server connection</div>
-                <span class="status-badge status-waiting" id="step2-status">Waiting</span>
-            </div>
-            <div id="step2-desc" class="instructions">Waiting to start...</div>
-            <div class="audio-row" id="audioRow" style="display:none">
-                <div class="audio-box">
-                    <div><span class="recording-dot"></span>Your microphone (→ server)</div>
-                    <audio id="localAudio" autoplay muted controls style="width:200px;margin-top:4px"></audio>
-                </div>
-            </div>
-            <div class="info-row" id="infoRow" style="display:none">
-                <span class="info-pill" id="infoSession"></span>
-                <span class="info-pill" id="infoRole"></span>
-                <span class="info-pill" id="infoIce"></span>
-            </div>
-        </div>
-
-        <!-- Step 3: End session -->
-        <div class="step-card" id="step3-card">
-            <div class="step-header">
-                <div class="step-number" id="step3-num">3</div>
-                <div style="font-size:16px;font-weight:600;">End session &amp; minutes</div>
-                <span class="status-badge status-waiting" id="step3-status">Waiting</span>
-            </div>
-            <div id="step3-desc" class="instructions">When the conversation is over, click <strong>End</strong>.</div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <button id="btnMute" onclick="toggleMute()" disabled style="background:#f59e0b;min-width:130px">🎙️ Mute mic</button>
-                <button id="btnEnd" onclick="endSession()" disabled>⏹ End session</button>
-            </div>
-            <div id="minutesBox" style="display:none;margin-top:12px">
-                <div id="minutesRendered" style="margin-bottom:12px"></div>
-                <details style="margin-top:8px">
-                    <summary style="cursor:pointer;font-size:12px;color:#888">Raw JSON</summary>
-                    <pre id="minutesContent" style="background:#f8fafc;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;border:1px solid var(--border);margin-top:6px"></pre>
-                </details>
-            </div>
-        </div>
-
-        <!-- Log -->
-        <div class="step-card">
-            <h4 style="margin-bottom:8px">📝 Log</h4>
-            <div id="log"></div>
-        </div>
-
-        </div><!-- /tab-test -->
-
-        <!-- ═══ TAB: Minutes Browser ════════════════════════════════════════ -->
-        <div class="tab-pane" id="tab-browser">
-
-        <div class="step-card" style="padding:16px 20px">
-            <div class="browser-toolbar">
-                <select id="bFilterStatus" onchange="browserPage=1;loadBrowser()">
-                    <option value="">All statuses</option>
-                    <option value="completed">Completed</option>
-                    <option value="processing">Processing</option>
-                    <option value="active">Active</option>
-                    <option value="ended">Ended</option>
-                    <option value="error">Error</option>
-                </select>
-                <select id="bPageSize" onchange="browserPage=1;loadBrowser()">
-                    <option value="10">10 / page</option>
-                    <option value="20" selected>20 / page</option>
-                    <option value="50">50 / page</option>
-                </select>
-                <button class="secondary" onclick="browserPage=1;loadBrowser()" style="padding:7px 14px;font-size:13px">🔄 Refresh</button>
-                <span id="browserTotal" style="font-size:13px;color:#64748b;margin-left:auto"></span>
-            </div>
-
-            <div id="sessionList">
-                <div class="empty-state">Click <strong>Refresh</strong> or switch to this tab to load sessions.</div>
-            </div>
-
-            <div class="pagination" id="pagination" style="display:none">
-                <button class="secondary" id="btnPrevPage" onclick="browserPage--;loadBrowser()">‹ Prev</button>
-                <span id="pageIndicator"></span>
-                <button class="secondary" id="btnNextPage" onclick="browserPage++;loadBrowser()">Next ›</button>
-            </div>
-        </div>
-
-        <!-- Detail panel (shown when a session is selected) -->
-        <div class="detail-panel" id="detailPanel" style="display:none">
-            <div class="detail-header">
-                <h3 id="detailTitle">Session</h3>
-                <span id="detailStatus" class="session-status"></span>
-                <button class="secondary" onclick="closeDetail()" style="padding:6px 12px;font-size:12px">✕ Close</button>
-            </div>
-            <div style="font-size:12px;color:#64748b;margin-bottom:14px">
-                <span id="detailId"></span> · <span id="detailDate"></span> · <span id="detailTemplate"></span>
-            </div>
-
-            <div class="detail-tabs">
-                <button class="detail-tab-btn active" onclick="switchDetailTab('minutes', this)">📄 Minutes</button>
-                <button class="detail-tab-btn" onclick="switchDetailTab('versions', this)">🕓 History</button>
-                <button class="detail-tab-btn" onclick="switchDetailTab('transcriptions', this); loadTranscriptions()">📝 Transcriptions</button>
-            </div>
-
-            <!-- Minutes tab -->
-            <div class="detail-tab-pane active" id="dtab-minutes">
-                <div id="detailMinutesRendered"></div>
-                <details style="margin-top:10px">
-                    <summary style="cursor:pointer;font-size:12px;color:#888">Raw JSON</summary>
-                    <pre id="detailMinutesRaw" style="background:#f8fafc;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;border:1px solid var(--border);margin-top:6px;max-height:400px;overflow:auto"></pre>
-                </details>
-            </div>
-
-            <!-- History tab -->
-            <div class="detail-tab-pane" id="dtab-versions">
-                <div id="detailVersionsList" class="versions-list"></div>
-                <div id="detailVersionContent" style="display:none;margin-top:14px">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-                        <strong style="font-size:13px">Version content</strong>
-                        <button class="secondary" onclick="document.getElementById('detailVersionContent').style.display='none'" style="padding:4px 10px;font-size:12px">✕</button>
-                    </div>
-                    <div id="detailVersionRendered"></div>
-                </div>
-            </div>
-
-            <!-- Transcriptions tab -->
-            <div class="detail-tab-pane" id="dtab-transcriptions">
-                <div id="detailTranscriptions"></div>
-            </div>
-        </div>
-
-        </div><!-- /tab-browser -->
-
-    </div><!-- /container -->
-
-    <script>
-        // Derive API base from where the UI is served.
-        // Works for both root ("/") and sub-path ("/aftertalk/").
-        const API = location.origin + location.pathname.replace(/\/[^/]*$/, '');
-        let ws = null, pc = null, localStream = null;
-        let currentSessionId = null, currentToken = null;
-        let templates = [], currentTemplate = null;
-
-        // Browser state
-        let browserPage = 1;
-        let browserSelectedId = null;
-        let browserLoaded = false;
-
-        // ── Tabs ─────────────────────────────────────────────────────────
-        function switchTab(name, btn) {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-            btn.classList.add('active');
-            document.getElementById('tab-' + name).classList.add('active');
-        }
-
-        // ── API Key (localStorage) ────────────────────────────────────────
-        function getApiKey() { return localStorage.getItem('aftertalk_api_key') || ''; }
-        function saveApiKey(v) {
-            localStorage.setItem('aftertalk_api_key', v.trim());
-            document.getElementById('apiKeyStatus').innerHTML = v.trim()
-                ? '<span class="ok">✓</span>' : '';
-        }
-        function authHeader() { return {'Authorization': 'Bearer ' + getApiKey()}; }
-
-        // ── Load config + templates from server ───────────────────────────
-        window.addEventListener('DOMContentLoaded', async () => {
-            // ?apikey=... or ?token=... in URL auto-fills and saves the API key.
-            const qp = new URLSearchParams(location.search);
-            const qKey = qp.get('apikey') || qp.get('token');
-            if (qKey) {
-                saveApiKey(qKey);
-                document.getElementById('apiKeyInput').value = qKey;
-                document.getElementById('apiKeyStatus').innerHTML = '<span class="ok">✓ from URL</span>';
-                // Clean the key from the address bar without reloading.
-                const clean = location.pathname + (qp.toString().replace(/apikey=[^&]*&?|token=[^&]*&?/g,'').replace(/&$/,'') ? '?' + qp.toString().replace(/apikey=[^&]*&?|token=[^&]*&?/g,'').replace(/&$/,'') : '');
-                history.replaceState(null, '', clean);
-            }
-
-            try {
-                const r = await fetch('/demo/config');
-                if (r.ok) {
-                    const cfg = await r.json();
-                    if (cfg.api_key && !qKey) {
-                        saveApiKey(cfg.api_key);
-                        document.getElementById('apiKeyInput').value = cfg.api_key;
-                        document.getElementById('apiKeyStatus').innerHTML = '<span class="ok">✓ from server</span>';
-                    }
-                    if (cfg.templates && cfg.templates.length) {
-                        templates = cfg.templates;
-                        const sel = document.getElementById('templateSelect');
-                        sel.innerHTML = templates.map(t =>
-                            `<option value="${t.id}">${t.name}</option>`
-                        ).join('');
-                        if (cfg.default_template_id) sel.value = cfg.default_template_id;
-                        onTemplateChange();
-
-                        // Populate provider profile selectors if profiles are defined.
-                        const sttSel = document.getElementById('sttProfileSelect');
-                        const llmSel = document.getElementById('llmProfileSelect');
-                        const profileLabel = p => {
-                            if (p === 'local')  return '🏠 Local';
-                            if (p === 'cloud')  return '☁️ Cloud';
-                            return p.charAt(0).toUpperCase() + p.slice(1);
-                        };
-                        const hasStt = cfg.stt_profiles && cfg.stt_profiles.length;
-                        const hasLlm = cfg.llm_profiles && cfg.llm_profiles.length;
-                        if (hasStt) {
-                            sttSel.innerHTML = cfg.stt_profiles.map(p =>
-                                `<option value="${p}">${profileLabel(p)}</option>`
-                            ).join('');
-                            if (cfg.default_stt_profile) sttSel.value = cfg.default_stt_profile;
-                        }
-                        if (hasLlm) {
-                            llmSel.innerHTML = cfg.llm_profiles.map(p =>
-                                `<option value="${p}">${profileLabel(p)}</option>`
-                            ).join('');
-                            if (cfg.default_llm_profile) llmSel.value = cfg.default_llm_profile;
-                        }
-                        if (hasStt || hasLlm) {
-                            document.getElementById('profileSelectors').style.display = '';
-                            document.getElementById('profileHint').style.display = '';
-                        }
-                        return;
-                    }
-                }
-            } catch (_) {}
-            const saved = getApiKey();
-            if (saved) {
-                document.getElementById('apiKeyInput').value = saved;
-                document.getElementById('apiKeyStatus').innerHTML = '<span class="ok">✓</span>';
-            }
-            populateRoles([{key:'host',label:'Host'},{key:'speaker',label:'Speaker'}]);
-        });
-
-        function onTemplateChange() {
-            const sel = document.getElementById('templateSelect');
-            const tmpl = templates.find(t => t.id === sel.value);
-            currentTemplate = tmpl || null;
-            populateRoles(tmpl ? tmpl.roles : [{key:'host',label:'Host'},{key:'speaker',label:'Speaker'}]);
-        }
-
-        function populateRoles(roles) {
-            const sel = document.getElementById('userRole');
-            sel.innerHTML = roles.map(r => `<option value="${r.key}">${r.label}</option>`).join('');
-        }
-
-        function log(type, msg) {
-            const time = new Date().toLocaleTimeString();
-            const colors = { error:'#f87171', success:'#4ade80', warn:'#fbbf24', info:'#60a5fa' };
-            document.getElementById('log').innerHTML +=
-                `<div>[${time}] <span style="color:${colors[type]||colors.info}">${msg}</span></div>`;
-            document.getElementById('log').scrollTop = 1e9;
-        }
-
-        function setStep(n, status, text) {
-            const num = document.getElementById('step'+n+'-num');
-            const badge = document.getElementById('step'+n+'-status');
-            num.className = 'step-number' + (status==='success' ? ' done' : '');
-            badge.className = 'status-badge status-' + (status==='success'?'success':status==='active'?'active':'waiting');
-            badge.textContent = status==='success'?'✓ Done':status==='active'?'In progress':'Waiting';
-            const desc = document.getElementById('step'+n+'-desc');
-            if (text && desc) desc.innerHTML = text;
-        }
-
-        async function startSession() {
-            const code = document.getElementById('roomCode').value.trim();
-            const name = document.getElementById('userName').value.trim();
-            const role = document.getElementById('userRole').value;
-            const templateId = document.getElementById('templateSelect').value;
-            const sttProfile = document.getElementById('sttProfileSelect').value || undefined;
-            const llmProfile = document.getElementById('llmProfileSelect').value || undefined;
-            if (!code || !name) return alert('Enter room code and name');
-
-            document.getElementById('btnStart').disabled = true;
-            setStep(1, 'active');
-
-            try {
-                log('info', `Joining room "${code}" as ${role} [${templateId}]...`);
-                const res = await fetch(`${API}/test/start`, {
-                    method: 'POST',
-                    headers: {'Content-Type':'application/json', ...authHeader()},
-                    body: JSON.stringify({code, name, role, template_id: templateId, stt_profile: sttProfile, llm_profile: llmProfile})
-                });
-                if (!res.ok) throw new Error(await res.text());
-                const data = await res.json();
-
-                currentSessionId = data.session_id;
-                currentToken = data.token;
-
-                const tmplName = currentTemplate ? currentTemplate.name : templateId;
-                log('success', `Session: ${data.session_id.slice(0,8)}...`);
-                setStep(1, 'success', `Room <strong>${code}</strong> — role: <strong>${role}</strong><span class="tmpl-badge">${tmplName}</span>`);
-
-                await connectWebRTC(name, role);
-            } catch(e) {
-                log('error', 'Error: '+e.message);
-                setStep(1, 'waiting');
-                document.getElementById('btnStart').disabled = false;
-            }
-        }
-
-        async function connectWebRTC(name, role) {
-            setStep(2, 'active', 'Connecting to WebRTC server...');
-            document.getElementById('infoRow').style.display = 'flex';
-            document.getElementById('infoSession').textContent = 'Session: ' + (currentSessionId||'').slice(0,8)+'...';
-            document.getElementById('infoRole').textContent = 'Role: ' + role;
-            document.getElementById('infoIce').textContent = 'ICE: -';
-
-            try {
-                localStream = await navigator.mediaDevices.getUserMedia({audio:true});
-                document.getElementById('localAudio').srcObject = localStream;
-                document.getElementById('audioRow').style.display = 'flex';
-                log('success', 'Microphone active');
-            } catch(e) {
-                log('error', 'Microphone: '+e.message);
-                return;
-            }
-
-            let iceServers = [{urls:'stun:stun.l.google.com:19302'}];
-            try {
-                const rtcRes = await fetch(`${API}/v1/rtc-config`, {
-                    headers: getApiKey() ? {'X-API-Key': getApiKey()} : {}
-                });
-                if (rtcRes.ok) {
-                    const rtcCfg = await rtcRes.json();
-                    if (rtcCfg.ice_servers && rtcCfg.ice_servers.length > 0) {
-                        iceServers = rtcCfg.ice_servers;
-                        log('info', `ICE: ${iceServers.length} server(s) from /v1/rtc-config`);
-                    }
-                }
-            } catch(e) {
-                log('warn', 'rtc-config unavailable, using public STUN: '+e.message);
-            }
-            pc = new RTCPeerConnection({iceServers});
-
-            pc.oniceconnectionstatechange = () => {
-                const state = pc.iceConnectionState;
-                document.getElementById('infoIce').textContent = 'ICE: ' + state;
-                log('info', 'ICE state: ' + state);
-                if (state === 'connected' || state === 'completed') {
-                    setStep(2, 'success', '✓ Connected to server. <span class="recording-dot"></span>Audio sent to server for transcription.');
-                    document.getElementById('btnEnd').disabled = false;
-                    document.getElementById('btnMute').disabled = false;
-                    setStep(3, 'active');
-                } else if (state === 'closed') {
-                    log('warn', 'Session ended by server — generating minutes...');
-                    setStep(2, 'waiting', 'Session ended by server');
-                    document.getElementById('btnEnd').disabled = true;
-                    document.getElementById('btnMute').disabled = true;
-                    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-                    if (currentSessionId) setTimeout(() => fetchMinutes(), 3000);
-                } else if (state === 'failed' || state === 'disconnected') {
-                    setStep(2, 'waiting', '✗ Connection lost: ' + state);
-                }
-            };
-
-            pc.onicecandidate = (e) => {
-                if (e.candidate && ws?.readyState === WebSocket.OPEN)
-                    ws.send(JSON.stringify({type:'ice-candidate', candidate:e.candidate}));
-            };
-
-            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-
-            const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsBase = location.pathname.replace(/\/[^/]*$/, '');
-            const wsUrl = `${wsProto}//${location.host}${wsBase}/signaling?token=${currentToken}`;
-            log('info', 'Connecting signaling...');
-            ws = new WebSocket(wsUrl);
-
-            ws.onopen = async () => {
-                log('success', 'WebSocket connected');
-                try {
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                    ws.send(JSON.stringify({type:'offer', sdp:offer.sdp}));
-                    log('info', 'Offer sent to server');
-                } catch(e) { log('error', 'Offer: '+e.message); }
-            };
-
-            ws.onmessage = async (e) => {
-                const msg = JSON.parse(e.data);
-                log('info', 'Received: ' + msg.type);
-                if (msg.type === 'answer') {
-                    try {
-                        await pc.setRemoteDescription({type:'answer', sdp:msg.sdp});
-                    } catch(e) { log('error', 'setRemoteDesc: '+e.message); }
-                } else if (msg.type === 'ice-candidate' && msg.candidate) {
-                    try {
-                        await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-                    } catch(e) { log('warn', 'addIceCandidate: '+e.message); }
-                }
-            };
-
-            ws.onerror = () => log('error', 'WebSocket error');
-            ws.onclose = () => log('warn', 'WebSocket disconnected');
-        }
-
-        function toggleMute() {
-            if (!localStream) return;
-            const btn = document.getElementById('btnMute');
-            const track = localStream.getAudioTracks()[0];
-            if (!track) return;
-            track.enabled = !track.enabled;
-            if (track.enabled) {
-                btn.textContent = '🎙️ Mute mic';
-                btn.style.background = '#f59e0b';
-                log('info', 'Microphone active');
-            } else {
-                btn.textContent = '🔇 Unmute mic';
-                btn.style.background = '#6b7280';
-                log('warn', 'Microphone muted');
-            }
-        }
-
-        async function endSession() {
-            if (!currentSessionId) return;
-            document.getElementById('btnEnd').disabled = true;
-            document.getElementById('btnMute').disabled = true;
-            setStep(3, 'active', 'Ending session and generating minutes...');
-            log('info', 'Ending session...');
-
-            if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-            if (pc) { pc.close(); pc = null; }
-            if (ws) { ws.close(); ws = null; }
-
-            try {
-                const res = await fetch(`${API}/v1/sessions/${currentSessionId}/end`, {
-                    method: 'POST',
-                    headers: authHeader()
-                });
-                if (!res.ok) throw new Error(await res.text());
-                log('success', 'Session ended');
-                setTimeout(() => fetchMinutes(), 3000);
-            } catch(e) {
-                log('error', 'End session: '+e.message);
-                document.getElementById('btnEnd').disabled = false;
-            }
-        }
-
-        function msToTime(ms) {
-            const s = Math.floor(ms / 1000), m = Math.floor(s / 60);
-            return `${String(m).padStart(2,'0')}:${String(s % 60).padStart(2,'0')}`;
-        }
-
-        // ── Dynamic minutes renderer ──────────────────────────────────────
-        function renderMinutes(d, tmplOverride) {
-            const tmpl = tmplOverride || templates.find(t => t.id === d.template_id) || currentTemplate;
-            const sections = d.sections || {};
-            const sectionDefs = tmpl ? tmpl.sections : [];
-
-            const labelOf = (key) => {
-                const def = sectionDefs.find(s => s.key === key);
-                return def ? def.label : key.replace(/_/g,' ');
-            };
-            const typeOf = (key) => {
-                const def = sectionDefs.find(s => s.key === key);
-                return def ? def.type : 'unknown';
-            };
-
-            const orderedKeys = [
-                ...sectionDefs.map(s => s.key),
-                ...Object.keys(sections).filter(k => !sectionDefs.find(s => s.key === k))
-            ];
-
-            const sectionIcons = {
-                themes: '🏷️', contents_reported: '📋', client_needs: '📋',
-                professional_interventions: '🩺', professional_advice: '💡',
-                progress_issues: '📈', next_steps: '➡️',
-            };
-
-            let html = `<div class="min-card">`;
-            if (tmpl) {
-                html += `<div style="font-size:12px;color:#6d28d9;margin-bottom:8px">📄 Template: <strong>${tmpl.name}</strong></div>`;
-            }
-
-            for (const key of orderedKeys) {
-                const val = sections[key];
-                if (val === undefined || val === null) continue;
-                const label = labelOf(key);
-                const type = typeOf(key);
-                const icon = sectionIcons[key] || '•';
-
-                if (type === 'string_list' || Array.isArray(val)) {
-                    const arr = Array.isArray(val) ? val : [];
-                    if (arr.length === 0) continue;
-                    if (typeof arr[0] === 'string') {
-                        html += `<div class="min-sec"><strong>${icon} ${label}</strong><ul>`;
-                        arr.forEach(x => { html += `<li>${x}</li>`; });
-                        html += `</ul></div>`;
-                    } else {
-                        html += `<div class="min-sec"><strong>${icon} ${label}</strong><ul>`;
-                        arr.forEach(x => {
-                            const ts = x.timestamp != null ? `<span class="min-ts">${msToTime(x.timestamp)}</span>` : '';
-                            html += `<li>${ts}${x.text || JSON.stringify(x)}</li>`;
-                        });
-                        html += `</ul></div>`;
-                    }
-                } else if (type === 'progress' || (val && typeof val === 'object' && (val.progress || val.issues))) {
-                    const progress = val.progress || [];
-                    const issues = val.issues || [];
-                    if (!progress.length && !issues.length) continue;
-                    html += `<div class="min-sec"><strong>${icon} ${label}</strong>`;
-                    if (progress.length) html += `<ul>${progress.map(x=>`<li>✅ ${x}</li>`).join('')}</ul>`;
-                    if (issues.length)   html += `<ul>${issues.map(x=>`<li>⚠️ ${x}</li>`).join('')}</ul>`;
-                    html += `</div>`;
-                } else {
-                    html += `<div class="min-sec"><strong>${icon} ${label}</strong><pre style="font-size:11px">${JSON.stringify(val,null,2)}</pre></div>`;
-                }
-            }
-
-            const citations = d.citations || [];
-            if (citations.length) {
-                const roleLabel = (roleKey) => {
-                    if (!tmpl) return roleKey;
-                    const r = tmpl.roles.find(r => r.key === roleKey);
-                    return r ? r.label : roleKey;
-                };
-                html += `<div class="min-sec"><strong>💬 Citations</strong><ul class="with-bullets">`;
-                citations.forEach(c => {
-                    html += `<li><span class="min-ts">${msToTime(c.timestamp_ms||0)}</span><em>"${c.text}"</em> <span style="color:#888">[${roleLabel(c.role||'')}]</span></li>`;
-                });
-                html += `</ul></div>`;
-            }
-
-            const hasContent = orderedKeys.some(k => sections[k] != null) || citations.length > 0;
-            if (!hasContent) {
-                html += `<p style="color:#888;font-style:italic">No relevant content extracted from the transcript.</p>`;
-            }
-
-            html += `<div style="font-size:11px;color:#aaa;margin-top:8px">Generated: ${d.generated_at||''} · Provider: ${d.provider||''}</div>`;
-            html += `</div>`;
-            return html;
-        }
-
-        async function fetchMinutes() {
-            try {
-                const res = await fetch(`${API}/v1/sessions/${currentSessionId}/minutes`, {
-                    headers: authHeader()
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.status === 'ready' || data.status === 'delivered') {
-                        document.getElementById('minutesRendered').innerHTML = renderMinutes(data);
-                        document.getElementById('minutesContent').textContent = JSON.stringify(data, null, 2);
-                        document.getElementById('minutesBox').style.display = 'block';
-                        setStep(3, 'success', '✓ Minutes generated!');
-                        log('success', 'Minutes received');
-                    } else if (data.status === 'error') {
-                        log('error', 'Minutes generation failed');
-                    } else {
-                        log('warn', 'Minutes processing (status=' + data.status + '), retrying...');
-                        setTimeout(() => fetchMinutes(), 5000);
-                    }
-                } else if (res.status === 404) {
-                    log('warn', 'Minutes not ready yet, retrying...');
-                    setTimeout(() => fetchMinutes(), 5000);
-                } else {
-                    log('error', 'Fetch minutes HTTP ' + res.status);
-                }
-            } catch(e) {
-                log('error', 'Fetch minutes: '+e.message);
-            }
-        }
-
-        // ══════════════════════════════════════════════════════════════════
-        // MINUTES BROWSER
-        // ══════════════════════════════════════════════════════════════════
-
-        async function loadBrowser() {
-            const status = document.getElementById('bFilterStatus').value;
-            const limit  = parseInt(document.getElementById('bPageSize').value, 10);
-            const offset = (browserPage - 1) * limit;
-
-            document.getElementById('sessionList').innerHTML =
-                `<div class="empty-state"><span class="spinner"></span>Loading sessions...</div>`;
-
-            try {
-                let url = `${API}/v1/sessions?limit=${limit}&offset=${offset}`;
-                if (status) url += `&status=${status}`;
-                const res = await fetch(url, { headers: authHeader() });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const data = await res.json();
-
-                const sessions = Array.isArray(data.sessions) ? data.sessions : (Array.isArray(data) ? data : []);
-                const total    = data.total ?? sessions.length;
-
-                document.getElementById('browserTotal').textContent =
-                    total > 0 ? `${total} session${total!==1?'s':''}` : 'No sessions found';
-
-                if (sessions.length === 0) {
-                    document.getElementById('sessionList').innerHTML =
-                        `<div class="empty-state">No sessions found.</div>`;
-                    document.getElementById('pagination').style.display = 'none';
-                    return;
-                }
-
-                const totalPages = Math.ceil(total / limit);
-                document.getElementById('pageIndicator').textContent = `Page ${browserPage} / ${totalPages}`;
-                document.getElementById('btnPrevPage').disabled = browserPage <= 1;
-                document.getElementById('btnNextPage').disabled = browserPage >= totalPages;
-                document.getElementById('pagination').style.display = totalPages > 1 ? 'flex' : 'none';
-
-                document.getElementById('sessionList').innerHTML = sessions.map(s => {
-                    const date = s.created_at ? new Date(s.created_at).toLocaleString() : '';
-                    const tmpl = templates.find(t => t.id === s.template_id);
-                    const tmplBadge = tmpl ? `<span class="session-tmpl">${tmpl.name}</span>` : (s.template_id ? `<span class="session-tmpl">${s.template_id}</span>` : '');
-                    const isSelected = s.id === browserSelectedId;
-                    return `<div class="session-row${isSelected?' selected':''}" onclick="openSession('${s.id}', '${s.status||''}')">
-                        <div class="session-meta">
-                            <div style="font-weight:600;font-size:14px">${s.id.slice(0,8)}<span style="color:#94a3b8">…${s.id.slice(-4)}</span></div>
-                            <div class="session-id">${s.id}</div>
-                            <div class="session-date">${date}</div>
-                            ${tmplBadge}
-                        </div>
-                        <span class="session-status ss-${s.status||'ended'}">${s.status||'ended'}</span>
-                    </div>`;
-                }).join('');
-
-                browserLoaded = true;
-            } catch(e) {
-                document.getElementById('sessionList').innerHTML =
-                    `<div class="empty-state" style="color:var(--error)">Error loading sessions: ${e.message}</div>`;
-            }
-        }
-
-        async function openSession(sessionId, status) {
-            browserSelectedId = sessionId;
-            // Highlight selected row
-            document.querySelectorAll('.session-row').forEach(r => r.classList.remove('selected'));
-            event.currentTarget.classList.add('selected');
-
-            const panel = document.getElementById('detailPanel');
-            panel.style.display = 'block';
-            panel.scrollIntoView({behavior:'smooth', block:'nearest'});
-
-            document.getElementById('detailTitle').textContent = 'Session ' + sessionId.slice(0,8) + '…';
-            document.getElementById('detailId').textContent = sessionId;
-            document.getElementById('detailDate').textContent = '';
-            document.getElementById('detailTemplate').textContent = '';
-            document.getElementById('detailStatus').className = 'session-status ss-' + (status||'ended');
-            document.getElementById('detailStatus').textContent = status || 'ended';
-            document.getElementById('detailMinutesRendered').innerHTML =
-                `<div class="empty-state"><span class="spinner"></span>Loading minutes...</div>`;
-            document.getElementById('detailMinutesRaw').textContent = '';
-
-            // Reset to minutes tab
-            switchDetailTab('minutes', document.querySelector('.detail-tab-btn'));
-
-            try {
-                const res = await fetch(`${API}/v1/minutes?session_id=${sessionId}`, {
-                    headers: authHeader()
-                });
-                if (res.ok) {
-                    const d = await res.json();
-                    const tmpl = templates.find(t => t.id === d.template_id);
-                    document.getElementById('detailTemplate').textContent = tmpl ? tmpl.name : (d.template_id || '');
-                    document.getElementById('detailDate').textContent = d.generated_at ? new Date(d.generated_at).toLocaleString() : '';
-
-                    if (d.status === 'ready' || d.status === 'delivered') {
-                        document.getElementById('detailMinutesRendered').innerHTML = renderMinutes(d, tmpl);
-                        document.getElementById('detailMinutesRaw').textContent = JSON.stringify(d, null, 2);
-                    } else if (d.status === 'pending' || d.status === 'processing') {
-                        document.getElementById('detailMinutesRendered').innerHTML =
-                            `<div class="empty-state"><span class="spinner"></span>Minutes are ${d.status}...</div>`;
-                    } else if (d.status === 'error') {
-                        document.getElementById('detailMinutesRendered').innerHTML =
-                            `<div class="empty-state" style="color:var(--error)">Minutes generation failed.</div>`;
-                    } else {
-                        document.getElementById('detailMinutesRendered').innerHTML =
-                            `<div class="empty-state">No minutes yet (status: ${d.status}).</div>`;
-                    }
-                } else if (res.status === 404) {
-                    document.getElementById('detailMinutesRendered').innerHTML =
-                        `<div class="empty-state">No minutes for this session.</div>`;
-                } else {
-                    document.getElementById('detailMinutesRendered').innerHTML =
-                        `<div class="empty-state" style="color:var(--error)">HTTP ${res.status}</div>`;
-                }
-            } catch(e) {
-                document.getElementById('detailMinutesRendered').innerHTML =
-                    `<div class="empty-state" style="color:var(--error)">${e.message}</div>`;
-            }
-        }
-
-        function closeDetail() {
-            browserSelectedId = null;
-            document.querySelectorAll('.session-row').forEach(r => r.classList.remove('selected'));
-            document.getElementById('detailPanel').style.display = 'none';
-        }
-
-        function switchDetailTab(name, btn) {
-            document.querySelectorAll('.detail-tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.detail-tab-pane').forEach(p => p.classList.remove('active'));
-            // Find the clicked button by its onclick
-            document.querySelectorAll('.detail-tab-btn').forEach(b => {
-                if (b.getAttribute('onclick') && b.getAttribute('onclick').includes(`'${name}'`))
-                    b.classList.add('active');
-            });
-            document.getElementById('dtab-' + name).classList.add('active');
-        }
-
-        async function loadVersions() {
-            if (!browserSelectedId) return;
-            const el = document.getElementById('detailVersionsList');
-            el.innerHTML = `<div class="empty-state"><span class="spinner"></span>Loading history...</div>`;
-            document.getElementById('detailVersionContent').style.display = 'none';
-
-            try {
-                // First fetch the minutes to get its ID, then fetch history.
-                const mRes = await fetch(`${API}/v1/minutes?session_id=${browserSelectedId}`, {
-                    headers: authHeader()
-                });
-                if (!mRes.ok) throw new Error('Minutes HTTP ' + mRes.status);
-                const minutesObj = await mRes.json();
-                const minutesId = minutesObj.id;
-                if (!minutesId) throw new Error('Minutes ID not found');
-
-                const res = await fetch(`${API}/v1/minutes/${minutesId}/versions`, {
-                    headers: authHeader()
-                });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const versions = await res.json();
-                const arr = Array.isArray(versions) ? versions : (versions.versions || []);
-
-                if (arr.length === 0) {
-                    el.innerHTML = `<div class="empty-state">No history yet.</div>`;
-                    return;
-                }
-
-                el.innerHTML = arr.map((v, i) => `
-                    <div class="version-row" onclick="showVersion(${i}, this)" data-version='${JSON.stringify(v).replace(/'/g,"&#39;")}'>
-                        <span style="font-weight:600;font-size:13px">v${arr.length - i}</span>
-                        <span style="color:#64748b;font-size:12px">${v.created_at ? new Date(v.created_at).toLocaleString() : ''}</span>
-                        <span style="color:#94a3b8;font-size:12px;margin-left:auto">${v.provider || ''}</span>
-                    </div>`
-                ).join('');
-            } catch(e) {
-                el.innerHTML = `<div class="empty-state" style="color:var(--error)">${e.message}</div>`;
-            }
-        }
-
-        function showVersion(i, rowEl) {
-            document.querySelectorAll('.version-row').forEach(r => r.classList.remove('selected'));
-            rowEl.classList.add('selected');
-            try {
-                const v = JSON.parse(rowEl.getAttribute('data-version'));
-                const tmpl = templates.find(t => t.id === v.template_id);
-                document.getElementById('detailVersionRendered').innerHTML = renderMinutes(v, tmpl);
-                document.getElementById('detailVersionContent').style.display = 'block';
-            } catch(e) {
-                document.getElementById('detailVersionRendered').innerHTML =
-                    `<div class="empty-state" style="color:var(--error)">Parse error: ${e.message}</div>`;
-            }
-        }
-
-        async function loadTranscriptions() {
-            if (!browserSelectedId) return;
-            const el = document.getElementById('detailTranscriptions');
-            el.innerHTML = `<div class="empty-state"><span class="spinner"></span>Loading transcriptions...</div>`;
-
-            try {
-                const res = await fetch(`${API}/v1/transcriptions?session_id=${browserSelectedId}`, {
-                    headers: authHeader()
-                });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const data = await res.json();
-                const arr = Array.isArray(data) ? data : (data.transcriptions || []);
-
-                if (arr.length === 0) {
-                    el.innerHTML = `<div class="empty-state">No transcriptions for this session.</div>`;
-                    return;
-                }
-
-                el.innerHTML = arr.map((t, i) => {
-                    const ts = t.created_at ? new Date(t.created_at).toLocaleString() : '';
-                    const dur = t.duration_ms ? `${(t.duration_ms/1000).toFixed(1)}s` : '';
-                    return `<div style="margin-bottom:12px">
-                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:12px;color:#64748b">
-                            <strong style="color:var(--text)">#${i+1}</strong>
-                            <span>${ts}</span>
-                            ${dur ? `<span class="info-pill">${dur}</span>` : ''}
-                            ${t.language ? `<span class="info-pill">lang: ${t.language}</span>` : ''}
-                        </div>
-                        <div class="transcription-block">${t.text || '(empty)'}</div>
-                    </div>`;
-                }).join('');
-            } catch(e) {
-                el.innerHTML = `<div class="empty-state" style="color:var(--error)">${e.message}</div>`;
-            }
-        }
-
-        // Override switchDetailTab to trigger lazy loads
-        const _switchDetailTab = switchDetailTab;
-        document.addEventListener('click', (e) => {
-            const btn = e.target.closest('.detail-tab-btn');
-            if (!btn) return;
-            const onclick = btn.getAttribute('onclick') || '';
-            if (onclick.includes("'versions'")) loadVersions();
-        });
-
-    </script>
+<div class="container">
+
+  <h1>Aftertalk</h1>
+  <p class="subtitle">Dev Demo — PHP middleware + TS SDK architecture</p>
+
+  <!-- ── Config ──────────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">⚙ Config</div>
+    <div class="row">
+      <div class="col">
+        <label>API Key <span style="color:#e53e3e">(test only — stays in PHP in production)</span></label>
+        <input id="apiKey" type="password" placeholder="Paste API key" autocomplete="off" />
+      </div>
+      <div class="col">
+        <label>PHP Middleware URL</label>
+        <input id="middlewareUrl" placeholder="http://localhost:8081" />
+      </div>
+    </div>
+    <p class="note">
+      In production the API key must <strong>never leave the PHP server</strong> — store it in
+      <code>AFTERTALK_API_KEY</code> env var and remove the <code>X-API-Key</code> fallback from middleware.php.<br>
+      Run the middleware: <code>php -S localhost:8081 cmd/test-ui/php/middleware.php</code>
+    </p>
+  </div>
+
+  <!-- ── Join ────────────────────────────────────────────────────────────── -->
+  <div class="card" id="sectionJoin">
+    <div class="card-title">① Join Room</div>
+    <div class="row">
+      <div class="col">
+        <label>Template</label>
+        <select id="templateSelect"></select>
+      </div>
+    </div>
+
+    <div class="row" id="profileRow" hidden>
+      <div class="col">
+        <label>🎙️ STT Profile</label>
+        <select id="sttSelect"></select>
+      </div>
+      <div class="col">
+        <label>🤖 LLM Profile</label>
+        <select id="llmSelect"></select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col">
+        <label>Room Code</label>
+        <input id="roomCode" value="room-1" />
+      </div>
+      <div class="col">
+        <label>Your Name</label>
+        <input id="userName" value="Alex" />
+      </div>
+      <div class="col">
+        <label>Role</label>
+        <select id="roleSelect"></select>
+      </div>
+    </div>
+
+    <button id="btnJoin">🚀 Join Room</button>
+  </div>
+
+  <!-- ── Session ─────────────────────────────────────────────────────────── -->
+  <div class="card" id="sectionSession" hidden>
+    <div class="card-title">② Session Active</div>
+    <p class="meta" id="sessionMeta"></p>
+    <p id="connStatus">⏳ Connecting…</p>
+    <div style="display:flex;gap:10px">
+      <button id="btnMute" class="ghost" disabled>🎙️ Mute</button>
+      <button id="btnEnd"  class="danger" disabled>⏹ End Session</button>
+    </div>
+  </div>
+
+  <!-- ── Minutes ─────────────────────────────────────────────────────────── -->
+  <div class="card" id="sectionMinutes" hidden>
+    <div class="card-title">③ Minutes</div>
+    <p id="minutesStatus"></p>
+    <div id="minutesContent"></div>
+  </div>
+
+  <!-- ── Log ─────────────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title" style="margin-bottom:8px">📝 Log</div>
+    <div id="log"></div>
+  </div>
+
+</div>
+<script type="module" src="./src/main.ts"></script>
 </body>
 </html>

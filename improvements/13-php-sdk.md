@@ -44,7 +44,8 @@ aftertalk-php/
 │   ├── Api/
 │   │   ├── SessionsApi.php      # createSession, getSession, endSession, listSessions
 │   │   ├── MinutesApi.php       # getMinutes, updateMinutes, getMinutesVersions
-│   │   └── TranscriptionsApi.php
+│   │   ├── TranscriptionsApi.php
+│   │   └── ConfigApi.php        # getConfig → templates, sttProfiles, llmProfiles, defaults
 │   ├── Webhook/
 │   │   ├── WebhookHandler.php   # verifySignature(), parsePayload()
 │   │   ├── MinutesPayload.php   # DTO: session_id, minutes, metadata, participants, timestamp
@@ -88,8 +89,20 @@ $session = $client->sessions->create(
         'doctor_id'      => 'doc_456',
         'patient_id'     => 'pat_789',
     ],
+    // Seleziona i profili provider per questa sessione (opzionale).
+    // I nomi devono corrispondere a quelli definiti in stt.profiles / llm.profiles
+    // nella configurazione del server. Se omessi si usa il default del server.
+    sttProfile: 'cloud',   // es. Groq whisper-large-v3
+    llmProfile: 'cloud',   // es. OpenRouter minimax-m2.7
 );
-// $session->id, $session->templateId, $session->createdAt
+// $session->id, $session->templateId, $session->sttProfile, $session->llmProfile, $session->createdAt
+
+// --- PROFILI DISPONIBILI ---
+$config = $client->config->getConfig();
+// $config->sttProfiles         → ['local', 'cloud']
+// $config->sttDefaultProfile   → 'local'
+// $config->llmProfiles         → ['local', 'cloud']
+// $config->llmDefaultProfile   → 'local'
 
 // --- TOKEN PARTECIPANTE (da restituire al frontend) ---
 $token = $client->sessions->createParticipantToken(

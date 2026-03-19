@@ -49,8 +49,8 @@ func NewSTTRegistry(cfg *config.STTConfig) (*STTRegistry, error) {
 	for name, pcfg := range cfg.Profiles {
 		profileBase := *base
 		profileBase.Provider = pcfg.Provider
-		// Apply optional overrides for whisper-local profiles.
-		if pcfg.Provider == "whisper-local" {
+		// Apply optional overrides for OpenAI-compatible providers (whisper-local and openai).
+		if pcfg.Provider == "whisper-local" || pcfg.Provider == "openai" {
 			if pcfg.Model != "" {
 				profileBase.WhisperLocal.Model = pcfg.Model
 			}

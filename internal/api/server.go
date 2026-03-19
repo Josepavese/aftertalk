@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/api/handler"
@@ -27,64 +26,6 @@ type Server struct {
 	botServer   *BotServer
 	tlsCertFile string
 	tlsKeyFile  string
-}
-
-// roomTTL is how long a room entry is kept in the cache after creation.
-// After this period the room code can be reused for a new session.
-const roomTTL = 3 * time.Hour
-
-// roomEntry holds the tokens and metadata for one active room.
-type roomEntry struct {
-	tokens    map[string]string // role/key → token
-	issued    map[string]bool   // role → already issued
-	names     map[string]string // role → participant name (for reconnection)
-	createdAt time.Time
-}
-
-// roomCache maps a room code to the pre-generated tokens for each role.
-// All operations are atomic to prevent race conditions when two browsers
-// join the same room simultaneously.
-type roomCache struct {
-	rooms map[string]*roomEntry
-	mu    sync.Mutex
-}
-
-var errRoleTaken = errors.New("role already taken in this room")
-
-// getOrCreate atomically returns the token for the given role in the room,
-// creating the session (via create()) if the room does not yet exist or has expired.
-// If the role is already issued but the name matches (reconnection), the existing
-// token is re-issued. Returns errRoleTaken if the role is taken by a different name.
-func (rc *roomCache) getOrCreate(code, role, name string, create func() (map[string]string, error)) (string, string, error) {
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
-
-	// Expire stale entries so the same room code can be reused.
-	if entry, ok := rc.rooms[code]; ok && time.Since(entry.createdAt) < roomTTL {
-		if entry.issued[role] {
-			// Allow reconnection if the name matches.
-			if entry.names[role] == name {
-				return entry.tokens["_session_id"], entry.tokens[role], nil
-			}
-			return "", "", errRoleTaken
-		}
-		entry.issued[role] = true
-		entry.names[role] = name
-		return entry.tokens["_session_id"], entry.tokens[role], nil
-	}
-
-	// Room is new or expired — create a fresh session.
-	tokens, err := create()
-	if err != nil {
-		return "", "", err
-	}
-	rc.rooms[code] = &roomEntry{
-		tokens:    tokens,
-		issued:    map[string]bool{role: true},
-		names:     map[string]string{role: name},
-		createdAt: time.Now(),
-	}
-	return tokens["_session_id"], tokens[role], nil
 }
 
 func NewServer(cfg *config.Config, sessionService *session.Service, botServer *BotServer) *Server {
@@ -176,12 +117,15 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 		defaultTemplateID = cfg.Templates[0].ID
 	}
 
-	// /demo/config — public metadata for the test UI (no auth required).
-	// The API key is included only when cfg.Demo.Enabled=true (local demo mode).
-	// Never set Demo.Enabled=true in production.
-	r.Get("/demo/config", func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+	// /v1/config and /v1/rtc-config are public — no API key required.
+	// ICE servers are not sensitive (STUN/TURN addresses are public). Making
+	// rtc-config public allows frontend SDKs to connect WebRTC without an
+	// API key, using only the JWT session token for signaling auth.
+	if rtcHandler != nil {
+		r.Get("/v1/rtc-config", rtcHandler.ServeHTTP)
+	}
 
+	r.Get("/v1/config", func(w http.ResponseWriter, req *http.Request) {
 		sttProfiles := make([]string, 0, len(cfg.STT.Profiles))
 		for name := range cfg.STT.Profiles {
 			sttProfiles = append(sttProfiles, name)
@@ -190,101 +134,14 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 		for name := range cfg.LLM.Profiles {
 			llmProfiles = append(llmProfiles, name)
 		}
-
-		resp := map[string]interface{}{
-			"templates":            cfg.Templates,
-			"default_template_id":  defaultTemplateID,
-			"stt_profiles":         sttProfiles,
-			"llm_profiles":         llmProfiles,
-			"default_stt_profile":  cfg.STT.DefaultProfile,
-			"default_llm_profile":  cfg.LLM.DefaultProfile,
-		}
-		if cfg.Demo.Enabled {
-			resp["api_key"] = cfg.API.Key
-		}
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			http.Error(w, "failed to encode response", http.StatusInternalServerError)
-		}
-	})
-
-	// /test/start — requires API key when one is configured.
-	// Joins or creates a session by room code.
-	r.With(apiKeyMiddleware).Post("/test/start", func(w http.ResponseWriter, req *http.Request) {
-		var body struct {
-			Code       string `json:"code"`
-			Name       string `json:"name"`
-			Role       string `json:"role"`
-			TemplateID string `json:"template_id"`
-			STTProfile string `json:"stt_profile"`
-			LLMProfile string `json:"llm_profile"`
-		}
-		if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.Name == "" || body.Role == "" || body.Code == "" {
-			http.Error(w, "invalid request body: code, name and role are required", http.StatusBadRequest)
-			return
-		}
-
-		// Resolve the template; fall back to default if not specified.
-		if body.TemplateID == "" {
-			body.TemplateID = defaultTemplateID
-		}
-		tmpl, hasTmpl := templateMap[body.TemplateID]
-
-		// Derive the "other" role from the template (second role that isn't ours).
-		otherRole := ""
-		if hasTmpl && len(tmpl.Roles) >= 2 {
-			for _, r := range tmpl.Roles {
-				if r.Key != body.Role {
-					otherRole = r.Key
-					break
-				}
-			}
-		}
-		if otherRole == "" {
-			// Fallback for unknown templates.
-			if body.Role == "therapist" || body.Role == "consultant" || body.Role == "host" {
-				otherRole = "patient"
-			} else {
-				otherRole = "therapist"
-			}
-		}
-
-		sessionID, token, err := rooms.getOrCreate(body.Code, body.Role, body.Name, func() (map[string]string, error) { //nolint:contextcheck // callback closure captures req.Context() below
-			createReq := &session.CreateSessionRequest{
-				ParticipantCount: 2,
-				TemplateID:       body.TemplateID,
-				STTProfile:       body.STTProfile,
-				LLMProfile:       body.LLMProfile,
-				Participants: []session.ParticipantRequest{
-					{UserID: body.Name, Role: body.Role},
-					{UserID: "guest-" + otherRole, Role: otherRole},
-				},
-			}
-			resp, err := sessionService.CreateSession(req.Context(), createReq)
-			if err != nil {
-				return nil, err
-			}
-			tokens := map[string]string{"_session_id": resp.SessionID}
-			for _, p := range resp.Participants {
-				tokens[p.Role] = p.Token
-			}
-			return tokens, nil
+		response.OK(w, map[string]interface{}{
+			"templates":           cfg.Templates,
+			"default_template_id": defaultTemplateID,
+			"stt_profiles":        sttProfiles,
+			"llm_profiles":        llmProfiles,
+			"default_stt_profile": cfg.STT.DefaultProfile,
+			"default_llm_profile": cfg.LLM.DefaultProfile,
 		})
-		if errors.Is(err, errRoleTaken) {
-			http.Error(w, fmt.Sprintf("Role '%s' is already taken in room '%s'. Choose another role.", body.Role, body.Code), http.StatusConflict)
-			return
-		}
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to create session: %v", err), http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]string{
-			"session_id": sessionID,
-			"token":      token,
-		}); err != nil {
-			http.Error(w, "failed to encode response", http.StatusInternalServerError)
-		}
 	})
 
 	// --- Protected routes (API key required) ---
@@ -295,12 +152,84 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 			r.Get("/health", handler.HealthCheck)
 			r.Get("/ready", handler.ReadyCheck)
 
-			// /v1/config — public metadata (templates, version) without API key exposure.
-			r.Get("/config", func(w http.ResponseWriter, req *http.Request) {
-				response.OK(w, map[string]interface{}{
-					"templates":           cfg.Templates,
-					"default_template_id": defaultTemplateID,
+			// POST /v1/rooms/join — join or create a session by room code.
+			// Promotes the former /test/start logic to a stable, versioned endpoint.
+			r.Post("/rooms/join", func(w http.ResponseWriter, req *http.Request) {
+				var body struct {
+					Code       string `json:"code"`
+					Name       string `json:"name"`
+					Role       string `json:"role"`
+					TemplateID string `json:"template_id"`
+					STTProfile string `json:"stt_profile"`
+					LLMProfile string `json:"llm_profile"`
+				}
+				if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.Name == "" || body.Role == "" || body.Code == "" {
+					http.Error(w, "invalid request body: code, name and role are required", http.StatusBadRequest)
+					return
+				}
+
+				// Resolve the template; fall back to default if not specified.
+				if body.TemplateID == "" {
+					body.TemplateID = defaultTemplateID
+				}
+				tmpl, hasTmpl := templateMap[body.TemplateID]
+
+				// Derive the "other" role from the template (second role that isn't ours).
+				otherRole := ""
+				if hasTmpl && len(tmpl.Roles) >= 2 {
+					for _, ro := range tmpl.Roles {
+						if ro.Key != body.Role {
+							otherRole = ro.Key
+							break
+						}
+					}
+				}
+				if otherRole == "" {
+					// Fallback for unknown templates.
+					if body.Role == "therapist" || body.Role == "consultant" || body.Role == "host" {
+						otherRole = "patient"
+					} else {
+						otherRole = "therapist"
+					}
+				}
+
+				sessionID, token, err := rooms.getOrCreate(body.Code, body.Role, body.Name, func() (map[string]string, error) { //nolint:contextcheck // callback closure captures req.Context() below
+					createReq := &session.CreateSessionRequest{
+						ParticipantCount: 2,
+						TemplateID:       body.TemplateID,
+						STTProfile:       body.STTProfile,
+						LLMProfile:       body.LLMProfile,
+						Participants: []session.ParticipantRequest{
+							{UserID: body.Name, Role: body.Role},
+							{UserID: "guest-" + otherRole, Role: otherRole},
+						},
+					}
+					resp, err := sessionService.CreateSession(req.Context(), createReq)
+					if err != nil {
+						return nil, err
+					}
+					tokens := map[string]string{"_session_id": resp.SessionID}
+					for _, p := range resp.Participants {
+						tokens[p.Role] = p.Token
+					}
+					return tokens, nil
 				})
+				if errors.Is(err, errRoleTaken) {
+					http.Error(w, fmt.Sprintf("Role '%s' is already taken in room '%s'. Choose another role.", body.Role, body.Code), http.StatusConflict)
+					return
+				}
+				if err != nil {
+					http.Error(w, fmt.Sprintf("failed to create session: %v", err), http.StatusInternalServerError)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(w).Encode(map[string]string{
+					"session_id": sessionID,
+					"token":      token,
+				}); err != nil {
+					http.Error(w, "failed to encode response", http.StatusInternalServerError)
+				}
 			})
 
 			// OpenAPI spec — served from specs/contracts/api.yaml.
@@ -336,10 +265,7 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 				r.Mount("/transcriptions", transcriptionHandler.Routes())
 			}
 
-			if rtcHandler != nil {
-				r.Get("/rtc-config", rtcHandler.ServeHTTP)
-			}
-		})
+			})
 	})
 
 	// GET /v1/minutes/pull/{token} — notify_pull secure retrieval endpoint.
