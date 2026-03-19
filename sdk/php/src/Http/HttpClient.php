@@ -35,7 +35,7 @@ class HttpClient
         $url = $this->url($path, $query);
         $request = $this->requestFactory
             ->createRequest('GET', $url)
-            ->withHeader('X-API-Key', $this->config->apiKey)
+            ->withHeader('Authorization', 'Bearer ' . $this->config->apiKey)
             ->withHeader('Accept', 'application/json');
 
         return $this->send($request);
@@ -48,7 +48,7 @@ class HttpClient
         $json = json_encode($body, JSON_THROW_ON_ERROR);
         $request = $this->requestFactory
             ->createRequest('POST', $url)
-            ->withHeader('X-API-Key', $this->config->apiKey)
+            ->withHeader('Authorization', 'Bearer ' . $this->config->apiKey)
             ->withHeader('Content-Type', 'application/json')
             ->withHeader('Accept', 'application/json')
             ->withBody($this->streamFactory->createStream($json));
@@ -63,7 +63,7 @@ class HttpClient
         $json = json_encode($body, JSON_THROW_ON_ERROR);
         $request = $this->requestFactory
             ->createRequest('PUT', $url)
-            ->withHeader('X-API-Key', $this->config->apiKey)
+            ->withHeader('Authorization', 'Bearer ' . $this->config->apiKey)
             ->withHeader('Content-Type', 'application/json')
             ->withHeader('Accept', 'application/json')
             ->withBody($this->streamFactory->createStream($json));
@@ -80,7 +80,7 @@ class HttpClient
         $url = $this->url($path);
         $request = $this->requestFactory
             ->createRequest('DELETE', $url)
-            ->withHeader('X-API-Key', $this->config->apiKey);
+            ->withHeader('Authorization', 'Bearer ' . $this->config->apiKey);
 
         $this->send($request);
     }

@@ -197,7 +197,7 @@ var HttpClient = class {
       ...headers
     };
     if (this.apiKey) {
-      reqHeaders["X-API-Key"] = this.apiKey;
+      reqHeaders["Authorization"] = `Bearer ${this.apiKey}`;
     }
     let response;
     try {

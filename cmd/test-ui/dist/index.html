@@ -70,7 +70,7 @@
     .note { font-size: 11px; color: var(--muted); margin-top: 8px; border-left: 2px solid var(--border); padding-left: 8px; line-height: 1.5; }
     .note code { color: var(--accent); }
   </style>
-  <script type="module" crossorigin src="./assets/index-D2M5eSQ3.js"></script>
+  <script type="module" crossorigin src="./assets/index-BjY_WSQi.js"></script>
 </head>
 <body>
 <div class="container">
@@ -94,7 +94,8 @@
     <p class="note">
       In production the API key must <strong>never leave the PHP server</strong> — store it in
       <code>AFTERTALK_API_KEY</code> env var and remove the <code>X-API-Key</code> fallback from middleware.php.<br>
-      Run the middleware: <code>php -S localhost:8081 cmd/test-ui/php/middleware.php</code>
+      Local dev: <code>php -S localhost:8081 cmd/test-ui/php/middleware.php</code><br>
+      Server deploy: middleware runs on port 8082, proxied via Apache at <code>/aftertalk-middleware/</code>.
     </p>
   </div>
 

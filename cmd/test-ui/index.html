@@ -93,7 +93,8 @@
     <p class="note">
       In production the API key must <strong>never leave the PHP server</strong> — store it in
       <code>AFTERTALK_API_KEY</code> env var and remove the <code>X-API-Key</code> fallback from middleware.php.<br>
-      Run the middleware: <code>php -S localhost:8081 cmd/test-ui/php/middleware.php</code>
+      Local dev: <code>php -S localhost:8081 cmd/test-ui/php/middleware.php</code><br>
+      Server deploy: middleware runs on port 8082, proxied via Apache at <code>/aftertalk-middleware/</code>.
     </p>
   </div>
 
