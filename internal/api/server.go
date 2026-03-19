@@ -312,9 +312,10 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 	}
 }
 
-// findTestUIPath searches for the cmd/test-ui directory relative to common locations.
+// findTestUIPath searches for the cmd/test-ui/dist directory (Vite build output)
+// relative to common locations. Falls back to cmd/test-ui for dev convenience.
 func findTestUIPath() string {
-	candidates := []string{
+	bases := []string{
 		"./cmd/test-ui",
 		"../cmd/test-ui",
 	}
@@ -322,10 +323,16 @@ func findTestUIPath() string {
 	// Also try relative to the executable
 	if exe, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exe)
-		candidates = append(candidates,
+		bases = append(bases,
 			filepath.Join(exeDir, "cmd/test-ui"),
 			filepath.Join(exeDir, "../cmd/test-ui"),
 		)
+	}
+
+	// Prefer the Vite build output (dist/) over the raw source directory.
+	var candidates []string
+	for _, b := range bases {
+		candidates = append(candidates, filepath.Join(b, "dist"), b)
 	}
 
 	for _, p := range candidates {
