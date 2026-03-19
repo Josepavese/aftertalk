@@ -95,6 +95,10 @@ export class HttpClient {
       throw AftertalkError.fromHttpStatus(response.status, responseBody);
     }
 
+    // The server wraps successful responses in { "data": ... } — unwrap transparently.
+    if (responseBody !== null && typeof responseBody === 'object' && 'data' in (responseBody as object)) {
+      return (responseBody as { data: T }).data;
+    }
     return responseBody as T;
   }
 }
