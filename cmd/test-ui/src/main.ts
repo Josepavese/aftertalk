@@ -102,6 +102,14 @@ let sessionId = '';
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // API key from URL param (?key=...) takes priority — saves to localStorage for next visits.
+  const urlKey = new URLSearchParams(window.location.search).get('key');
+  if (urlKey) {
+    localStorage.setItem('at_api_key', urlKey);
+    // Clean the key from the URL bar without reloading.
+    history.replaceState(null, '', window.location.pathname);
+  }
+
   // Restore saved config
   el<HTMLInputElement>('apiKey').value        = ls('at_api_key');
   el<HTMLInputElement>('middlewareUrl').value  = ls('at_middleware_url') || 'http://localhost:8081';
@@ -123,7 +131,9 @@ function onConfigChange() {
   localStorage.setItem('at_middleware_url', middlewareUrl);
 
   // SDK client: no API key — only for public endpoints and WebRTC (JWT).
-  sdk        = new AftertalkClient({ baseUrl: window.location.origin });
+  // Derive base URL from current page to handle subpath deployments (e.g. /aftertalk/).
+  const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '');
+  sdk        = new AftertalkClient({ baseUrl });
   middleware = new Middleware(middlewareUrl, apiKey);
 
   loadConfig();
