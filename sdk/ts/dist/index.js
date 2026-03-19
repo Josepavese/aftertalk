@@ -233,6 +233,9 @@ var HttpClient = class {
     if (!response.ok) {
       throw AftertalkError.fromHttpStatus(response.status, responseBody);
     }
+    if (responseBody !== null && typeof responseBody === "object" && "data" in responseBody) {
+      return responseBody.data;
+    }
     return responseBody;
   }
 };
