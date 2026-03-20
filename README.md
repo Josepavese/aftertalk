@@ -7,11 +7,8 @@
 
 **WebRTC session recorder → structured AI minutes, delivered via webhook.**
 
-<!-- PLACEHOLDER: screenshot demo UI showing a completed session with minutes
-     File to create: docs/assets/demo-screenshot.png (~1200×700px)
-     Content: test UI with "Minutes" section showing sections, citations, status "ready"
-     Replace this comment with: ![Aftertalk Demo](docs/assets/demo-screenshot.png)
--->
+<!-- TODO: replace with real screenshot → docs/assets/demo-screenshot.png -->
+![Aftertalk Demo](https://placehold.co/1200x630/0f172a/6366f1?font=montserrat&text=demo+screenshot+here)
 
 ---
 
@@ -46,10 +43,8 @@ Demo UI at `http://localhost:8080` · [Full installation guide](docs/wiki/instal
 
 The canonical pattern: **PHP backend holds the API key**, browser receives only a short-lived JWT room token.
 
-<!-- PLACEHOLDER: architecture diagram showing Browser → PHP Backend → Aftertalk Server → Webhook
-     File to create: docs/assets/architecture.png (clean 3-block diagram, dark or white bg)
-     Replace this comment with: ![Architecture](docs/assets/architecture.png)
--->
+<!-- TODO: replace with real diagram → docs/assets/architecture.png -->
+![Architecture](https://placehold.co/900x200/0f172a/6366f1?font=montserrat&text=Browser+%2B+TS+SDK+%E2%86%92+PHP+Backend+%E2%86%92+Aftertalk+Server+%E2%86%92+Webhook)
 
 **PHP backend** (privileged — API key stays here):
 
