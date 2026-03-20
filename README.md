@@ -2,8 +2,9 @@
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-22c55e)
-![CI](https://github.com/Josepavese/aftertalk/actions/workflows/ci.yml/badge.svg?branch=master)
-![Release](https://img.shields.io/github/v/release/Josepavese/aftertalk?color=6366f1)
+<!-- CI and Release badges: re-enable when repo is public -->
+<!-- ![CI](https://github.com/Josepavese/aftertalk/actions/workflows/ci.yml/badge.svg?branch=master) -->
+<!-- ![Release](https://img.shields.io/github/v/release/Josepavese/aftertalk?color=6366f1) -->
 
 **WebRTC session recorder → structured AI minutes, delivered via webhook.**
 
