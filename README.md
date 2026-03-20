@@ -1,144 +1,100 @@
-# Aftertalk Core
+# Aftertalk
 
-**AI-agnostic core for automatic meeting minutes generation from WebRTC conversations**
+![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-22c55e)
+![CI](https://github.com/Josepavese/aftertalk/actions/workflows/ci.yml/badge.svg?branch=master)
+![Release](https://img.shields.io/github/v/release/Josepavese/aftertalk?color=6366f1)
 
-## Overview
+**WebRTC session recorder → structured AI minutes, delivered via webhook.**
 
-Aftertalk is a Go module that intercepts audio from WebRTC sessions, automatically transcribes conversations, and generates structured minutes using AI.
+<!-- PLACEHOLDER: screenshot demo UI showing a completed session with minutes
+     File to create: docs/assets/demo-screenshot.png (~1200×700px)
+     Content: test UI with "Minutes" section showing sections, citations, status "ready"
+     Replace this comment with: ![Aftertalk Demo](docs/assets/demo-screenshot.png)
+-->
 
-**Architecture**: Modular monolith in Go with internal packages for separation of concerns.
+---
 
-**Target**: 200+ concurrent sessions, <100ms audio capture latency, <5min minutes generation.
+Aftertalk sits alongside your WebRTC calls. It captures audio server-side,
+transcribes with STT (Whisper · Google · AWS · Azure), generates structured
+minutes with an LLM (OpenAI · Anthropic · Ollama), and delivers them to your
+backend via webhook — all without storing audio.
 
-## Install
+> No audio is ever persisted. Minutes are always editable. Humans stay in the loop.
 
-Pre-built binaries for Linux, macOS, and Windows are published automatically on every release.
+---
 
-### Linux / macOS
+## Quick Start
 
 ```bash
+# Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.sh | bash
+
+# Configure
+cp ~/.aftertalk/aftertalk.yaml.example ~/.aftertalk/aftertalk.yaml
+# set: API_KEY, JWT_SECRET, LLM_PROVIDER, STT_PROVIDER
+
+# Start
+aftertalk start
 ```
 
-Modes (default: `local-ai` — installs Whisper + Ollama locally):
+Demo UI at `http://localhost:8080` · [Full installation guide](docs/wiki/installation.md)
 
-```bash
-# Cloud STT/LLM providers (configure keys after install)
-curl -fsSL .../install.sh | bash -s -- --mode=cloud
+---
 
-# No AI (stub providers, useful for testing)
-curl -fsSL .../install.sh | bash -s -- --mode=offline
+## Integrate
+
+The canonical pattern: **PHP backend holds the API key**, browser receives only a short-lived JWT room token.
+
+<!-- PLACEHOLDER: architecture diagram showing Browser → PHP Backend → Aftertalk Server → Webhook
+     File to create: docs/assets/architecture.png (clean 3-block diagram, dark or white bg)
+     Replace this comment with: ![Architecture](docs/assets/architecture.png)
+-->
+
+**PHP backend** (privileged — API key stays here):
+
+```php
+$result = $aftertalk->rooms->join(
+    code: $appointment->id,   // room code — idempotent, safe to call twice
+    name: $user->displayName,
+    role: 'therapist',        // determined server-side from your auth
+);
+// return $result['token'] to the browser — never the API key
 ```
 
-### Windows
+**TypeScript frontend** (JWT only — no API key):
 
-Run in PowerShell **as Administrator**:
-
-```powershell
-irm https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.ps1 | iex
+```typescript
+const sdk = new AftertalkClient({ baseUrl: window.location.origin });
+const conn = await sdk.connectWebRTC({ sessionId, token }); // token from PHP
+conn.on('connected', () => console.log('streaming audio'));
 ```
 
-### Manual binary download
+→ [Full integration guide](docs/wiki/integration-guide.md)
 
-Download the binary for your platform from [Releases](https://github.com/Josepavese/aftertalk/releases/latest):
-
-| Platform | File |
-|---|---|
-| Linux x86-64 | `aftertalk-linux-amd64` |
-| Linux ARM64  | `aftertalk-linux-arm64` |
-| macOS x86-64 | `aftertalk-darwin-amd64` |
-| macOS Apple Silicon | `aftertalk-darwin-arm64` |
-| Windows x86-64 | `aftertalk-windows-amd64.exe` |
-| Windows ARM64  | `aftertalk-windows-arm64.exe` |
-
-### Environment overrides
-
-| Variable | Default | Description |
-|---|---|---|
-| `AFTERTALK_HOME` | `~/.aftertalk` | Install directory |
-| `AFTERTALK_RELEASE` | `latest` | Release to install (`latest` or `edge` for master builds) |
-| `WHISPER_MODEL` | `base` | Whisper model size |
-| `SKIP_WHISPER` | — | Set to `1` to skip Whisper setup |
-| `SKIP_OLLAMA` | — | Set to `1` to skip Ollama setup |
-
-## Build from source
-
-```bash
-git clone https://github.com/Josepavese/aftertalk.git
-cd aftertalk
-go build -o bin/aftertalk-server ./cmd/aftertalk
-```
-
-## Development
-
-```bash
-# Run without building
-make dev
-
-# Run tests
-make test
-
-# Run with coverage
-make test-coverage
-
-# Lint
-make lint
-```
-
-## Architecture
-
-```
-aftertalk/
-├── cmd/aftertalk/        # Entry point
-├── internal/
-│   ├── api/             # HTTP REST API
-│   ├── bot/             # WebRTC Bot Recorder
-│   ├── ai/              # AI Pipeline (STT + LLM)
-│   ├── core/            # Business Logic
-│   ├── storage/         # SQLite + In-memory Cache
-│   └── config/          # Configuration
-└── pkg/                 # Public packages
-```
-
-## Key Features
-
-- **WebRTC Audio Capture**: Pion-based server-side peer
-- **Real-time Transcription**: Pluggable STT providers (Google, AWS, Azure, Whisper)
-- **AI Minutes Generation**: Structured output with LLM (OpenAI, Anthropic, Ollama)
-- **Privacy-First**: No persistent audio, append-only transcriptions
-- **Human-in-the-loop**: Minutes always editable by professionals
-
-## TLS / HTTPS
-
-By default Aftertalk serves plain HTTP, suitable when behind a reverse proxy (Apache, nginx) that handles TLS termination.
-
-To run with native HTTPS/WSS, add to `aftertalk.yaml`:
-
-```yaml
-tls:
-  cert_file: /path/to/cert.pem
-  key_file:  /path/to/key.pem
-```
-
-If the files are configured but missing at startup, the server exits with an explicit error — it never silently falls back to plain HTTP.
+---
 
 ## SDKs
 
-| SDK | Language | Use case |
-|-----|----------|----------|
-| [`@aftertalk/sdk`](sdk/ts/) | TypeScript / JS | Browser frontend — WebRTC audio streaming, minutes polling |
-| [`aftertalk/aftertalk-php`](sdk/php/) | PHP 8.1+ | Server-side backend — session management, webhook verification |
+| SDK | Install | Use case |
+|-----|---------|----------|
+| **TypeScript** [`@aftertalk/sdk`](sdk/ts/) | `npm i @aftertalk/sdk` | Browser — WebRTC streaming, minutes polling |
+| **PHP** [`aftertalk/aftertalk-php`](sdk/php/) | `composer require aftertalk/aftertalk-php` | Server — sessions, webhook verification |
 
-See the [Integration Guide](docs/wiki/integration-guide.md) for the canonical pattern:
-PHP backend holds the API key; browser receives only a short-lived JWT room token.
+---
 
 ## Documentation
 
-- [Wiki](docs/wiki/)
-- [Integration Guide](docs/wiki/integration-guide.md)
-- [Architecture Plan](specs/plan.md)
-- [API Contracts](specs/contracts/)
+| | |
+|--|--|
+| [Installation](docs/wiki/installation.md) | Requirements, install modes (`local-ai` · `cloud` · `offline`), first run |
+| [Configuration](docs/wiki/configuration.md) | All parameters with defaults |
+| [REST API](docs/wiki/rest-api.md) | Every endpoint with curl examples |
+| [Integration Guide](docs/wiki/integration-guide.md) | PHP + TS full workflow, security model, race conditions |
+| [Webhook](docs/wiki/webhook.md) | Push vs `notify_pull`, HMAC verification |
+| [Templates](docs/wiki/templates.md) | `therapy`, `consulting`, custom session structures |
+| [Architecture](docs/wiki/architecture.md) | Internal audio → minutes pipeline |
 
-## License
+---
 
-MIT
+MIT · [Josepavese](https://github.com/Josepavese)
