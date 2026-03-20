@@ -30,6 +30,9 @@
       "Aftertalk\\Tests\\": "tests/"
     }
   },
+  "scripts": {
+    "test": "phpunit tests/"
+  },
   "minimum-stability": "stable",
   "prefer-stable": true,
   "config": {

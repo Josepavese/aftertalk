@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": true,
+  "packages": {
+    "sdk/ts": {
+      "release-type": "node",
+      "package-name": "@aftertalk/sdk",
+      "changelog-path": "sdk/ts/CHANGELOG.md",
+      "tag-name": "sdk/ts/v${version}"
+    },
+    "sdk/php": {
+      "release-type": "php",
+      "package-name": "aftertalk/aftertalk-php",
+      "changelog-path": "sdk/php/CHANGELOG.md",
+      "tag-name": "sdk/php/v${version}"
+    }
+  }
+}

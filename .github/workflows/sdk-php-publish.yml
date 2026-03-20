@@ -1,0 +1,61 @@
+name: Publish PHP SDK to Packagist
+
+# Triggered by tags created by release-please: sdk/php/v1.2.3
+# Packagist indexes automatically from GitHub — this workflow validates
+# the package and notifies Packagist to re-index.
+#
+# Required GitHub Secrets:
+#   PACKAGIST_USERNAME  — packagist.org username
+#   PACKAGIST_API_TOKEN — packagist.org Profile → API Tokens
+
+on:
+  push:
+    tags:
+      - 'sdk/php/v*'
+
+jobs:
+  publish:
+    name: Validate & Notify Packagist
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer
+          coverage: none
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/sdk/php/v}"
+          echo "version=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate composer.json
+        working-directory: sdk/php
+        run: composer validate --strict
+
+      - name: Install dependencies
+        working-directory: sdk/php
+        run: composer install --prefer-dist --optimize-autoloader
+
+      - name: Run PHPUnit tests
+        working-directory: sdk/php
+        run: ./vendor/bin/phpunit tests/
+
+      - name: Notify Packagist (trigger re-index)
+        run: |
+          curl -sf -X POST \
+            "https://packagist.org/api/update-package?username=${{ secrets.PACKAGIST_USERNAME }}&apiToken=${{ secrets.PACKAGIST_API_TOKEN }}" \
+            -d "repository[url]=https://github.com/Josepavese/aftertalk" \
+            -o /tmp/packagist_response.json
+          cat /tmp/packagist_response.json
+          if grep -q '"status":"error"' /tmp/packagist_response.json; then
+            echo "Packagist rejected the notification"
+            exit 1
+          fi
+          echo "Packagist notified — aftertalk/aftertalk-php@${{ steps.version.outputs.version }} will be indexed within ~5 minutes"

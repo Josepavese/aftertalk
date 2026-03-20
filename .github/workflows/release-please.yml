@@ -1,0 +1,23 @@
+name: Release Please
+
+# Creates or updates SDK release PRs from Conventional Commits on master.
+# When a release PR is merged, release-please creates the Git tag, which
+# triggers sdk-ts-publish.yml or sdk-php-publish.yml automatically.
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
