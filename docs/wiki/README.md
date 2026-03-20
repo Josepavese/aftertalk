@@ -13,6 +13,7 @@ Operational documentation verified against source code.
 | [webhook.md](webhook.md) | Push vs notify_pull, HMAC verification, examples |
 | [templates.md](templates.md) | Session templates: built-in and custom |
 | [architecture.md](architecture.md) | Internal flows, audio→minutes pipeline |
+| [integration-guide.md](integration-guide.md) | Full integration guide: PHP backend + TS frontend, security model, webhooks |
 
 ---
 
