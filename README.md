@@ -122,9 +122,20 @@ tls:
 
 If the files are configured but missing at startup, the server exits with an explicit error — it never silently falls back to plain HTTP.
 
+## SDKs
+
+| SDK | Language | Use case |
+|-----|----------|----------|
+| [`@aftertalk/sdk`](sdk/ts/) | TypeScript / JS | Browser frontend — WebRTC audio streaming, minutes polling |
+| [`aftertalk/aftertalk-php`](sdk/php/) | PHP 8.1+ | Server-side backend — session management, webhook verification |
+
+See the [Integration Guide](docs/wiki/integration-guide.md) for the canonical pattern:
+PHP backend holds the API key; browser receives only a short-lived JWT room token.
+
 ## Documentation
 
 - [Wiki](docs/wiki/)
+- [Integration Guide](docs/wiki/integration-guide.md)
 - [Architecture Plan](specs/plan.md)
 - [API Contracts](specs/contracts/)
 
