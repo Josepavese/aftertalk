@@ -2,13 +2,13 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master ]
     paths-ignore:
       - 'docs/**'
       - 'specs/**'
       - '*.md'
   pull_request:
-    branches: [ main, develop ]
+    branches: [ master ]
     paths-ignore:
       - 'docs/**'
       - 'specs/**'
@@ -178,7 +178,7 @@ jobs:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
     needs: [lint, test, security]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     permissions:
       contents: read
       packages: write

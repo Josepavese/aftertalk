@@ -1,0 +1,61 @@
+name: Publish TypeScript SDK to npm
+
+# Triggered by tags created by release-please: sdk/ts/v1.2.3
+# Required GitHub Secret: NPM_TOKEN (Automation token from npmjs.com)
+
+on:
+  push:
+    tags:
+      - 'sdk/ts/v*'
+
+jobs:
+  publish:
+    name: Build & Publish @aftertalk/sdk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # required for npm provenance (SLSA Level 2)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: sdk/ts/package-lock.json
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/sdk/ts/v}"
+          echo "version=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        working-directory: sdk/ts
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: sdk/ts
+        run: npm run typecheck
+
+      - name: Run tests
+        working-directory: sdk/ts
+        run: npm test
+
+      - name: Set version in package.json
+        working-directory: sdk/ts
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version
+
+      - name: Build
+        working-directory: sdk/ts
+        run: npm run build
+
+      - name: Publish to npm
+        working-directory: sdk/ts
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
