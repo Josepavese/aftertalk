@@ -45,6 +45,12 @@ Pre-release checks (mandatory):
 5. All completed changes must be committed before release.
 6. Never release partial/incomplete work.
 
+Post-release (mandatory):
+
+7. Monitor GitHub Actions until all release-related workflows are green.
+8. On failure: troubleshoot -> implement fix -> re-test -> commit -> release again.
+9. Repeat until full green status is reached.
+
 ## AI-Trace Guard Commands
 
 ```bash
