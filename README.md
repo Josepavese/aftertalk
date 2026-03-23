@@ -9,7 +9,7 @@
 **WebRTC session recorder → structured AI minutes, delivered via webhook.**
 
 > [!WARNING]
-> **Pre-release.** This project is under active development. APIs may change without notice and correct behaviour is not guaranteed. Not recommended for production use.
+> **Alpha pre-release.** This project is under active development. APIs may change without notice and correct behaviour is not guaranteed. Not recommended for production use.
 
 <!-- TODO: replace with real screenshot → docs/assets/demo-screenshot.png -->
 ![Aftertalk Demo](https://placehold.co/1200x630/0f172a/6366f1?font=montserrat&text=demo+screenshot+here)
