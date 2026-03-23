@@ -43,18 +43,12 @@ vim .env
 ### 2. Start Infrastructure Services
 
 ```bash
-# Start PostgreSQL (Redis optional for distributed cache)
-docker-compose up -d postgres
+# Start PostgreSQL (Redis optional for distributed cache) with your preferred tooling
+# Example (service managers, package managers, or managed DB)
+pg_isready -h localhost -p 5432 -U aftertalk
 
-# Wait for PostgreSQL to be ready
-docker-compose ps
-
-# Check PostgreSQL connection
-docker-compose exec postgres pg_isready -U aftertalk
-
-# (Optional) Start Redis for distributed cache
-docker-compose up -d redis
-docker-compose exec redis redis-cli ping
+# (Optional) Check Redis
+redis-cli -h localhost -p 6379 ping
 ```
 
 ### 3. Run Database Migrations
@@ -111,8 +105,6 @@ docker run -p 8080:8080 -p 8081:8081 \
   -e OPENAI_API_KEY=your-key \
   aftertalk:latest
 
-# Or with docker-compose
-docker-compose up aftertalk
 ```
 
 ### 5. Verify Services
@@ -459,16 +451,16 @@ golangci-lint run --fix
 
 ```bash
 # Check if PostgreSQL is running
-docker-compose ps postgres
+pg_isready -h localhost -p 5432 -U aftertalk
 
 # Check logs
-docker-compose logs postgres
+journalctl -u postgresql --no-pager -n 100
 
 # Test connection
 psql $DATABASE_URL
 
 # Restart service
-docker-compose restart postgres
+sudo systemctl restart postgresql
 ```
 
 **2. Go module issues**

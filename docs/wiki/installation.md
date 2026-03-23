@@ -144,10 +144,8 @@ curl http://localhost:8080/v1/health
 
 ```bash
 docker build -t aftertalk:latest .
-docker-compose up -d
+docker run --rm -p 8080:8080 aftertalk:latest
 ```
-
-The included `docker-compose.yml` mounts a volume for the database.
 
 ---
 

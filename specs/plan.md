@@ -170,7 +170,6 @@ aftertalk/
 ├── go.sum
 ├── Makefile                     # Build automation
 ├── Dockerfile                   # Multi-stage build
-├── docker-compose.yml           # Local development
 ├── .golangci.yml                # Linter config
 └── README.md
 ```

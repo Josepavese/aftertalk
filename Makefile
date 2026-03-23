@@ -69,12 +69,6 @@ fmt:
 docker-build:
 	docker build -t aftertalk:latest .
 
-docker-run:
-	docker-compose up -d
-
-docker-stop:
-	docker-compose down
-
 # Help
 help:
 	@echo "Available targets:"
@@ -97,5 +91,3 @@ help:
 	@echo "  fmt                - Format code"
 	@echo ""
 	@echo "  docker-build       - Build Docker image"
-	@echo "  docker-run         - Run with Docker Compose"
-	@echo "  docker-stop        - Stop Docker Compose"
