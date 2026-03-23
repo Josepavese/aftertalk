@@ -655,6 +655,10 @@ func TestMergePCM(t *testing.T) {
 }
 
 func TestOpusDecoder_NewOpusDecoder(t *testing.T) {
+	if isRaceBuild {
+		t.Skip("opus-go decoder is not checkptr-safe under -race on Go 1.25")
+	}
+
 	t.Run("ValidDecoder", func(t *testing.T) {
 		decoder := NewOpusDecoder(48000, 1)
 		assert.NotNil(t, decoder)
@@ -677,6 +681,10 @@ func TestOpusDecoder_NewOpusDecoder(t *testing.T) {
 }
 
 func TestOpusDecoder_Decode(t *testing.T) {
+	if isRaceBuild {
+		t.Skip("opus-go decoder is not checkptr-safe under -race on Go 1.25")
+	}
+
 	t.Run("InvalidOpusData", func(t *testing.T) {
 		decoder := NewOpusDecoder(48000, 1)
 
