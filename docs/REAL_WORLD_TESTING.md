@@ -166,7 +166,6 @@ nido ls
 package_update: true
 packages:
   - docker.io
-  - docker-compose
   - curl
   - jq
 

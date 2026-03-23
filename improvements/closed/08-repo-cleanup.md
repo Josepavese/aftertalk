@@ -148,7 +148,6 @@ aftertalk/
 ├── .golangci.yml                # Linter config
 ├── CHANGELOG.md                 # Version history ← NEW
 ├── CONTRIBUTING.md              # Development guide ← NEW (merge WORKFLOW+DEV_PROTOCOL)
-├── docker-compose.yml
 ├── Dockerfile
 ├── go.mod
 ├── go.sum

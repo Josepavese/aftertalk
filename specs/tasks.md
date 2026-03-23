@@ -28,7 +28,7 @@
 - [ ] T002 Create directory structure per plan.md (cmd/, internal/, pkg/, migrations/)
 - [ ] T003 [P] Create Makefile with build, test, run, migrate targets
 - [ ] T004 [P] Create Dockerfile for single-stage Go build
-- [ ] T005 [P] Create docker-compose.yml for local development
+- [ ] T005 [P] Define local runtime workflow for development (no Compose)
 - [ ] T006 [P] Create .env.example with configuration template
 - [ ] T007 [P] Create .gitignore for Go project
 - [ ] T008 [P] Create README.md with project overview
