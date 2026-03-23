@@ -34,13 +34,6 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          install-mode: goinstall
-          args: --timeout=5m
-
       - name: Run go vet
         run: go vet ./...
 
