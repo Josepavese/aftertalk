@@ -7,6 +7,11 @@ name: Release Please
 on:
   push:
     branches: [master]
+    paths:
+      - "sdk/ts/**"
+      - "sdk/php/**"
+      - ".github/release-please/**"
+      - ".github/workflows/release-please.yml"
 
 permissions:
   contents: write
