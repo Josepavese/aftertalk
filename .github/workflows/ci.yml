@@ -244,16 +244,24 @@ jobs:
     needs: build
     timeout-minutes: 10
 
-    services:
-      app:
-        image: aftertalk:ci
-        ports:
-          - 8080:8080
-        env:
-          DATABASE_PATH: /app/aftertalk_test.db
-          API_KEY: test-api-key-12345
-
     steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: Load Docker image artifact
+        run: |
+          gunzip -c aftertalk-ci.tar.gz | docker load
+
+      - name: Start application container
+        run: |
+          docker run -d --name aftertalk-smoke \
+            -p 8080:8080 \
+            -e DATABASE_PATH=/app/aftertalk_test.db \
+            -e API_KEY=test-api-key-12345 \
+            aftertalk:ci
+
       - name: Wait for application to start
         run: |
           for i in {1..30}; do
@@ -306,6 +314,14 @@ jobs:
         run: |
           curl -f http://localhost:8080/metrics
           echo ""
+
+      - name: Print container logs on failure
+        if: failure()
+        run: docker logs aftertalk-smoke || true
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f aftertalk-smoke || true
 
   notification:
     name: Build Notification
