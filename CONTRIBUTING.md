@@ -89,6 +89,10 @@ refactor(scope): description
 chore(scope): description
 ```
 
+## Release Versioning
+
+- Follow [./.github/release/VERSIONING_SSOT.md](.github/release/VERSIONING_SSOT.md) as the canonical release/version source of truth.
+
 ## Rules
 
 - Never commit directly to `master` — use `feature/*` or `fix/*` branches
