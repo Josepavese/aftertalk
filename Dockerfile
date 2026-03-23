@@ -24,9 +24,6 @@ WORKDIR /root/
 # Copy binary from builder
 COPY --from=builder /aftertalk .
 
-# Copy migrations
-COPY --from=builder /app/migrations ./migrations
-
 # Create non-root user
 RUN adduser -D -u 1000 aftertalk
 USER aftertalk
