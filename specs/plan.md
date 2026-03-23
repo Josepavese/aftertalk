@@ -17,7 +17,7 @@ Aftertalk Core is a domain-agnostic AI module for automatically generating end-o
 - Audio: `go-audio/opus`, `go-audio/wav` (Opus ↔ PCM conversion)
 - HTTP: `chi` (REST API routing)
 - STT: Pluggable adapters via HTTP client (Google Cloud Speech-to-Text, AWS Transcribe, Azure Speech)
-- LLM: Pluggable adapters via HTTP client (OpenAI GPT-4, Anthropic Claude, Azure OpenAI)
+- LLM: Pluggable adapters via HTTP client (OpenAI GPT-4, Anthropic, Azure OpenAI)
 - Database: `modernc.org/sqlite` (pure Go SQLite driver, no CGO)
 - Config: `knadh/koanf` (configuration management)
 - Logging: `uber-go/zap` (structured logging)
@@ -108,7 +108,7 @@ aftertalk/
 │   │   ├── llm/
 │   │   │   ├── provider.go      # LLM provider interface
 │   │   │   ├── openai.go        # OpenAI GPT-4 client
-│   │   │   ├── anthropic.go     # Anthropic Claude client
+│   │   │   ├── anthropic.go     # Anthropic client
 │   │   │   ├── azure.go         # Azure OpenAI client
 │   │   │   └── prompts.go       # Prompt templates
 │   │   └── pipeline.go          # Pipeline orchestration

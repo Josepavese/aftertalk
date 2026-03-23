@@ -68,7 +68,7 @@ llm:
 {{ end }}{{ if eq .LLMProvider "ollama" }}  ollama:
     base_url: "{{ .OllamaURL }}"
     model:    "{{ .OllamaModel }}"
-{{ end }}{{ if index .LLMConfig "LLM_API_KEY" }}  openai:
+{{ end }}{{ if eq .LLMProvider "openai" }}  openai:
     api_key: "{{ index .LLMConfig "LLM_API_KEY" }}"
 {{ if index .LLMConfig "LLM_MODEL" }}    model:   "{{ index .LLMConfig "LLM_MODEL" }}"
 {{ end }}{{ if index .LLMConfig "LLM_BASE_URL" }}    base_url: "{{ index .LLMConfig "LLM_BASE_URL" }}"
