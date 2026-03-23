@@ -26,6 +26,7 @@ coverage_total.txt
 
 # IDE
 .claude/
+.agent/
 
 # Environment
 .env
