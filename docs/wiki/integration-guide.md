@@ -51,8 +51,8 @@ The central rule is simple:
 │                                                                     │
 │  AftertalkClient (PHP SDK, with API key)                            │
 │  ├── POST /v1/rooms/join     → create/join session, get JWT token   │
-│  ├── POST /v1/sessions/{id}/end → trigger STT+LLM pipeline         │
-│  └── GET  /v1/sessions/{id}/minutes → read generated minutes       │
+│  ├── POST /v1/sessions/{id}/end → trigger STT+LLM pipeline          │
+│  └── GET  /v1/sessions/{id}/minutes → read generated minutes        │
 └─────────────────────────────────────────────────────────────────────┘
          │ API key in Authorization: Bearer header
          ▼
@@ -62,7 +62,7 @@ The central rule is simple:
 │  ├── REST API (protected by API key)                                 │
 │  ├── WebSocket /signaling    (protected by JWT room token)           │
 │  ├── STT pipeline (Whisper / Google / AWS / Azure)                   │
-│  └── LLM pipeline (OpenAI / Anthropic / Ollama)                     │
+│  └── LLM pipeline (OpenAI / Anthropic / Ollama)                      │
 │                                                                      │
 │  → POST YOUR_WEBHOOK_URL (minutes delivered after session ends)      │
 └──────────────────────────────────────────────────────────────────────┘
