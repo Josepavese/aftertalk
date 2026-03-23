@@ -58,17 +58,6 @@ func IsOpusSilentFrame(frame []byte) bool {
 	return len(frame) < SilenceThresholdBytes
 }
 
-// isAdaptiveSilentFrame returns true if frame is silent relative to the
-// current noise floor estimated from recent frames.
-//
-// It uses the larger of the absolute threshold and the noise-relative threshold,
-// so it degrades gracefully: in a quiet room the adaptive threshold equals the
-// absolute one; in a noisy room it raises automatically.
-func isAdaptiveSilentFrame(frame []byte, recentFrames [][]byte) bool {
-	threshold := adaptiveThreshold(recentFrames)
-	return len(frame) < threshold
-}
-
 // adaptiveThreshold computes the silence threshold for the current noise floor.
 func adaptiveThreshold(recentFrames [][]byte) int {
 	n := len(recentFrames)

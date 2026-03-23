@@ -6,7 +6,6 @@ import (
 
 // Frame factory helpers
 func silentFrame() []byte     { return make([]byte, 3) }   // 3 bytes  → absolute silence
-func whisperFrame() []byte    { return make([]byte, 20) }  // 20 bytes → whisper
 func speechFrame() []byte     { return make([]byte, 80) }  // 80 bytes → normal speech
 func noisyFrame(n int) []byte { return make([]byte, n) }   // arbitrary size for noise simulation
 

@@ -51,35 +51,6 @@ func (p *AWSSTTProvider) IsAvailable() bool {
 	return p.accessKeyID != "" && p.secretAccessKey != "" && p.region != ""
 }
 
-// awsTranscribeStartJobRequest is the body for StartTranscriptionJob.
-type awsTranscribeStartJobRequest struct { //nolint:unused // kept for future batch API support
-	TranscriptionJobName string                `json:"TranscriptionJobName"`
-	LanguageCode         string                `json:"LanguageCode"`
-	MediaFormat          string                `json:"MediaFormat"`
-	Media                awsTranscribeMedia    `json:"Media"`
-	Settings             awsTranscribeSettings `json:"Settings"`
-}
-
-type awsTranscribeMedia struct { //nolint:unused // kept for future batch API support
-	MediaFileURI string `json:"MediaFileURI"`
-}
-
-type awsTranscribeSettings struct { //nolint:unused // kept for future batch API support
-	ShowSpeakerLabels bool `json:"ShowSpeakerLabels"`
-	MaxSpeakerLabels  int  `json:"MaxSpeakerLabels,omitempty"`
-}
-
-// awsTranscribeJobResponse is the response shape for GetTranscriptionJob.
-type awsTranscribeJobResponse struct { //nolint:unused // kept for future batch API support
-	TranscriptionJob struct {
-		TranscriptionJobStatus string `json:"TranscriptionJobStatus"`
-		Transcript             struct {
-			TranscriptFileURI string `json:"TranscriptFileURI"`
-		} `json:"Transcript"`
-		FailureReason string `json:"FailureReason"`
-	} `json:"TranscriptionJob"`
-}
-
 // awsTranscriptResult is the shape of the transcript JSON file.
 type awsTranscriptResult struct {
 	Results struct {
