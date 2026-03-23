@@ -12,8 +12,8 @@
 - [x] `sdk/ts/` al path corretto (era già presente)
 - [x] `sdk/php/` con `composer.json` valido (era già presente, aggiunto `scripts.test`)
 - [ ] `sdk/go/` con `go.mod` — **bloccato da improvement #22**
-- [x] `release-please-config.json` alla root
-- [x] `.release-please-manifest.json` alla root
+- [x] `.github/release-please/config.json`
+- [x] `.github/release-please/manifest.json`
 - [x] `.github/workflows/release-please.yml`
 - [x] `.github/workflows/sdk-ts-publish.yml`
 - [x] `.github/workflows/sdk-php-publish.yml`
@@ -59,7 +59,7 @@ poi notifica Packagist via API. Packagist re-indicizza entro ~5 minuti.
 
 ## File creati
 
-### `release-please-config.json`
+### `.github/release-please/config.json`
 
 Configura release-please per due package nel mono-repo:
 
@@ -123,11 +123,11 @@ e nella condizione `build-and-push` (`refs/heads/main` → `refs/heads/master`).
 | Item | Dipendenza |
 |------|-----------|
 | `sdk-go-tag.yml` | Improvement #22 (Go SDK) |
-| `sdk/go` in `release-please-config.json` | Improvement #22 |
+| `sdk/go` in `.github/release-please/config.json` | Improvement #22 |
 | `NPM_TOKEN` attivo | Azione manuale npmjs.com |
 | Packagist registrato | Azione manuale packagist.org |
 
-Quando improvement #22 è completato, aggiungere in `release-please-config.json`:
+Quando improvement #22 è completato, aggiungere in `.github/release-please/config.json`:
 ```json
 "sdk/go": {
   "release-type": "go",
