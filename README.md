@@ -93,6 +93,7 @@ conn.on('connected', () => console.log('streaming audio'));
 | [Webhook](docs/wiki/webhook.md) | Push vs `notify_pull`, HMAC verification |
 | [Templates](docs/wiki/templates.md) | `therapy`, `consulting`, custom session structures |
 | [Architecture](docs/wiki/architecture.md) | Internal audio → minutes pipeline |
+| [Tone of Voice](docs/style/tone-of-voice.md) | Editorial style for docs and project messaging |
 
 ---
 

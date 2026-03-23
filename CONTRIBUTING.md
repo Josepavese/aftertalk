@@ -67,6 +67,10 @@ cd sdk && npm test
 - ESLint + Prettier via `cd sdk && npm run lint`
 - Tests co-located with source (`{file}.test.ts`)
 
+## Documentation Style
+
+- Follow [docs/style/tone-of-voice.md](docs/style/tone-of-voice.md) for README/docs copy.
+
 ## Architecture Principles
 
 - **PAL** (Platform Abstraction Layer): business logic consumes only interfaces; providers implement them. See `.agent/skills/platform-abstraction-layer/`
