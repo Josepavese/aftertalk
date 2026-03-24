@@ -258,9 +258,9 @@ jobs:
         run: |
           docker run -d --name aftertalk-smoke \
             -p 8080:8080 \
-            -e DATABASE_PATH=/app/aftertalk_test.db \
-            -e API_KEY=test-api-key-12345 \
-            -e JWT_SECRET=smoke-test-jwt-secret-change-me-in-prod \
+            -e AFTERTALK_DATABASE_PATH=/app/aftertalk_test.db \
+            -e AFTERTALK_API_KEY=smoke-test-api-key-12345 \
+            -e AFTERTALK_JWT_SECRET=smoke-test-jwt-secret-change-me-in-prod \
             aftertalk:ci
 
       - name: Wait for application to start
@@ -289,7 +289,7 @@ jobs:
         run: |
           SESSION_RESPONSE=$(curl -X POST http://localhost:8080/v1/sessions \
             -H "Content-Type: application/json" \
-            -H "X-API-Key: test-api-key-12345" \
+            -H "X-API-Key: smoke-test-api-key-12345" \
             -d '{
               "participant_count": 2,
               "participants": [
@@ -309,7 +309,7 @@ jobs:
 
           # Test session retrieval
           curl -f http://localhost:8080/v1/sessions/$SESSION_ID \
-            -H "X-API-Key: test-api-key-12345"
+            -H "X-API-Key: smoke-test-api-key-12345"
 
       - name: Test metrics endpoint
         run: |
