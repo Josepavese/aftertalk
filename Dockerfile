@@ -19,13 +19,19 @@ FROM alpine:latest
 # Install ca-certificates for HTTPS requests
 RUN apk --no-cache add ca-certificates tzdata
 
-WORKDIR /root/
+RUN adduser -D -u 1000 aftertalk && \
+    mkdir -p /opt/aftertalk /var/lib/aftertalk && \
+    chown -R aftertalk:aftertalk /opt/aftertalk /var/lib/aftertalk
+
+WORKDIR /opt/aftertalk
 
 # Copy binary from builder
-COPY --from=builder /aftertalk .
+COPY --from=builder /aftertalk /opt/aftertalk/aftertalk
+
+# Default writable DB location for containerized runtime
+ENV AFTERTALK_DATABASE_PATH=/var/lib/aftertalk/aftertalk.db
 
 # Create non-root user
-RUN adduser -D -u 1000 aftertalk
 USER aftertalk
 
 # Expose ports
