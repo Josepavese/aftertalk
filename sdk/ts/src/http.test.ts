@@ -33,7 +33,7 @@ describe('HttpClient', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
-    expect(headers['X-API-Key']).toBe('secret');
+    expect(headers['Authorization']).toBe('Bearer secret');
     expect(init.body).toContain('"participantCount":2');
   });
 
