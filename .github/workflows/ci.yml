@@ -260,6 +260,7 @@ jobs:
             -p 8080:8080 \
             -e DATABASE_PATH=/app/aftertalk_test.db \
             -e API_KEY=test-api-key-12345 \
+            -e JWT_SECRET=smoke-test-jwt-secret-change-me-in-prod \
             aftertalk:ci
 
       - name: Wait for application to start
