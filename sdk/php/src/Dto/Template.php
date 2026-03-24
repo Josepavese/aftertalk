@@ -7,26 +7,62 @@ namespace Aftertalk\Dto;
 class Template
 {
     /**
-     * @param array<array{key:string,label:string}>                                 $roles
-     * @param array<array{key:string,label:string,description:string,type:string}>  $sections
+     * @readonly
+     * @var string
+     */
+    public string $id;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $name;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $description;
+
+    /**
+     * @readonly
+     * @var array<array{key:string,label:string}>
+     */
+    public array $roles;
+
+    /**
+     * @readonly
+     * @var array<array{key:string,label:string,description:string,type:string}>
+     */
+    public array $sections;
+
+    /**
+     * @param array<array{key:string,label:string}>                                $roles
+     * @param array<array{key:string,label:string,description:string,type:string}> $sections
      */
     public function __construct(
-        public readonly string $id,
-        public readonly string $name,
-        public readonly string $description,
-        public readonly array  $roles,
-        public readonly array  $sections,
-    ) {}
+        string $id,
+        string $name,
+        string $description,
+        array  $roles,
+        array  $sections
+    ) {
+        $this->id          = $id;
+        $this->name        = $name;
+        $this->description = $description;
+        $this->roles       = $roles;
+        $this->sections    = $sections;
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
         return new self(
-            id:          $data['id'],
-            name:        $data['name'],
-            description: $data['description'] ?? '',
-            roles:       $data['roles']       ?? [],
-            sections:    $data['sections']    ?? [],
+            $data['id'],
+            $data['name'],
+            $data['description'] ?? '',
+            $data['roles']       ?? [],
+            $data['sections']    ?? []
         );
     }
 }

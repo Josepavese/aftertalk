@@ -21,20 +21,18 @@ use Psr\Http\Message\StreamFactoryInterface;
  * Usage:
  * ```php
  * $client = new AftertalkClient(
- *     baseUrl:       'https://aftertalk.yourserver.com',
- *     apiKey:        $_ENV['AFTERTALK_API_KEY'],
- *     webhookSecret: $_ENV['AFTERTALK_WEBHOOK_SECRET'],
+ *     'https://aftertalk.yourserver.com',
+ *     $_ENV['AFTERTALK_API_KEY'],
+ *     $_ENV['AFTERTALK_WEBHOOK_SECRET'],
  * );
  *
  * $session = $client->sessions->create(
- *     templateId:       'therapy',
- *     participantCount: 2,
- *     participants:     [
+ *     'therapy',
+ *     2,
+ *     [
  *         ['user_id' => 'doc_456', 'role' => 'terapeuta'],
  *         ['user_id' => 'pat_789', 'role' => 'paziente'],
  *     ],
- *     sttProfile: 'cloud',
- *     llmProfile: 'cloud',
  * );
  * ```
  *
@@ -43,21 +41,53 @@ use Psr\Http\Message\StreamFactoryInterface;
  * To inject a specific client (e.g. Guzzle, Symfony):
  * ```php
  * $client = new AftertalkClient(
- *     ...,
- *     httpClient:     new \GuzzleHttp\Client(),
- *     requestFactory: new \GuzzleHttp\Psr7\HttpFactory(),
- *     streamFactory:  new \GuzzleHttp\Psr7\HttpFactory(),
+ *     '...',
+ *     '...',
+ *     null,
+ *     30,
+ *     new \GuzzleHttp\Client(),
+ *     new \GuzzleHttp\Psr7\HttpFactory(),
+ *     new \GuzzleHttp\Psr7\HttpFactory(),
  * );
  * ```
  */
 class AftertalkClient
 {
-    public readonly SessionsApi      $sessions;
-    public readonly MinutesApi       $minutes;
-    public readonly TranscriptionsApi $transcriptions;
-    public readonly ConfigApi        $config;
-    public readonly RoomsApi         $rooms;
-    public readonly ?WebhookHandler  $webhook;
+    /**
+     * @readonly
+     * @var SessionsApi
+     */
+    public SessionsApi $sessions;
+
+    /**
+     * @readonly
+     * @var MinutesApi
+     */
+    public MinutesApi $minutes;
+
+    /**
+     * @readonly
+     * @var TranscriptionsApi
+     */
+    public TranscriptionsApi $transcriptions;
+
+    /**
+     * @readonly
+     * @var ConfigApi
+     */
+    public ConfigApi $config;
+
+    /**
+     * @readonly
+     * @var RoomsApi
+     */
+    public RoomsApi $rooms;
+
+    /**
+     * @readonly
+     * @var WebhookHandler|null
+     */
+    public ?WebhookHandler $webhook;
 
     public function __construct(
         string                   $baseUrl,
@@ -66,13 +96,13 @@ class AftertalkClient
         int                      $timeout        = 30,
         ?ClientInterface         $httpClient     = null,
         ?RequestFactoryInterface $requestFactory = null,
-        ?StreamFactoryInterface  $streamFactory  = null,
+        ?StreamFactoryInterface  $streamFactory  = null
     ) {
         $cfg = new Config(
-            baseUrl:       $baseUrl,
-            apiKey:        $apiKey,
-            webhookSecret: $webhookSecret,
-            timeout:       $timeout,
+            $baseUrl,
+            $apiKey,
+            $webhookSecret,
+            $timeout
         );
 
         [$httpClient, $requestFactory, $streamFactory] =
@@ -93,7 +123,7 @@ class AftertalkClient
     private function resolveHttpDeps(
         ?ClientInterface         $httpClient,
         ?RequestFactoryInterface $requestFactory,
-        ?StreamFactoryInterface  $streamFactory,
+        ?StreamFactoryInterface  $streamFactory
     ): array {
         $injected = array_filter([$httpClient, $requestFactory, $streamFactory], fn($v) => $v !== null);
         $count = count($injected);

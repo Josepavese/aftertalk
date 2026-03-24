@@ -10,7 +10,16 @@ use Aftertalk\Http\HttpClient;
 
 class ConfigApi
 {
-    public function __construct(private readonly HttpClient $http) {}
+    /**
+     * @readonly
+     * @var HttpClient
+     */
+    private HttpClient $http;
+
+    public function __construct(HttpClient $http)
+    {
+        $this->http = $http;
+    }
 
     /**
      * Returns server configuration: available templates, STT and LLM profiles,

@@ -97,3 +97,5 @@
 - **[13-php-sdk.md](13-php-sdk.md)** — PHP SDK `aftertalk/aftertalk-php` per integratori backend; affianca `@aftertalk/sdk` JS/TS; copre creazione sessioni, token, fine sessione, verifica webhook HMAC
 
 - **[14-integration-guide-mondopsicologi.md](14-integration-guide-mondopsicologi.md)** — guida all'integrazione per piattaforme telemedicina con backend PHP e WebRTC custom; pattern: chi crea la sessione, race condition, assegnazione ruoli, metadata, webhook; dipende da #11 e #13
+
+- **[29-ci-release-hardening-followups.md](29-ci-release-hardening-followups.md)** — incidenti emersi nel ciclo CI/release pubblico: root cause, workaround applicati e backlog hardening (auth header contract, metrics contract, coverage script, Node24 actions)

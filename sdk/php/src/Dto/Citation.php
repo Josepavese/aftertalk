@@ -6,19 +6,38 @@ namespace Aftertalk\Dto;
 
 class Citation
 {
-    public function __construct(
-        public readonly string $text,
-        public readonly string $role,
-        public readonly int    $timestampMs,
-    ) {}
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $text;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $role;
+
+    /**
+     * @readonly
+     * @var int
+     */
+    public int $timestampMs;
+
+    public function __construct(string $text, string $role, int $timestampMs)
+    {
+        $this->text        = $text;
+        $this->role        = $role;
+        $this->timestampMs = $timestampMs;
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
         return new self(
-            text:        $data['text'],
-            role:        $data['role'],
-            timestampMs: $data['timestamp_ms'],
+            $data['text'],
+            $data['role'],
+            $data['timestamp_ms']
         );
     }
 }

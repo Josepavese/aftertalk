@@ -7,20 +7,39 @@ namespace Aftertalk\Dto;
 class RtcConfig
 {
     /**
+     * @readonly
+     * @var list<array{urls: list<string>, username?: string, credential?: string}>
+     */
+    public array $iceServers;
+
+    /**
+     * @readonly
+     * @var int
+     */
+    public int $ttl;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $provider;
+
+    /**
      * @param list<array{urls: list<string>, username?: string, credential?: string}> $iceServers
      */
-    public function __construct(
-        public readonly array  $iceServers,
-        public readonly int    $ttl      = 86400,
-        public readonly string $provider = '',
-    ) {}
+    public function __construct(array $iceServers, int $ttl = 86400, string $provider = '')
+    {
+        $this->iceServers = $iceServers;
+        $this->ttl        = $ttl;
+        $this->provider   = $provider;
+    }
 
     public static function fromArray(array $data): self
     {
         return new self(
-            iceServers: $data['ice_servers'] ?? [],
-            ttl:        $data['ttl']         ?? 86400,
-            provider:   $data['provider']    ?? '',
+            $data['ice_servers'] ?? [],
+            $data['ttl']         ?? 86400,
+            $data['provider']    ?? ''
         );
     }
 }

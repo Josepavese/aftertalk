@@ -19,12 +19,41 @@ use Psr\Http\Message\StreamFactoryInterface;
  */
 class HttpClient
 {
+    /**
+     * @readonly
+     * @var Config
+     */
+    private Config $config;
+
+    /**
+     * @readonly
+     * @var ClientInterface
+     */
+    private ClientInterface $client;
+
+    /**
+     * @readonly
+     * @var RequestFactoryInterface
+     */
+    private RequestFactoryInterface $requestFactory;
+
+    /**
+     * @readonly
+     * @var StreamFactoryInterface
+     */
+    private StreamFactoryInterface $streamFactory;
+
     public function __construct(
-        private readonly Config $config,
-        private readonly ClientInterface $client,
-        private readonly RequestFactoryInterface $requestFactory,
-        private readonly StreamFactoryInterface $streamFactory,
-    ) {}
+        Config                  $config,
+        ClientInterface         $client,
+        RequestFactoryInterface $requestFactory,
+        StreamFactoryInterface  $streamFactory
+    ) {
+        $this->config         = $config;
+        $this->client         = $client;
+        $this->requestFactory = $requestFactory;
+        $this->streamFactory  = $streamFactory;
+    }
 
     /**
      * @param array<string, scalar|null> $query  Null values are filtered out automatically.
@@ -119,10 +148,12 @@ class HttpClient
 
         $message = $data['error'] ?? $data['message'] ?? "HTTP $status";
 
-        match (true) {
-            $status === 401 || $status === 403 => throw new AuthException($message, $status, $data),
-            $status === 404                    => throw new NotFoundException($message, $status, $data),
-            default                            => throw new AftertalkException($message, $status, $data),
-        };
+        if ($status === 401 || $status === 403) {
+            throw new AuthException($message, $status, $data);
+        } elseif ($status === 404) {
+            throw new NotFoundException($message, $status, $data);
+        } else {
+            throw new AftertalkException($message, $status, $data);
+        }
     }
 }
