@@ -6,39 +6,117 @@ namespace Aftertalk\Dto;
 
 class Session
 {
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $id;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $status;
+
+    /**
+     * @readonly
+     * @var int
+     */
+    public int $participantCount;
+
+    /**
+     * @readonly
+     * @var Participant[]
+     */
+    public array $participants;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $createdAt;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $updatedAt;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $templateId;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $endedAt;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $metadata;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $sttProfile;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $llmProfile;
+
     /** @param Participant[] $participants */
     public function __construct(
-        public readonly string  $id,
-        public readonly string  $status,
-        public readonly int     $participantCount,
-        public readonly array   $participants,
-        public readonly string  $createdAt,
-        public readonly string  $updatedAt,
-        public readonly ?string $templateId  = null,
-        public readonly ?string $endedAt     = null,
-        public readonly ?string $metadata    = null,
-        public readonly ?string $sttProfile  = null,
-        public readonly ?string $llmProfile  = null,
-    ) {}
+        string  $id,
+        string  $status,
+        int     $participantCount,
+        array   $participants,
+        string  $createdAt,
+        string  $updatedAt,
+        ?string $templateId  = null,
+        ?string $endedAt     = null,
+        ?string $metadata    = null,
+        ?string $sttProfile  = null,
+        ?string $llmProfile  = null
+    ) {
+        $this->id               = $id;
+        $this->status           = $status;
+        $this->participantCount = $participantCount;
+        $this->participants     = $participants;
+        $this->createdAt        = $createdAt;
+        $this->updatedAt        = $updatedAt;
+        $this->templateId       = $templateId;
+        $this->endedAt          = $endedAt;
+        $this->metadata         = $metadata;
+        $this->sttProfile       = $sttProfile;
+        $this->llmProfile       = $llmProfile;
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
         return new self(
-            id:               $data['session_id'],
-            status:           $data['status'],
-            participantCount: $data['participant_count'] ?? 0,
-            participants:     array_map(
+            $data['session_id'],
+            $data['status'],
+            $data['participant_count'] ?? 0,
+            array_map(
                 fn(array $p) => Participant::fromArray($p),
-                $data['participants'] ?? [],
+                $data['participants'] ?? []
             ),
-            createdAt:        $data['created_at'],
-            updatedAt:        $data['updated_at'] ?? $data['created_at'],
-            templateId:       $data['template_id']  ?? null,
-            endedAt:          $data['ended_at']     ?? null,
-            metadata:         $data['metadata']     ?? null,
-            sttProfile:       $data['stt_profile']  ?? null,
-            llmProfile:       $data['llm_profile']  ?? null,
+            $data['created_at'],
+            $data['updated_at'] ?? $data['created_at'],
+            $data['template_id']  ?? null,
+            $data['ended_at']     ?? null,
+            $data['metadata']     ?? null,
+            $data['stt_profile']  ?? null,
+            $data['llm_profile']  ?? null
         );
     }
 }

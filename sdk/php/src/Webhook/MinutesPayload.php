@@ -14,28 +14,64 @@ use Aftertalk\Dto\ParticipantSummary;
 class MinutesPayload
 {
     /**
+     * @readonly
+     * @var string
+     */
+    public string $sessionId;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $timestamp;
+
+    /**
+     * @readonly
+     * @var Minutes
+     */
+    public Minutes $minutes;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $sessionMetadata;
+
+    /**
+     * @readonly
+     * @var ParticipantSummary[]
+     */
+    public array $participants;
+
+    /**
      * @param ParticipantSummary[] $participants
      */
     public function __construct(
-        public readonly string   $sessionId,
-        public readonly string   $timestamp,
-        public readonly Minutes  $minutes,
-        public readonly ?string  $sessionMetadata = null,
-        public readonly array    $participants    = [],
-    ) {}
+        string  $sessionId,
+        string  $timestamp,
+        Minutes $minutes,
+        ?string $sessionMetadata = null,
+        array   $participants    = []
+    ) {
+        $this->sessionId       = $sessionId;
+        $this->timestamp       = $timestamp;
+        $this->minutes         = $minutes;
+        $this->sessionMetadata = $sessionMetadata;
+        $this->participants    = $participants;
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
         return new self(
-            sessionId:       $data['session_id'],
-            timestamp:       $data['timestamp'],
-            minutes:         Minutes::fromArray($data['minutes']),
-            sessionMetadata: $data['session_metadata'] ?? null,
-            participants:    array_map(
+            $data['session_id'],
+            $data['timestamp'],
+            Minutes::fromArray($data['minutes']),
+            $data['session_metadata'] ?? null,
+            array_map(
                 fn(array $p) => ParticipantSummary::fromArray($p),
-                $data['participants'] ?? [],
-            ),
+                $data['participants'] ?? []
+            )
         );
     }
 
@@ -51,7 +87,7 @@ class MinutesPayload
         }
         try {
             return json_decode($this->sessionMetadata, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
+        } catch (\JsonException $e) {
             return null;
         }
     }

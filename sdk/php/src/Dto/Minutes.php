@@ -7,37 +7,101 @@ namespace Aftertalk\Dto;
 class Minutes
 {
     /**
-     * @param array<string, mixed>  $sections  Keyed by section key (e.g. "themes", "next_steps")
-     * @param Citation[]            $citations
+     * @readonly
+     * @var string
+     */
+    public string $id;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $sessionId;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $status;
+
+    /**
+     * @readonly
+     * @var array<string, mixed>  Keyed by section key (e.g. "themes", "next_steps")
+     */
+    public array $sections;
+
+    /**
+     * @readonly
+     * @var Citation[]
+     */
+    public array $citations;
+
+    /**
+     * @readonly
+     * @var int
+     */
+    public int $version;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $generatedAt;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $templateId;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $provider;
+
+    /**
+     * @param array<string, mixed> $sections  Keyed by section key (e.g. "themes", "next_steps")
+     * @param Citation[]           $citations
      */
     public function __construct(
-        public readonly string  $id,
-        public readonly string  $sessionId,
-        public readonly string  $status,
-        public readonly array   $sections,
-        public readonly array   $citations,
-        public readonly int     $version,
-        public readonly string  $generatedAt,
-        public readonly ?string $templateId  = null,
-        public readonly ?string $provider    = null,
-    ) {}
+        string  $id,
+        string  $sessionId,
+        string  $status,
+        array   $sections,
+        array   $citations,
+        int     $version,
+        string  $generatedAt,
+        ?string $templateId  = null,
+        ?string $provider    = null
+    ) {
+        $this->id          = $id;
+        $this->sessionId   = $sessionId;
+        $this->status      = $status;
+        $this->sections    = $sections;
+        $this->citations   = $citations;
+        $this->version     = $version;
+        $this->generatedAt = $generatedAt;
+        $this->templateId  = $templateId;
+        $this->provider    = $provider;
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
         return new self(
-            id:          $data['id'],
-            sessionId:   $data['session_id'],
-            status:      $data['status'],
-            sections:    $data['sections']    ?? [],
-            citations:   array_map(
+            $data['id'],
+            $data['session_id'],
+            $data['status'],
+            $data['sections']    ?? [],
+            array_map(
                 fn(array $c) => Citation::fromArray($c),
-                $data['citations'] ?? [],
+                $data['citations'] ?? []
             ),
-            version:     $data['version']     ?? 1,
-            generatedAt: $data['generated_at'] ?? $data['created_at'] ?? '',
-            templateId:  $data['template_id'] ?? null,
-            provider:    $data['provider']    ?? null,
+            $data['version']     ?? 1,
+            $data['generated_at'] ?? $data['created_at'] ?? '',
+            $data['template_id'] ?? null,
+            $data['provider']    ?? null
         );
     }
 }

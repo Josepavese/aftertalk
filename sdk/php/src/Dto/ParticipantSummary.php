@@ -7,17 +7,30 @@ namespace Aftertalk\Dto;
 /** Compact participant record included in webhook payloads. */
 class ParticipantSummary
 {
-    public function __construct(
-        public readonly string $userId,
-        public readonly string $role,
-    ) {}
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $userId;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $role;
+
+    public function __construct(string $userId, string $role)
+    {
+        $this->userId = $userId;
+        $this->role   = $role;
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
         return new self(
-            userId: $data['user_id'],
-            role:   $data['role'],
+            $data['user_id'],
+            $data['role']
         );
     }
 }

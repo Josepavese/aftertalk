@@ -6,12 +6,26 @@ namespace Aftertalk\Exception;
 
 class AftertalkException extends \RuntimeException
 {
+    /**
+     * @readonly
+     * @var int
+     */
+    private int $statusCode;
+
+    /**
+     * @readonly
+     * @var array<mixed>|null
+     */
+    private ?array $body;
+
     public function __construct(
-        string $message,
-        private readonly int $statusCode = 0,
-        private readonly ?array $body = null,
-        ?\Throwable $previous = null,
+        string     $message,
+        int        $statusCode = 0,
+        ?array     $body       = null,
+        ?\Throwable $previous  = null
     ) {
+        $this->statusCode = $statusCode;
+        $this->body       = $body;
         parent::__construct($message, $statusCode, $previous);
     }
 

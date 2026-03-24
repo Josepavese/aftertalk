@@ -7,29 +7,72 @@ namespace Aftertalk\Dto;
 class ServerConfig
 {
     /**
+     * @readonly
+     * @var Template[]
+     */
+    public array $templates;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $defaultTemplateId;
+
+    /**
+     * @readonly
+     * @var string[]
+     */
+    public array $sttProfiles;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $sttDefaultProfile;
+
+    /**
+     * @readonly
+     * @var string[]
+     */
+    public array $llmProfiles;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $llmDefaultProfile;
+
+    /**
      * @param Template[] $templates
      * @param string[]   $sttProfiles
      * @param string[]   $llmProfiles
      */
     public function __construct(
-        public readonly array   $templates,
-        public readonly string  $defaultTemplateId,
-        public readonly array   $sttProfiles       = [],
-        public readonly ?string $sttDefaultProfile = null,
-        public readonly array   $llmProfiles       = [],
-        public readonly ?string $llmDefaultProfile = null,
-    ) {}
+        array   $templates,
+        string  $defaultTemplateId,
+        array   $sttProfiles       = [],
+        ?string $sttDefaultProfile = null,
+        array   $llmProfiles       = [],
+        ?string $llmDefaultProfile = null
+    ) {
+        $this->templates          = $templates;
+        $this->defaultTemplateId  = $defaultTemplateId;
+        $this->sttProfiles        = $sttProfiles;
+        $this->sttDefaultProfile  = $sttDefaultProfile;
+        $this->llmProfiles        = $llmProfiles;
+        $this->llmDefaultProfile  = $llmDefaultProfile;
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
         return new self(
-            templates:          array_map(fn(array $t) => Template::fromArray($t), $data['templates'] ?? []),
-            defaultTemplateId:  $data['default_template_id'] ?? '',
-            sttProfiles:        $data['stt_profiles']        ?? [],
-            sttDefaultProfile:  $data['default_stt_profile'] ?? null,
-            llmProfiles:        $data['llm_profiles']        ?? [],
-            llmDefaultProfile:  $data['default_llm_profile'] ?? null,
+            array_map(fn(array $t) => Template::fromArray($t), $data['templates'] ?? []),
+            $data['default_template_id'] ?? '',
+            $data['stt_profiles']        ?? [],
+            $data['default_stt_profile'] ?? null,
+            $data['llm_profiles']        ?? [],
+            $data['default_llm_profile'] ?? null
         );
     }
 }

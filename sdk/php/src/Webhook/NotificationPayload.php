@@ -13,30 +13,73 @@ use Aftertalk\Dto\ParticipantSummary;
 class NotificationPayload
 {
     /**
+     * @readonly
+     * @var string
+     */
+    public string $sessionId;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $timestamp;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $retrieveUrl;
+
+    /**
+     * @readonly
+     * @var string
+     */
+    public string $expiresAt;
+
+    /**
+     * @readonly
+     * @var string|null
+     */
+    public ?string $sessionMetadata;
+
+    /**
+     * @readonly
+     * @var ParticipantSummary[]
+     */
+    public array $participants;
+
+    /**
      * @param ParticipantSummary[] $participants
      */
     public function __construct(
-        public readonly string  $sessionId,
-        public readonly string  $timestamp,
-        public readonly string  $retrieveUrl,
-        public readonly string  $expiresAt,
-        public readonly ?string $sessionMetadata = null,
-        public readonly array   $participants    = [],
-    ) {}
+        string  $sessionId,
+        string  $timestamp,
+        string  $retrieveUrl,
+        string  $expiresAt,
+        ?string $sessionMetadata = null,
+        array   $participants    = []
+    ) {
+        $this->sessionId       = $sessionId;
+        $this->timestamp       = $timestamp;
+        $this->retrieveUrl     = $retrieveUrl;
+        $this->expiresAt       = $expiresAt;
+        $this->sessionMetadata = $sessionMetadata;
+        $this->participants    = $participants;
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
         return new self(
-            sessionId:       $data['session_id'],
-            timestamp:       $data['timestamp'],
-            retrieveUrl:     $data['retrieve_url'],
-            expiresAt:       $data['expires_at'],
-            sessionMetadata: $data['session_metadata'] ?? null,
-            participants:    array_map(
+            $data['session_id'],
+            $data['timestamp'],
+            $data['retrieve_url'],
+            $data['expires_at'],
+            $data['session_metadata'] ?? null,
+            array_map(
                 fn(array $p) => ParticipantSummary::fromArray($p),
-                $data['participants'] ?? [],
-            ),
+                $data['participants'] ?? []
+            )
         );
     }
 
@@ -52,7 +95,7 @@ class NotificationPayload
         }
         try {
             return json_decode($this->sessionMetadata, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
+        } catch (\JsonException $e) {
             return null;
         }
     }

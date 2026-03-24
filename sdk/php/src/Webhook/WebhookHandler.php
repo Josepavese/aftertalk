@@ -15,13 +15,20 @@ use Aftertalk\Exception\WebhookSignatureException;
  */
 class WebhookHandler
 {
-    public function __construct(private readonly string $secret)
+    /**
+     * @readonly
+     * @var string
+     */
+    private string $secret;
+
+    public function __construct(string $secret)
     {
         if ($secret === '') {
             throw new \LogicException(
                 'WebhookHandler requires a non-empty secret. Set webhookSecret in AftertalkClient constructor.'
             );
         }
+        $this->secret = $secret;
     }
 
     /**
@@ -49,7 +56,7 @@ class WebhookHandler
         try {
             $this->verify($body, $signatureHeader);
             return true;
-        } catch (WebhookSignatureException) {
+        } catch (WebhookSignatureException $e) {
             return false;
         }
     }
@@ -63,9 +70,10 @@ class WebhookHandler
      *
      * Call `verify()` or `verifySignature()` before parsing.
      *
+     * @return MinutesPayload|NotificationPayload
      * @throws \InvalidArgumentException for unknown payload shapes
      */
-    public function parsePayload(string $body): MinutesPayload|NotificationPayload
+    public function parsePayload(string $body)
     {
         $data = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
 

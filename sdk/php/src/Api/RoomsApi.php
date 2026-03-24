@@ -8,7 +8,16 @@ use Aftertalk\Http\HttpClient;
 
 class RoomsApi
 {
-    public function __construct(private readonly HttpClient $http) {}
+    /**
+     * @readonly
+     * @var HttpClient
+     */
+    private HttpClient $http;
+
+    public function __construct(HttpClient $http)
+    {
+        $this->http = $http;
+    }
 
     /**
      * Join or create a room session by code.
@@ -25,7 +34,7 @@ class RoomsApi
         string  $role,
         ?string $templateId = null,
         ?string $sttProfile = null,
-        ?string $llmProfile = null,
+        ?string $llmProfile = null
     ): array {
         $data = $this->http->post('/v1/rooms/join', array_filter([
             'code'        => $code,

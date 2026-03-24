@@ -9,7 +9,16 @@ use Aftertalk\Http\HttpClient;
 
 class MinutesApi
 {
-    public function __construct(private readonly HttpClient $http) {}
+    /**
+     * @readonly
+     * @var HttpClient
+     */
+    private HttpClient $http;
+
+    public function __construct(HttpClient $http)
+    {
+        $this->http = $http;
+    }
 
     /** Get the minutes for a session. */
     public function getBySession(string $sessionId): Minutes
@@ -34,7 +43,7 @@ class MinutesApi
         string  $minutesId,
         array   $sections,
         ?string $notes  = null,
-        ?string $userId = null,
+        ?string $userId = null
     ): Minutes {
         $body = array_filter([
             'sections' => $sections,

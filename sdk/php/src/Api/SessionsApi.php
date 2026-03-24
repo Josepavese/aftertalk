@@ -9,7 +9,16 @@ use Aftertalk\Http\HttpClient;
 
 class SessionsApi
 {
-    public function __construct(private readonly HttpClient $http) {}
+    /**
+     * @readonly
+     * @var HttpClient
+     */
+    private HttpClient $http;
+
+    public function __construct(HttpClient $http)
+    {
+        $this->http = $http;
+    }
 
     /**
      * Create a new session.
@@ -30,7 +39,7 @@ class SessionsApi
         array   $participants,
         ?string $metadata   = null,
         ?string $sttProfile = null,
-        ?string $llmProfile = null,
+        ?string $llmProfile = null
     ): Session {
         $body = array_filter([
             'template_id'       => $templateId,
@@ -60,7 +69,7 @@ class SessionsApi
     public function list(
         ?string $status = null,
         ?int    $limit  = null,
-        ?int    $offset = null,
+        ?int    $offset = null
     ): array {
         $data = $this->http->get('/v1/sessions', [
             'status' => $status,

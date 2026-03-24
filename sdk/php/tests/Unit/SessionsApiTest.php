@@ -74,14 +74,15 @@ class SessionsApiTest extends TestCase
         $api     = new SessionsApi($http);
 
         $session = $api->create(
-            templateId:       'therapy',
-            participantCount: 2,
-            participants:     [
+            'therapy',
+            2,
+            [
                 ['user_id' => 'doc', 'role' => 'terapeuta'],
                 ['user_id' => 'pat', 'role' => 'paziente'],
             ],
-            sttProfile: 'cloud',
-            llmProfile: 'local',
+            null,
+            'cloud',
+            'local'
         );
 
         $this->assertInstanceOf(Session::class, $session);
