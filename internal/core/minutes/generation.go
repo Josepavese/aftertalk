@@ -3,15 +3,12 @@ package minutes
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/config"
 )
-
-var transcriptEntryPattern = regexp.MustCompile(`^\[(\d+)ms ([^\]]+)\]:\s*(.*)$`)
 
 type transcriptEntry struct {
 	Raw string
