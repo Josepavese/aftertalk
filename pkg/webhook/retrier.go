@@ -2,9 +2,12 @@ package webhook
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/logging"
@@ -56,15 +59,57 @@ func (r *Retrier) enqueue(ctx context.Context, minutesID, webhookURL, payloadTyp
 	}
 
 	id := uuid.New().String()
+	payloadHash := computePayloadHash(minutesID, webhookURL, payloadType, payloadBytes)
 	now := time.Now().UTC()
-	_, err = r.db.ExecContext(ctx, `
-		INSERT OR IGNORE INTO webhook_events
-			(id, minutes_id, webhook_url, payload, payload_type, attempt_number, status, next_retry_at, created_at)
-		VALUES (?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
-		id, minutesID, webhookURL, string(payloadBytes), payloadType,
+	res, err := r.db.ExecContext(ctx, `
+		INSERT INTO webhook_events
+			(id, minutes_id, webhook_url, payload_hash, payload, payload_type, attempt_number, status, next_retry_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?)
+		ON CONFLICT(payload_hash) DO NOTHING`,
+		id, minutesID, webhookURL, payloadHash, string(payloadBytes), payloadType,
 		now.Format(time.RFC3339), now.Format(time.RFC3339),
 	)
-	return err
+	if err != nil && isLegacyWebhookEventsSchemaError(err) {
+		// Backward compatibility for test/legacy schemas without payload_hash.
+		_, err = r.db.ExecContext(ctx, `
+			INSERT INTO webhook_events
+				(id, minutes_id, webhook_url, payload, payload_type, attempt_number, status, next_retry_at, created_at)
+			VALUES (?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
+			id, minutesID, webhookURL, string(payloadBytes), payloadType,
+			now.Format(time.RFC3339), now.Format(time.RFC3339),
+		)
+	}
+	if err != nil {
+		return err
+	}
+	if res != nil {
+		if rows, rowsErr := res.RowsAffected(); rowsErr == nil && rows == 0 {
+			logging.Infof("webhook retrier: duplicate enqueue skipped for minutes=%s hash=%s", minutesID, payloadHash)
+		}
+	}
+	return nil
+}
+
+func computePayloadHash(minutesID, webhookURL, payloadType string, payload []byte) string {
+	h := sha256.New()
+	h.Write([]byte(minutesID))
+	h.Write([]byte{0})
+	h.Write([]byte(webhookURL))
+	h.Write([]byte{0})
+	h.Write([]byte(payloadType))
+	h.Write([]byte{0})
+	h.Write(payload)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func isLegacyWebhookEventsSchemaError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no column named payload_hash") ||
+		strings.Contains(msg, "no such column: payload_hash") ||
+		strings.Contains(msg, "on conflict clause does not match any primary key or unique constraint")
 }
 
 // Run starts the background delivery loop. It blocks until ctx is cancelled.

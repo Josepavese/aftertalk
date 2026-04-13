@@ -1,26 +1,26 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-log() { echo "[$(date '+%H:%M:%S')] $*"; }
-
-build_all() {
-    log "Building SDK..."
-    cd sdk && npm run build && cd ..
-    log "Building Test Platform..."
-    cd test-platform && npm run build && cd ..
-    log "Building Go..."
-    go build -o bin/aftertalk ./cmd/aftertalk
-    log "ALL BUILDS OK"
+log() {
+  echo "[$(date '+%H:%M:%S')] $*"
 }
 
-git_push() {
-    local changes=$(git status --porcelain)
-    [ -z "$changes" ] && return
-    git add -A
-    git commit -m "Auto: $(date '+%Y-%m-%d %H:%M')" || true
-    git push origin master
-}
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 
-build_all
-git_push
-log "DONE"
+log "Building TypeScript SDK"
+(cd sdk/ts && npm run build)
+
+log "Building test UI"
+(cd cmd/test-ui && npm run build)
+
+log "Building Go server"
+go build -o bin/aftertalk ./cmd/aftertalk
+
+log "Build completed"
+
+if [[ "${AFTERTALK_DEV_AUTO_COMMIT:-0}" == "1" ]]; then
+  log "AFTERTALK_DEV_AUTO_COMMIT=1 -> creating local checkpoint commit"
+  git add -A
+  git commit -m "chore(dev): local checkpoint" || true
+fi

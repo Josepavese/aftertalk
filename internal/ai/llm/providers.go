@@ -23,6 +23,7 @@ type OpenAIProvider struct {
 	apiKey  string
 	model   string
 	baseURL string
+	timeout time.Duration
 }
 
 func NewOpenAIProvider(apiKey, model string) *OpenAIProvider {
@@ -30,6 +31,7 @@ func NewOpenAIProvider(apiKey, model string) *OpenAIProvider {
 		apiKey:  apiKey,
 		model:   model,
 		baseURL: "https://api.openai.com",
+		timeout: 120 * time.Second,
 	}
 }
 
@@ -63,7 +65,11 @@ func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, e
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	timeout := p.timeout
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
@@ -110,6 +116,7 @@ type AnthropicProvider struct {
 	apiKey  string
 	model   string
 	baseURL string
+	timeout time.Duration
 }
 
 func NewAnthropicProvider(apiKey, model string) *AnthropicProvider {
@@ -117,6 +124,7 @@ func NewAnthropicProvider(apiKey, model string) *AnthropicProvider {
 		apiKey:  apiKey,
 		model:   model,
 		baseURL: "https://api.anthropic.com",
+		timeout: 120 * time.Second,
 	}
 }
 
@@ -150,7 +158,11 @@ func (p *AnthropicProvider) Generate(ctx context.Context, prompt string) (string
 	req.Header.Set("X-Api-Key", p.apiKey)
 	req.Header.Set("Anthropic-Version", "2023-06-01")
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	timeout := p.timeout
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
@@ -195,6 +207,7 @@ type AzureOpenAIProvider struct {
 	apiKey     string
 	endpoint   string
 	deployment string
+	timeout    time.Duration
 }
 
 func NewAzureOpenAIProvider(apiKey, endpoint, deployment string) *AzureOpenAIProvider {
@@ -202,6 +215,7 @@ func NewAzureOpenAIProvider(apiKey, endpoint, deployment string) *AzureOpenAIPro
 		apiKey:     apiKey,
 		endpoint:   endpoint,
 		deployment: deployment,
+		timeout:    120 * time.Second,
 	}
 }
 
@@ -229,7 +243,11 @@ func (p *AzureOpenAIProvider) Generate(ctx context.Context, prompt string) (stri
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Api-Key", p.apiKey)
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	timeout := p.timeout
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
@@ -273,7 +291,6 @@ func (p *AzureOpenAIProvider) IsAvailable() bool {
 }
 
 // NewProvider selects and returns the LLM provider based on cfg.
-// Returns an error if provider is not set or unrecognised — no stub fallback.
 func NewProvider(cfg *LLMConfig) (LLMProvider, error) {
 	switch cfg.Provider {
 	case "openai":
@@ -281,15 +298,28 @@ func NewProvider(cfg *LLMConfig) (LLMProvider, error) {
 		if cfg.OpenAI.BaseURL != "" {
 			p.WithBaseURL(cfg.OpenAI.BaseURL)
 		}
+		if cfg.OpenAI.RequestTimeout > 0 {
+			p.timeout = cfg.OpenAI.RequestTimeout
+		}
 		return p, nil
 	case "anthropic":
-		return NewAnthropicProvider(cfg.Anthropic.APIKey, cfg.Anthropic.Model), nil
+		p := NewAnthropicProvider(cfg.Anthropic.APIKey, cfg.Anthropic.Model)
+		if cfg.Anthropic.RequestTimeout > 0 {
+			p.timeout = cfg.Anthropic.RequestTimeout
+		}
+		return p, nil
 	case "azure":
-		return NewAzureOpenAIProvider(cfg.Azure.APIKey, cfg.Azure.Endpoint, cfg.Azure.Deployment), nil
+		p := NewAzureOpenAIProvider(cfg.Azure.APIKey, cfg.Azure.Endpoint, cfg.Azure.Deployment)
+		if cfg.Azure.RequestTimeout > 0 {
+			p.timeout = cfg.Azure.RequestTimeout
+		}
+		return p, nil
 	case "ollama":
 		return NewOllamaProvider(cfg.Ollama)
+	case "stub":
+		return NewStubProvider(), nil
 	case "":
-		return nil, errors.New("llm.provider is required — supported: openai, anthropic, azure, ollama") //nolint:err113
+		return nil, errors.New("llm.provider is required — supported: openai, anthropic, azure, ollama, stub") //nolint:err113
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %s", cfg.Provider) //nolint:err113
 	}

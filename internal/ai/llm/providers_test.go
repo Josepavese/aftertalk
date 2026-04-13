@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
+	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
@@ -272,6 +273,23 @@ func TestOpenAIProvider_Generate_JSONObjectResponse(t *testing.T) {
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(result), &parsed); err != nil {
 		t.Errorf("Response is not valid JSON: %v", err)
+	}
+}
+
+func TestStubProvider_Generate(t *testing.T) {
+	provider := llm.NewStubProvider()
+	result, err := provider.Generate(context.Background(), llm.GenerateMinutesPrompt("[0ms therapist]: Buongiorno", config.TemplateConfig{
+		ID:   "therapy",
+		Name: "Seduta",
+		Sections: []config.SectionConfig{
+			{Key: "themes", Description: "Themes", Type: "string_list"},
+		},
+	}, "it"))
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if !strings.Contains(result, `"summary"`) {
+		t.Fatalf("expected stub response to contain summary, got %s", result)
 	}
 }
 

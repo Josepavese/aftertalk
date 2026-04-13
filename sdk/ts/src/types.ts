@@ -101,6 +101,7 @@ export interface Minutes {
   sessionId: string;
   templateId: string;
   status: MinutesStatus;
+  summary: MinutesSummary;
   sections: Record<string, unknown>;
   citations: Citation[];
   provider: string;
@@ -112,10 +113,23 @@ export interface MinutesVersion {
   id: string;
   sessionId: string;
   version: number;
+  summary?: MinutesSummary;
   sections: Record<string, unknown>;
   citations: Citation[];
   updatedAt: string;
   updatedBy?: string;
+}
+
+export interface MinutesSummary {
+  overview: string;
+  phases: MinutesPhase[];
+}
+
+export interface MinutesPhase {
+  title: string;
+  summary: string;
+  startMs: number;
+  endMs: number;
 }
 
 export interface Citation {
@@ -125,8 +139,9 @@ export interface Citation {
 }
 
 export interface UpdateMinutesRequest {
+  summary?: MinutesSummary;
   sections?: Record<string, unknown>;
-  notes?: string;
+  citations?: Citation[];
 }
 
 // ─── Templates ───────────────────────────────────────────────────────────────

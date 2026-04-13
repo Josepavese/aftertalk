@@ -285,7 +285,7 @@ echo "Server IP: $SERVER_IP"
 echo "📋 Creating session..."
 SESSION_RESPONSE=$(curl -s -X POST http://$SERVER_IP:8080/v1/sessions \
     -H "Content-Type: application/json" \
-    -H "X-API-Key: $API_KEY" \
+    -H "Authorization: Bearer $API_KEY" \
     -d '{
         "participant_count": 2,
         "participants": [
@@ -331,7 +331,7 @@ sleep 300
 # Verify transcription
 echo "📝 Checking transcription..."
 TRANSCRIPTIONS=$(curl -s http://$SERVER_IP:8080/v1/transcriptions?session_id=$SESSION_ID \
-    -H "X-API-Key: $API_KEY")
+    -H "Authorization: Bearer $API_KEY")
 
 echo "Transcriptions: $(echo $TRANSCRIPTIONS | jq '. | length') segments"
 
@@ -339,14 +339,14 @@ echo "Transcriptions: $(echo $TRANSCRIPTIONS | jq '. | length') segments"
 echo "🤖 Generating minutes..."
 MINUTES_RESPONSE=$(curl -s -X PUT http://$SERVER_IP:8080/v1/minutes/$SESSION_ID \
     -H "Content-Type: application/json" \
-    -H "X-API-Key: $API_KEY")
+    -H "Authorization: Bearer $API_KEY")
 
 echo "Minutes generated: $(echo $MINUTES_RESPONSE | jq -r '.id')"
 
 # Verify minutes
 echo "📄 Verifying minutes..."
 MINUTES=$(curl -s http://$SERVER_IP:8080/v1/minutes/$SESSION_ID \
-    -H "X-API-Key: $API_KEY")
+    -H "Authorization: Bearer $API_KEY")
 
 echo "Minutes content preview:"
 echo $MINUTES | jq '.themes'

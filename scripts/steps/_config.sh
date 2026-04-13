@@ -37,17 +37,17 @@ cfg.setdefault('jwt', {})['secret'] = '$jwt_secret'
 mode = '${INSTALL_MODE:-local-ai}'
 if mode == 'local-ai':
     cfg.setdefault('stt', {})['provider'] = 'whisper-local'
-    cfg['stt'].setdefault('whisperlocal', {}).update({
-        'url':            'http://localhost:9001',
-        'model':          '${WHISPER_MODEL}',
-        'language':       '${WHISPER_LANGUAGE}',
-        'responseformat': 'verbose_json',
-        'endpoint':       '/inference',
+    cfg['stt'].setdefault('whisper_local', {}).update({
+        'url':             'http://localhost:9001',
+        'model':           '${WHISPER_MODEL}',
+        'language':        '${WHISPER_LANGUAGE}',
+        'response_format': 'verbose_json',
+        'endpoint':        '/inference',
     })
     cfg.setdefault('llm', {})['provider'] = 'ollama'
     cfg['llm'].setdefault('ollama', {}).update({
-        'baseurl': 'http://localhost:11434',
-        'model':   '${OLLAMA_MODEL}',
+        'base_url': 'http://localhost:11434',
+        'model':    '${OLLAMA_MODEL}',
     })
 elif mode == 'cloud':
     cfg.setdefault('stt', {})['provider'] = 'google'  # operator fills credentials
@@ -55,7 +55,7 @@ elif mode == 'cloud':
 else:  # offline / stub
     cfg.setdefault('stt', {})['provider'] = 'stub'
     cfg.setdefault('llm', {})['provider'] = 'stub'
-cfg.setdefault('webrtc', {}).setdefault('turn', {})['authsecret'] = '$turn_secret'
+cfg.setdefault('webrtc', {}).setdefault('turn', {})['auth_secret'] = '$turn_secret'
 
 with open("$config_file", 'w') as f:
     yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)

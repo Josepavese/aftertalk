@@ -30,4 +30,4 @@ cp .env.example .env && nano .env   # set JWT_SECRET, API_KEY, LLM_PROVIDER
 ./bin/aftertalk
 ```
 
-The demo UI is available at `http://localhost:8080` if `AFTERTALK_DEMO_ENABLED=true`.
+The embedded test UI is available at `http://localhost:8080/`.

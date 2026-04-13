@@ -108,6 +108,7 @@ interface Minutes {
     sessionId: string;
     templateId: string;
     status: MinutesStatus;
+    summary: MinutesSummary;
     sections: Record<string, unknown>;
     citations: Citation[];
     provider: string;
@@ -118,10 +119,21 @@ interface MinutesVersion {
     id: string;
     sessionId: string;
     version: number;
+    summary?: MinutesSummary;
     sections: Record<string, unknown>;
     citations: Citation[];
     updatedAt: string;
     updatedBy?: string;
+}
+interface MinutesSummary {
+    overview: string;
+    phases: MinutesPhase[];
+}
+interface MinutesPhase {
+    title: string;
+    summary: string;
+    startMs: number;
+    endMs: number;
 }
 interface Citation {
     text: string;
@@ -129,8 +141,9 @@ interface Citation {
     timestampMs: number;
 }
 interface UpdateMinutesRequest {
+    summary?: MinutesSummary;
     sections?: Record<string, unknown>;
-    notes?: string;
+    citations?: Citation[];
 }
 interface Template {
     id: string;

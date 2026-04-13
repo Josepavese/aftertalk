@@ -177,20 +177,23 @@ type OllamaLLMConfig struct {
 }
 
 type OpenAIConfig struct {
-	APIKey  string `koanf:"api_key"`
-	Model   string `koanf:"model"`
-	BaseURL string `koanf:"base_url"` // optional override, e.g. https://openrouter.ai/api
+	APIKey         string        `koanf:"api_key"`
+	Model          string        `koanf:"model"`
+	BaseURL        string        `koanf:"base_url"` // optional override, e.g. https://openrouter.ai/api
+	RequestTimeout time.Duration `koanf:"request_timeout"`
 }
 
 type AnthropicConfig struct {
-	APIKey string `koanf:"api_key"`
-	Model  string `koanf:"model"`
+	APIKey         string        `koanf:"api_key"`
+	Model          string        `koanf:"model"`
+	RequestTimeout time.Duration `koanf:"request_timeout"`
 }
 
 type AzureLLMConfig struct {
-	APIKey     string `koanf:"api_key"`
-	Endpoint   string `koanf:"endpoint"`
-	Deployment string `koanf:"deployment"`
+	APIKey         string        `koanf:"api_key"`
+	Endpoint       string        `koanf:"endpoint"`
+	Deployment     string        `koanf:"deployment"`
+	RequestTimeout time.Duration `koanf:"request_timeout"`
 }
 
 // WebhookConfig controls how generated minutes are delivered to the caller's system.
@@ -235,6 +238,11 @@ type ProcessingConfig struct {
 	LLMMaxBackoff                   time.Duration `koanf:"llm_max_backoff"`
 	TranscriptionQueueSize          int           `koanf:"transcription_queue_size"`
 	ChunkSizeMs                     int           `koanf:"chunk_size_ms"`
+	MinutesIncremental              bool          `koanf:"minutes_incremental"`
+	MinutesBatchMaxSegments         int           `koanf:"minutes_batch_max_segments"`
+	MinutesBatchMaxChars            int           `koanf:"minutes_batch_max_chars"`
+	MinutesMaxSummaryPhases         int           `koanf:"minutes_max_summary_phases"`
+	MinutesMaxCitations             int           `koanf:"minutes_max_citations"`
 }
 
 type SessionConfig struct {
@@ -357,8 +365,8 @@ func Default() *Config {
 				CredentialsPath: "creds.json",
 			},
 			AWS: AWSSTTConfig{ //nolint:gosec // example values for documentation only
-				AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",    
-				SecretAccessKey: "secret-access-key",        
+				AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+				SecretAccessKey: "secret-access-key",
 				Region:          "us-east-1",
 			},
 			Azure: AzureSTTConfig{
@@ -400,6 +408,11 @@ func Default() *Config {
 			LLMMaxBackoff:                   10 * time.Second,
 			TranscriptionQueueSize:          100,
 			ChunkSizeMs:                     15000,
+			MinutesIncremental:              true,
+			MinutesBatchMaxSegments:         24,
+			MinutesBatchMaxChars:            6000,
+			MinutesMaxSummaryPhases:         8,
+			MinutesMaxCitations:             12,
 		},
 		WebRTC: WebRTCConfig{
 			ICEServers: []ICEServerConfig{

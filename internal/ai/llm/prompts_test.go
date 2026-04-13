@@ -72,6 +72,16 @@ func TestGenerateMinutesPrompt_ContainsCitations(t *testing.T) {
 	}
 }
 
+func TestGenerateMinutesPrompt_ContainsSummary(t *testing.T) {
+	prompt := llm.GenerateMinutesPrompt("transcript", therapyTemplate, "")
+	if !strings.Contains(prompt, "\"summary\"") {
+		t.Error("Expected prompt to contain summary field")
+	}
+	if !strings.Contains(prompt, "\"phases\"") {
+		t.Error("Expected prompt to contain phases field")
+	}
+}
+
 func TestGenerateMinutesPrompt_ValidJSONInstruction(t *testing.T) {
 	prompt := llm.GenerateMinutesPrompt("transcript", therapyTemplate, "")
 	if !strings.Contains(prompt, "valid JSON") {
@@ -107,5 +117,23 @@ func TestGenerateMinutesPrompt_EmptyTemplate(t *testing.T) {
 	prompt := llm.GenerateMinutesPrompt("transcript", tmpl, "")
 	if prompt == "" {
 		t.Error("Expected non-empty prompt even for empty template")
+	}
+}
+
+func TestGenerateIncrementalMinutesPrompt_IncludesExistingState(t *testing.T) {
+	prompt := llm.GenerateIncrementalMinutesPrompt(&llm.DynamicMinutesResponse{
+		Summary: llm.Summary{
+			Overview: "State so far",
+			Phases: []llm.Phase{
+				{Title: "Opening", Summary: "Started", StartMs: 0, EndMs: 1000},
+			},
+		},
+	}, "[0ms therapist]: Ciao", therapyTemplate, "it", false)
+
+	if !strings.Contains(prompt, "EXISTING MINUTES STATE") {
+		t.Error("Expected prompt to include existing state label")
+	}
+	if !strings.Contains(prompt, "State so far") {
+		t.Error("Expected prompt to include existing overview")
 	}
 }

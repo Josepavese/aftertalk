@@ -6,10 +6,13 @@ Base URL: `http://localhost:8080`
 
 All `/v1/*` endpoints require the header:
 ```
-X-API-Key: your-api-key
+Authorization: Bearer your-api-key
 ```
 
-Exception: `GET /v1/minutes/pull/{token}` — the token in the URL is the credential.
+Exceptions:
+- `GET /v1/config`
+- `GET /v1/rtc-config`
+- `GET /v1/minutes/pull/{token}`
 
 ---
 
@@ -17,13 +20,13 @@ Exception: `GET /v1/minutes/pull/{token}` — the token in the URL is the creden
 
 ### GET /v1/health
 ```bash
-curl http://localhost:8080/v1/health
+curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/health
 # → {"status":"ok"}
 ```
 
 ### GET /v1/ready
 ```bash
-curl http://localhost:8080/v1/ready
+curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/ready
 # → {"status":"ready"}
 ```
 
@@ -34,14 +37,14 @@ curl http://localhost:8080/v1/ready
 ### GET /v1/config
 Returns available templates and the default template ID.
 ```bash
-curl -H "X-API-Key: $KEY" http://localhost:8080/v1/config
+curl http://localhost:8080/v1/config
 # → {"templates":[...],"default_template_id":"therapy"}
 ```
 
 ### GET /v1/rtc-config
 Returns ICE servers to pass to `RTCPeerConnection`.
 ```bash
-curl -H "X-API-Key: $KEY" http://localhost:8080/v1/rtc-config
+curl http://localhost:8080/v1/rtc-config
 # → {"iceServers":[{"urls":["stun:stun.l.google.com:19302"]}]}
 ```
 
@@ -54,7 +57,7 @@ Creates a new session with participants.
 
 ```bash
 curl -X POST http://localhost:8080/v1/sessions \
-  -H "X-API-Key: $KEY" \
+  -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_count": 2,
@@ -103,7 +106,7 @@ Response:
 List sessions with pagination.
 
 ```bash
-curl -H "X-API-Key: $KEY" \
+curl -H "Authorization: Bearer $KEY" \
   "http://localhost:8080/v1/sessions?status=completed&limit=20&offset=0"
 # → {"sessions":[...],"total":42,"limit":20,"offset":0}
 ```
@@ -115,13 +118,13 @@ Query parameters:
 
 ### GET /v1/sessions/{id}
 ```bash
-curl -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid
+curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/sessions/uuid
 ```
 
 ### GET /v1/sessions/{id}/status
 Compact response `{id, status}`.
 ```bash
-curl -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid/status
+curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/sessions/uuid/status
 # → {"id":"uuid","status":"completed"}
 ```
 
@@ -129,7 +132,7 @@ curl -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid/status
 Ends the session. In the background: transcribes remaining audio, generates minutes, calls the webhook.
 
 ```bash
-curl -X POST -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid/end
+curl -X POST -H "Authorization: Bearer $KEY" http://localhost:8080/v1/sessions/uuid/end
 # → 204 No Content
 ```
 
@@ -139,7 +142,7 @@ curl -X POST -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid/end
 Deletes the session and associated data. Fails if the session is still `active`.
 
 ```bash
-curl -X DELETE -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid
+curl -X DELETE -H "Authorization: Bearer $KEY" http://localhost:8080/v1/sessions/uuid
 # → 204 No Content
 ```
 
@@ -149,13 +152,13 @@ curl -X DELETE -H "X-API-Key: $KEY" http://localhost:8080/v1/sessions/uuid
 
 ### GET /v1/transcriptions?session_id={id}
 ```bash
-curl -H "X-API-Key: $KEY" \
+curl -H "Authorization: Bearer $KEY" \
   "http://localhost:8080/v1/transcriptions?session_id=uuid&limit=50&offset=0"
 ```
 
 ### GET /v1/transcriptions/{id}
 ```bash
-curl -H "X-API-Key: $KEY" http://localhost:8080/v1/transcriptions/uuid
+curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/transcriptions/uuid
 ```
 
 ---
@@ -164,7 +167,7 @@ curl -H "X-API-Key: $KEY" http://localhost:8080/v1/transcriptions/uuid
 
 ### GET /v1/minutes?session_id={id}
 ```bash
-curl -H "X-API-Key: $KEY" \
+curl -H "Authorization: Bearer $KEY" \
   "http://localhost:8080/v1/minutes?session_id=uuid"
 ```
 
@@ -177,6 +180,23 @@ Response (sections structure depends on the template):
   "version": 1,
   "status": "ready",
   "provider": "openai",
+  "summary": {
+    "overview": "The conversation opens with a status check and moves into a short update on recent improvement.",
+    "phases": [
+      {
+        "title": "Opening",
+        "summary": "Greeting and start-of-session alignment",
+        "start_ms": 0,
+        "end_ms": 60000
+      },
+      {
+        "title": "Update",
+        "summary": "The patient reports feeling better than the previous day",
+        "start_ms": 60000,
+        "end_ms": 180000
+      }
+    ]
+  },
   "sections": {
     "themes": ["Performance anxiety", "Family relationships"],
     "contents_reported": [
@@ -197,7 +217,7 @@ Response (sections structure depends on the template):
 
 ### GET /v1/minutes/{id}
 ```bash
-curl -H "X-API-Key: $KEY" http://localhost:8080/v1/minutes/uuid
+curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/minutes/uuid
 ```
 
 ### PUT /v1/minutes/{id}
@@ -205,10 +225,14 @@ Updates the minutes. Automatically creates a history record with the previous ve
 
 ```bash
 curl -X PUT http://localhost:8080/v1/minutes/uuid \
-  -H "X-API-Key: $KEY" \
+  -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -H "X-User-ID: dr-smith" \
   -d '{
+    "summary": {
+      "overview": "Updated clinical summary",
+      "phases": []
+    },
     "sections": {
       "themes": ["Performance anxiety"],
       "next_steps": ["Breathing exercise 2x/day"]
@@ -221,14 +245,14 @@ curl -X PUT http://localhost:8080/v1/minutes/uuid \
 
 ### DELETE /v1/minutes/{id}
 ```bash
-curl -X DELETE -H "X-API-Key: $KEY" http://localhost:8080/v1/minutes/uuid
+curl -X DELETE -H "Authorization: Bearer $KEY" http://localhost:8080/v1/minutes/uuid
 # → 204 No Content
 ```
 
 ### GET /v1/minutes/{id}/versions
 History of edits.
 ```bash
-curl -H "X-API-Key: $KEY" http://localhost:8080/v1/minutes/uuid/versions
+curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/minutes/uuid/versions
 # → [{"id":"...","minutes_id":"...","version":1,"content":"{...}","edited_at":"...","edited_by":"..."}]
 ```
 
@@ -302,23 +326,15 @@ Messages received from the server:
 
 ---
 
-## Test / Demo
+## Test UI
 
-### POST /test/start
-Creates or joins a session via room code. Requires API key if configured.
+Aftertalk serves the embedded test UI at the server root:
 
 ```bash
-curl -X POST http://localhost:8080/test/start \
-  -H "X-API-Key: $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"code":"room-01","name":"Dr. Smith","role":"therapist","template_id":"therapy"}'
-# → {"session_id":"uuid","token":"eyJ..."}
+open http://localhost:8080/
 ```
 
-If the role is already taken by another user: `409 Conflict`.
-
-### GET /demo/config
-Returns templates and (if `demo.enabled=true`) the API key. **For local development only.**
+To create or join a room programmatically, use `POST /v1/rooms/join`.
 
 ### GET /v1/openapi.yaml
 Full OpenAPI spec (served from `specs/contracts/api.yaml`).

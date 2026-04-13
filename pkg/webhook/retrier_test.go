@@ -34,6 +34,7 @@ func openTestDB(t *testing.T) *sql.DB {
 			id TEXT PRIMARY KEY,
 			minutes_id TEXT NOT NULL,
 			webhook_url TEXT NOT NULL,
+			payload_hash TEXT NOT NULL UNIQUE,
 			payload TEXT NOT NULL,
 			payload_type TEXT NOT NULL DEFAULT 'minutes',
 			attempt_number INTEGER NOT NULL DEFAULT 0,
