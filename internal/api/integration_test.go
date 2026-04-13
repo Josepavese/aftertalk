@@ -185,7 +185,8 @@ func runMigrations(ctx context.Context, db *sqlite.DB) error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS webhook_events (
 			id TEXT PRIMARY KEY, minutes_id TEXT NOT NULL, webhook_url TEXT NOT NULL,
-			payload TEXT NOT NULL, attempt_number INTEGER NOT NULL DEFAULT 0,
+			payload_hash TEXT NOT NULL UNIQUE, payload TEXT NOT NULL,
+			payload_type TEXT NOT NULL DEFAULT 'minutes', attempt_number INTEGER NOT NULL DEFAULT 0,
 			status TEXT NOT NULL DEFAULT 'pending', next_retry_at TEXT,
 			delivered_at TEXT, error_message TEXT, created_at TEXT NOT NULL
 		)`,

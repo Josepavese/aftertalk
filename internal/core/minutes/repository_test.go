@@ -50,6 +50,12 @@ func TestMinutesRepositoryCreate(t *testing.T) {
 
 	ctx := context.Background()
 	m := NewMinutes("test-minutes-1", "session-123", "tmpl-1")
+	m.Summary = Summary{
+		Overview: "Repository summary",
+		Phases: []Phase{
+			{Title: "Opening", Summary: "Started session", StartMs: 0, EndMs: 1000},
+		},
+	}
 	m.Sections = map[string]json.RawMessage{
 		"themes": json.RawMessage(`["Theme 1","Theme 2"]`),
 	}
@@ -87,6 +93,12 @@ func TestMinutesRepositoryGetByID(t *testing.T) {
 
 	ctx := context.Background()
 	m := NewMinutes("test-minutes-1", "session-123", "tmpl-1")
+	m.Summary = Summary{
+		Overview: "Repository summary",
+		Phases: []Phase{
+			{Title: "Opening", Summary: "Started session", StartMs: 0, EndMs: 1000},
+		},
+	}
 	m.Sections = map[string]json.RawMessage{
 		"themes": json.RawMessage(`["Theme 1","Theme 2"]`),
 	}
@@ -104,6 +116,8 @@ func TestMinutesRepositoryGetByID(t *testing.T) {
 	assert.Equal(t, m.TemplateID, retrieved.TemplateID)
 	assert.Equal(t, m.Version, retrieved.Version)
 	assert.Equal(t, m.Status, retrieved.Status)
+	assert.Equal(t, "Repository summary", retrieved.Summary.Overview)
+	assert.Len(t, retrieved.Summary.Phases, 1)
 	assert.Len(t, retrieved.Citations, 1)
 	assert.Equal(t, 1000, retrieved.Citations[0].TimestampMs)
 	assert.Equal(t, "Quote 1", retrieved.Citations[0].Text)

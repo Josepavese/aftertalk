@@ -34,12 +34,31 @@ type WebhookConfig struct {
 	DeleteOnPull bool
 }
 
+type GenerationConfig struct {
+	Incremental      bool
+	BatchMaxSegments int
+	BatchMaxChars    int
+	MaxSummaryPhases int
+	MaxCitations     int
+}
+
+func DefaultGenerationConfig() GenerationConfig {
+	return GenerationConfig{
+		Incremental:      true,
+		BatchMaxSegments: 24,
+		BatchMaxChars:    6000,
+		MaxSummaryPhases: 8,
+		MaxCitations:     12,
+	}
+}
+
 type Service struct {
 	repo           *MinutesRepository
 	retryConfig    *RetryConfig
 	webhookClient  *webhook.Client
 	webhookConfig  *WebhookConfig
 	webhookRetrier *webhook.Retrier
+	generation     GenerationConfig
 }
 
 func NewService(repo *MinutesRepository) *Service {
@@ -50,6 +69,7 @@ func NewService(repo *MinutesRepository) *Service {
 			InitialBackoff: 1 * time.Second,
 			MaxBackoff:     10 * time.Second,
 		},
+		generation: DefaultGenerationConfig(),
 	}
 }
 
@@ -57,6 +77,7 @@ func NewServiceWithDeps(repo *MinutesRepository, retryConfig *RetryConfig, webho
 	s := &Service{
 		repo:        repo,
 		retryConfig: retryConfig,
+		generation:  DefaultGenerationConfig(),
 	}
 	if webhookConfig != nil && webhookConfig.URL != "" {
 		timeout := webhookConfig.Timeout
@@ -70,6 +91,25 @@ func NewServiceWithDeps(repo *MinutesRepository, retryConfig *RetryConfig, webho
 		}
 		s.webhookConfig = webhookConfig
 	}
+	return s
+}
+
+// WithGenerationConfig overrides the minutes generation strategy.
+func (s *Service) WithGenerationConfig(cfg GenerationConfig) *Service {
+	defaults := DefaultGenerationConfig()
+	if cfg.BatchMaxSegments <= 0 {
+		cfg.BatchMaxSegments = defaults.BatchMaxSegments
+	}
+	if cfg.BatchMaxChars <= 0 {
+		cfg.BatchMaxChars = defaults.BatchMaxChars
+	}
+	if cfg.MaxSummaryPhases <= 0 {
+		cfg.MaxSummaryPhases = defaults.MaxSummaryPhases
+	}
+	if cfg.MaxCitations <= 0 {
+		cfg.MaxCitations = defaults.MaxCitations
+	}
+	s.generation = cfg
 	return s
 }
 
@@ -107,9 +147,62 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 		return m, nil
 	}
 
-	var response string
-	var err error
+	parsed, err := s.generateStructuredMinutes(ctx, transcriptionText, tmpl, detectedLanguage, provider)
+	if err != nil {
+		m.MarkError()
+		if updateErr := s.repo.Update(ctx, m); updateErr != nil {
+			logging.Errorf("Failed to update minutes: %v", updateErr)
+		}
+		return nil, fmt.Errorf("failed to generate minutes: %w", err)
+	}
 
+	m.Summary = convertSummary(parsed.Summary)
+	m.Sections = parsed.Sections
+	m.Citations = convertCitations(parsed.Citations)
+	m.MarkReady()
+
+	if err := s.repo.Update(ctx, m); err != nil {
+		return nil, fmt.Errorf("failed to update minutes: %w", err)
+	}
+
+	logging.Infof("Minutes generated successfully for session %s", sessionID)
+	go s.deliverWebhook(sessionID, m, sessCtx) //nolint:contextcheck,gosec // webhook delivery is intentionally fire-and-forget, must outlive the request context
+
+	return m, nil
+}
+
+func (s *Service) generateStructuredMinutes(ctx context.Context, transcriptionText string, tmpl config.TemplateConfig, detectedLanguage string, provider llm.LLMProvider) (*llm.DynamicMinutesResponse, error) {
+	batches := splitTranscriptBatches(transcriptionText, s.generation)
+	if len(batches) == 0 {
+		batches = []string{transcriptionText}
+	}
+
+	state := &llm.DynamicMinutesResponse{}
+	for i, batch := range batches {
+		logging.Infof("Generating minutes batch %d/%d", i+1, len(batches))
+		prompt := llm.GenerateIncrementalMinutesPrompt(state, batch, tmpl, detectedLanguage, len(batches) == 1)
+		updated, err := s.generateLLMState(ctx, provider, prompt, tmpl, detectedLanguage)
+		if err != nil {
+			return nil, fmt.Errorf("batch %d/%d: %w", i+1, len(batches), err)
+		}
+		state = normalizeDynamicMinutes(updated, tmpl, s.generation)
+	}
+
+	if len(batches) > 1 {
+		logging.Infof("Finalizing minutes after %d incremental batches", len(batches))
+		prompt := llm.GenerateMinutesFinalizePrompt(state, tmpl, detectedLanguage)
+		finalized, err := s.generateLLMState(ctx, provider, prompt, tmpl, detectedLanguage)
+		if err != nil {
+			return nil, fmt.Errorf("finalize minutes: %w", err)
+		}
+		state = normalizeDynamicMinutes(finalized, tmpl, s.generation)
+	}
+
+	return state, nil
+}
+
+func (s *Service) generateLLMState(ctx context.Context, provider llm.LLMProvider, prompt string, tmpl config.TemplateConfig, detectedLanguage string) (*llm.DynamicMinutesResponse, error) {
+	var err error
 	for attempt := 0; attempt <= s.retryConfig.MaxRetries; attempt++ {
 		if attempt > 0 {
 			backoff := s.retryConfig.InitialBackoff * time.Duration(1<<uint(attempt-1))
@@ -124,43 +217,36 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 			}
 		}
 
-		prompt := llm.GenerateMinutesPrompt(transcriptionText, tmpl, detectedLanguage)
-		response, err = provider.Generate(ctx, prompt)
-		if err == nil {
-			break
+		response, genErr := provider.Generate(ctx, prompt)
+		if genErr != nil {
+			err = genErr
+			logging.Errorf("LLM request failed (attempt %d): %v", attempt+1, genErr)
+			continue
 		}
-		logging.Errorf("LLM request failed (attempt %d): %v", attempt+1, err)
-	}
 
-	if err != nil {
-		m.MarkError()
-		if updateErr := s.repo.Update(ctx, m); updateErr != nil {
-			logging.Errorf("Failed to update minutes: %v", updateErr)
+		parsed, parseErr := llm.ParseMinutesDynamic(response)
+		if parseErr == nil {
+			return normalizeDynamicMinutes(parsed, tmpl, s.generation), nil
 		}
+
+		repairPrompt := llm.GenerateMinutesRepairPrompt(response, tmpl, detectedLanguage)
+		repairResponse, repairErr := provider.Generate(ctx, repairPrompt)
+		if repairErr == nil {
+			repaired, repairedErr := llm.ParseMinutesDynamic(repairResponse)
+			if repairedErr == nil {
+				return normalizeDynamicMinutes(repaired, tmpl, s.generation), nil
+			}
+			parseErr = repairedErr
+		} else {
+			logging.Errorf("LLM repair failed (attempt %d): %v", attempt+1, repairErr)
+		}
+
+		err = fmt.Errorf("failed to parse LLM response: %w", parseErr)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("failed to generate minutes after %d retries: %w", s.retryConfig.MaxRetries+1, err)
 	}
-
-	parsed, err := llm.ParseMinutesDynamic(response)
-	if err != nil {
-		m.MarkError()
-		if updateErr := s.repo.Update(ctx, m); updateErr != nil {
-			logging.Errorf("Failed to update minutes: %v", updateErr)
-		}
-		return nil, fmt.Errorf("failed to parse LLM response: %w", err)
-	}
-
-	m.Sections = parsed.Sections
-	m.Citations = convertCitations(parsed.Citations)
-	m.MarkReady()
-
-	if err := s.repo.Update(ctx, m); err != nil {
-		return nil, fmt.Errorf("failed to update minutes: %w", err)
-	}
-
-	logging.Infof("Minutes generated successfully for session %s", sessionID)
-	go s.deliverWebhook(sessionID, m, sessCtx) //nolint:contextcheck,gosec // webhook delivery is intentionally fire-and-forget, must outlive the request context
-
-	return m, nil
+	return nil, fmt.Errorf("failed to generate minutes after %d retries", s.retryConfig.MaxRetries+1)
 }
 
 // deliverWebhook dispatches the minutes notification based on the configured mode.
@@ -325,8 +411,15 @@ func (s *Service) UpdateMinutes(ctx context.Context, id string, updatedMinutes *
 		return nil, fmt.Errorf("failed to create history: %w", err)
 	}
 
-	m.Sections = updatedMinutes.Sections
-	m.Citations = updatedMinutes.Citations
+	if updatedMinutes.Sections != nil {
+		m.Sections = updatedMinutes.Sections
+	}
+	if updatedMinutes.Citations != nil {
+		m.Citations = updatedMinutes.Citations
+	}
+	if !updatedMinutes.Summary.IsZero() {
+		m.Summary = updatedMinutes.Summary
+	}
 	m.IncrementVersion()
 
 	if err := s.repo.Update(ctx, m); err != nil {
@@ -356,4 +449,20 @@ func convertCitations(citations []llm.Citation) []Citation {
 		result[i] = Citation{TimestampMs: c.TimestampMs, Text: c.Text, Role: c.Role}
 	}
 	return result
+}
+
+func convertSummary(summary llm.Summary) Summary {
+	phases := make([]Phase, len(summary.Phases))
+	for i, phase := range summary.Phases {
+		phases[i] = Phase{
+			Title:   phase.Title,
+			Summary: phase.Summary,
+			StartMs: phase.StartMs,
+			EndMs:   phase.EndMs,
+		}
+	}
+	return Summary{
+		Overview: summary.Overview,
+		Phases:   phases,
+	}
 }

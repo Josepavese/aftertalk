@@ -25,9 +25,23 @@ func NewLLMRegistry(cfg *config.LLMConfig) (*LLMRegistry, error) {
 
 	// Shared credentials / endpoints inherited by all profiles.
 	base := &LLMConfig{
-		OpenAI:    OpenAIConfig{APIKey: cfg.OpenAI.APIKey, Model: cfg.OpenAI.Model, BaseURL: cfg.OpenAI.BaseURL},
-		Anthropic: AnthropicConfig{APIKey: cfg.Anthropic.APIKey, Model: cfg.Anthropic.Model},
-		Azure:     AzureLLMConfig{APIKey: cfg.Azure.APIKey, Endpoint: cfg.Azure.Endpoint, Deployment: cfg.Azure.Deployment},
+		OpenAI: OpenAIConfig{
+			APIKey:         cfg.OpenAI.APIKey,
+			Model:          cfg.OpenAI.Model,
+			BaseURL:        cfg.OpenAI.BaseURL,
+			RequestTimeout: cfg.OpenAI.RequestTimeout,
+		},
+		Anthropic: AnthropicConfig{
+			APIKey:         cfg.Anthropic.APIKey,
+			Model:          cfg.Anthropic.Model,
+			RequestTimeout: cfg.Anthropic.RequestTimeout,
+		},
+		Azure: AzureLLMConfig{
+			APIKey:         cfg.Azure.APIKey,
+			Endpoint:       cfg.Azure.Endpoint,
+			Deployment:     cfg.Azure.Deployment,
+			RequestTimeout: cfg.Azure.RequestTimeout,
+		},
 		Ollama:    OllamaConfig{BaseURL: cfg.Ollama.BaseURL, Model: cfg.Ollama.Model},
 	}
 

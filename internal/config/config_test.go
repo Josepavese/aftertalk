@@ -108,11 +108,18 @@ func TestConfigStructs(t *testing.T) {
 			MaxConcurrentMinutesGenerations: 5,
 			TranscriptionTimeout:            10 * time.Minute,
 			MinutesGenerationTimeout:        5 * time.Minute,
+			MinutesIncremental:              true,
+			MinutesBatchMaxSegments:         24,
+			MinutesBatchMaxChars:            6000,
+			MinutesMaxSummaryPhases:         8,
+			MinutesMaxCitations:             12,
 		}
 		assert.Equal(t, 10, cfg.MaxConcurrentTranscriptions)
 		assert.Equal(t, 5, cfg.MaxConcurrentMinutesGenerations)
 		assert.Equal(t, 10*time.Minute, cfg.TranscriptionTimeout)
 		assert.Equal(t, 5*time.Minute, cfg.MinutesGenerationTimeout)
+		assert.True(t, cfg.MinutesIncremental)
+		assert.Equal(t, 24, cfg.MinutesBatchMaxSegments)
 	})
 
 	t.Run("SessionConfig", func(t *testing.T) {
@@ -161,6 +168,8 @@ func TestConfig_Default(t *testing.T) {
 	assert.Equal(t, "google", cfg.STT.Provider)
 	assert.Equal(t, "openai", cfg.LLM.Provider)
 	assert.Equal(t, 10, cfg.Processing.MaxConcurrentTranscriptions)
+	assert.True(t, cfg.Processing.MinutesIncremental)
+	assert.Equal(t, 24, cfg.Processing.MinutesBatchMaxSegments)
 	assert.Equal(t, 2*time.Hour, cfg.Session.MaxDuration)
 	assert.Equal(t, 90, cfg.Retention.TranscriptionDays)
 	assert.False(t, cfg.Performance.EnableProfiling)
@@ -279,7 +288,7 @@ func TestConfig_InvalidSTTProvider(t *testing.T) {
 }
 
 func TestConfig_ValidSTTProviders(t *testing.T) {
-	providers := []string{"google", "aws", "azure"}
+	providers := []string{"google", "aws", "azure", "whisper-local", "openai", "stub"}
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
 			cfg := validBase()
@@ -299,7 +308,7 @@ func TestConfig_InvalidLLMProvider(t *testing.T) {
 }
 
 func TestConfig_ValidLLMProviders(t *testing.T) {
-	providers := []string{"openai", "anthropic", "azure"}
+	providers := []string{"openai", "anthropic", "azure", "ollama", "stub"}
 	for _, provider := range providers {
 		t.Run(provider, func(t *testing.T) {
 			cfg := validBase()

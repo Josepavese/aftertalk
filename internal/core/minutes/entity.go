@@ -2,6 +2,7 @@ package minutes
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -27,8 +28,27 @@ type Minutes struct {
 	TemplateID  string                     `json:"template_id"`
 	Status      MinutesStatus              `json:"status"`
 	Provider    string                     `json:"provider"`
+	Summary     Summary                    `json:"summary"`
 	Citations   []Citation                 `json:"citations"`
 	Version     int                        `json:"version"`
+}
+
+// Summary is the high-level synopsis of the whole conversation.
+type Summary struct {
+	Overview string  `json:"overview"`
+	Phases   []Phase `json:"phases"`
+}
+
+// Phase is one chronological stage in the conversation.
+type Phase struct {
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	StartMs int    `json:"start_ms"`
+	EndMs   int    `json:"end_ms"`
+}
+
+func (s Summary) IsZero() bool {
+	return strings.TrimSpace(s.Overview) == "" && len(s.Phases) == 0
 }
 
 // Citation is a verbatim quote from the transcript.
@@ -40,6 +60,7 @@ type Citation struct {
 
 // contentBlob is the JSON structure stored in the DB content column.
 type contentBlob struct {
+	Summary   Summary                    `json:"summary"`
 	Sections  map[string]json.RawMessage `json:"sections"`
 	Citations []Citation                 `json:"citations"`
 }
@@ -50,6 +71,7 @@ func NewMinutes(id, sessionID, templateID string) *Minutes {
 		SessionID:   sessionID,
 		TemplateID:  templateID,
 		Version:     1,
+		Summary:     Summary{Phases: []Phase{}},
 		Sections:    map[string]json.RawMessage{},
 		Citations:   []Citation{},
 		GeneratedAt: time.Now().UTC(),
@@ -78,6 +100,7 @@ func (m *Minutes) MarkError() {
 // MarshalContent serializes Sections+Citations into a single JSON blob for DB storage.
 func (m *Minutes) MarshalContent() (string, error) {
 	blob := contentBlob{
+		Summary:   m.Summary,
 		Sections:  m.Sections,
 		Citations: m.Citations,
 	}
@@ -97,9 +120,13 @@ func (m *Minutes) UnmarshalContent(raw string) error {
 	if blob.Sections == nil {
 		blob.Sections = map[string]json.RawMessage{}
 	}
+	if blob.Summary.Phases == nil {
+		blob.Summary.Phases = []Phase{}
+	}
 	if blob.Citations == nil {
 		blob.Citations = []Citation{}
 	}
+	m.Summary = blob.Summary
 	m.Sections = blob.Sections
 	m.Citations = blob.Citations
 	return nil

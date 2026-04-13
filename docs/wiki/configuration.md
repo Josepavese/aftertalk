@@ -180,6 +180,21 @@ llm:
 Generates a synthetic summary from the transcription text without API calls.
 > Note: the Stub is optimized for the `therapy` template. For other templates, sections may not match.
 
+### Request timeouts
+The HTTP timeout for cloud LLM providers can be overridden per provider:
+
+```yaml
+llm:
+  openai:
+    request_timeout: 120s
+  anthropic:
+    request_timeout: 120s
+  azure:
+    request_timeout: 120s
+```
+
+If omitted, the built-in default is `120s`.
+
 ---
 
 ## Provider Profiles (per-session routing)
@@ -264,9 +279,46 @@ processing:
   llm_max_backoff: 10s
   transcription_queue_size: 100
   chunk_size_ms: 15000      # audio chunk size for transcription (ms)
+  minutes_incremental: true
+  minutes_batch_max_segments: 24
+  minutes_batch_max_chars: 6000
+  minutes_max_summary_phases: 8
+  minutes_max_citations: 12
 ```
 
 `chunk_size_ms` controls how many ms of accumulated audio triggers a transcription. VAD (Voice Activity Detection) may trigger earlier on extended silence.
+
+### Incremental minutes generation
+
+Minutes generation is incremental by default. Aftertalk keeps a compact structured
+state and updates it batch by batch instead of materializing the full session in
+one LLM request.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `processing.minutes_incremental` | `true` | Enables iterative minutes reduction |
+| `processing.minutes_batch_max_segments` | `24` | Max transcript lines per LLM batch |
+| `processing.minutes_batch_max_chars` | `6000` | Max transcript characters per LLM batch |
+| `processing.minutes_max_summary_phases` | `8` | Max entries in `summary.phases` after normalization |
+| `processing.minutes_max_citations` | `12` | Max citations kept in the final state |
+
+The generated minutes include a top-level `summary` object:
+
+```json
+{
+  "summary": {
+    "overview": "Concise summary of the conversation",
+    "phases": [
+      {
+        "title": "Opening",
+        "summary": "Greeting and initial alignment",
+        "start_ms": 0,
+        "end_ms": 60000
+      }
+    ]
+  }
+}
+```
 
 ---
 
@@ -375,17 +427,6 @@ session:
 |---|---|---|---|
 | `AFTERTALK_SESSION_MAX_DURATION` | `session.max_duration` | `2h` | Go duration string; `0` disables reaper |
 | `AFTERTALK_SESSION_MAX_PARTICIPANTS_PER_SESSION` | `session.max_participants_per_session` | `10` | |
-
----
-
-## Demo Mode
-
-```yaml
-demo:
-  enabled: false   # NEVER true in production — exposes the API key at /demo/config
-```
-
----
 
 ## Get the default YAML config
 

@@ -16,6 +16,7 @@ import (
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 	"github.com/Josepavese/aftertalk/internal/api"
 	"github.com/Josepavese/aftertalk/internal/api/handler"
+	"github.com/Josepavese/aftertalk/internal/bot/webrtc"
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/core/minutes"
 	"github.com/Josepavese/aftertalk/internal/core/session"
@@ -23,11 +24,9 @@ import (
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
 	"github.com/Josepavese/aftertalk/internal/storage/sqlite"
-	"github.com/Josepavese/aftertalk/internal/bot/webrtc"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
 	"github.com/Josepavese/aftertalk/pkg/webhook"
 )
-
 
 func main() {
 	// Handle --dump-defaults before loading config so the binary can emit a
@@ -86,11 +85,11 @@ func main() {
 	if err = runMigrations(ctx, db); err != nil {
 		logger.Fatalf("Failed to run migrations: %v", err)
 	}
-	migrateWebhookEvents(ctx, db)           // idempotent: adds payload + next_retry_at columns
-	migrateRetrievalTokens(ctx, db)         // idempotent: adds retrieval_tokens table
-	migrateWebhookPayloadType(ctx, db)      // idempotent: adds payload_type column to webhook_events
-	migrateTranscriptionLanguage(ctx, db)   // idempotent: adds language column to transcriptions
-	migrateSessionProfiles(ctx, db)         // idempotent: adds stt_profile + llm_profile columns to sessions
+	migrateWebhookEvents(ctx, db)         // idempotent: adds payload + next_retry_at columns
+	migrateRetrievalTokens(ctx, db)       // idempotent: adds retrieval_tokens table
+	migrateWebhookPayloadType(ctx, db)    // idempotent: adds payload_type column to webhook_events
+	migrateTranscriptionLanguage(ctx, db) // idempotent: adds language column to transcriptions
+	migrateSessionProfiles(ctx, db)       // idempotent: adds stt_profile + llm_profile columns to sessions
 	logger.Info("Migrations completed")
 
 	sessionCache := cache.NewSessionCache()
@@ -147,6 +146,13 @@ func main() {
 			PullBaseURL:  cfg.Webhook.PullBaseURL,
 		},
 	)
+	minutesService.WithGenerationConfig(minutes.GenerationConfig{
+		Incremental:      cfg.Processing.MinutesIncremental,
+		BatchMaxSegments: cfg.Processing.MinutesBatchMaxSegments,
+		BatchMaxChars:    cfg.Processing.MinutesBatchMaxChars,
+		MaxSummaryPhases: cfg.Processing.MinutesMaxSummaryPhases,
+		MaxCitations:     cfg.Processing.MinutesMaxCitations,
+	})
 
 	// Wire persistent webhook retry if a URL is configured.
 	// IMPORTANT: the retrier must always be wired when a webhook URL is set.

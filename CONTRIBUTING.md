@@ -6,7 +6,8 @@
 # Clone and install SDK dependencies
 git clone https://github.com/Josepavese/aftertalk
 cd aftertalk
-cd sdk && npm install && cd ..
+(cd sdk/ts && npm install)
+(cd cmd/test-ui && npm install)
 ```
 
 ## Build
@@ -16,7 +17,10 @@ cd sdk && npm install && cd ..
 go build -o bin/aftertalk ./cmd/aftertalk
 
 # TypeScript SDK
-cd sdk && npm run build
+cd sdk/ts && npm run build
+
+# Test UI
+cd cmd/test-ui && npm run build
 
 # All via Makefile
 make build
@@ -27,7 +31,7 @@ make build
 ```bash
 git pull origin master
 # ... make changes ...
-scripts/dev.sh    # Build + commit + push
+scripts/dev.sh    # Build Go + SDK + test UI
 ```
 
 ### Running the server locally
@@ -53,7 +57,7 @@ make test-integration      # Integration tests
 make test-coverage         # Coverage report
 
 # SDK tests
-cd sdk && npm test
+cd sdk/ts && npm test
 ```
 
 ## Code Standards
@@ -64,7 +68,7 @@ cd sdk && npm test
 - Tests co-located with source (`{file}_test.go`)
 
 ### TypeScript
-- ESLint + Prettier via `cd sdk && npm run lint`
+- ESLint + Prettier via `cd sdk/ts && npm run lint`
 - Tests co-located with source (`{file}.test.ts`)
 
 ## Documentation Style

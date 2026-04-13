@@ -8,12 +8,11 @@ import (
 var (
 	errWhisperURLRequired     = errors.New("whisper-local: STT_WHISPER_URL is required")
 	errOpenAICredRequired     = errors.New("openai STT: url and api_key are required")
-	errSTTProviderRequired    = errors.New("stt.provider is required — supported: google, aws, azure, whisper-local, openai")
+	errSTTProviderRequired    = errors.New("stt.provider is required — supported: google, aws, azure, whisper-local, openai, stub")
 	errUnsupportedSTTProvider = errors.New("unsupported STT provider")
 )
 
 // NewProvider selects and returns the STT provider based on cfg.
-// Returns an error if provider is not set or unrecognised — no stub fallback.
 func NewProvider(cfg *STTConfig) (STTProvider, error) {
 	switch cfg.Provider {
 	case "google":
@@ -34,6 +33,8 @@ func NewProvider(cfg *STTConfig) (STTProvider, error) {
 			return nil, errOpenAICredRequired
 		}
 		return p, nil
+	case "stub":
+		return NewStubProvider(), nil
 	case "":
 		return nil, errSTTProviderRequired
 	default:

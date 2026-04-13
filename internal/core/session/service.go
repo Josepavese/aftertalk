@@ -95,8 +95,17 @@ type Service struct {
 	jwtExpiration     time.Duration
 	maxDuration       time.Duration
 	inactivityTimeout time.Duration
+	minutesTimeout    time.Duration
 	chunkSizeMs       int
 	inactivityMu      sync.Mutex
+	minutesLockMu     sync.Mutex
+	minutesLocks      map[string]*minutesLock
+	minutesSemaphore  chan struct{}
+}
+
+type minutesLock struct {
+	mu   sync.Mutex
+	refs int
 }
 
 // SetOnSessionEnd registers a callback invoked when any session is ended.
@@ -215,6 +224,14 @@ func NewService(
 	if inactivityTimeout <= 0 {
 		inactivityTimeout = defaultInactivityTimeout
 	}
+	minutesTimeout := processingCfg.MinutesGenerationTimeout
+	if minutesTimeout <= 0 {
+		minutesTimeout = 5 * time.Minute
+	}
+	maxMinutes := processingCfg.MaxConcurrentMinutesGenerations
+	if maxMinutes <= 0 {
+		maxMinutes = 1
+	}
 	s := &Service{
 		repo:              repo,
 		jwtManager:        jwtManager,
@@ -226,11 +243,14 @@ func NewService(
 		jwtExpiration:     jwtExpiration,
 		maxDuration:       sessionCfg.MaxDuration,
 		inactivityTimeout: inactivityTimeout,
+		minutesTimeout:    minutesTimeout,
 		transcribeCh:      make(chan *transcribeJob, processingCfg.TranscriptionQueueSize),
 		chunkSizeMs:       processingCfg.ChunkSizeMs,
 		opusDecoder:       audio.NewOpusDecoder(48000, 1),
 		pcmConverter:      audio.NewPCMConverter(16000, 1),
 		inactivityTimers:  make(map[string]*time.Timer),
+		minutesLocks:      make(map[string]*minutesLock),
+		minutesSemaphore:  make(chan struct{}, maxMinutes),
 		templates:         tmplMap,
 	}
 
@@ -370,8 +390,8 @@ func (s *Service) convertToPCM16k(opusData []byte) ([]byte, error) {
 
 	out := make([]byte, len(resampled)*2)
 	for i, sample := range resampled {
-		out[i*2] = byte(sample)         //nolint:gosec // intentional little-endian PCM byte extraction
-		out[i*2+1] = byte(sample >> 8)  //nolint:gosec // intentional little-endian PCM byte extraction
+		out[i*2] = byte(sample)        //nolint:gosec // intentional little-endian PCM byte extraction
+		out[i*2+1] = byte(sample >> 8) //nolint:gosec // intentional little-endian PCM byte extraction
 	}
 
 	return out, nil
@@ -632,13 +652,20 @@ func (s *Service) processRemainingAudio(sessionID string) {
 }
 
 func (s *Service) generateMinutesForSession(sessionID string) {
+	unlock := s.acquireMinutesLock(sessionID)
+	defer unlock()
+	if s.minutesSemaphore != nil {
+		s.minutesSemaphore <- struct{}{}
+		defer func() { <-s.minutesSemaphore }()
+	}
+
 	// Wait for all in-flight transcription jobs to finish writing to DB before
 	// reading them. This replaces the former busy-wait on len(s.transcribeCh),
 	// which had a race: the channel could be empty while a job was still being
 	// persisted by processTranscriptionQueue.
 	s.transcribeWg.Wait()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), s.minutesTimeout)
 	defer cancel()
 
 	// failSession marks the session as error in the DB so operators can
@@ -714,6 +741,28 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 	session.Complete()
 	if err := s.repo.Update(ctx, session); err != nil {
 		logging.Errorf("Failed to mark session as completed: %v", err)
+	}
+}
+
+func (s *Service) acquireMinutesLock(sessionID string) func() {
+	s.minutesLockMu.Lock()
+	lock := s.minutesLocks[sessionID]
+	if lock == nil {
+		lock = &minutesLock{}
+		s.minutesLocks[sessionID] = lock
+	}
+	lock.refs++
+	s.minutesLockMu.Unlock()
+
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+		s.minutesLockMu.Lock()
+		lock.refs--
+		if lock.refs == 0 {
+			delete(s.minutesLocks, sessionID)
+		}
+		s.minutesLockMu.Unlock()
 	}
 }
 

@@ -92,7 +92,10 @@ func TestAWSSTTProvider_Name(t *testing.T) {
 }
 
 func TestAWSSTTProvider_IsAvailable(t *testing.T) {
-	cases := []struct{ access, secret, region string; want bool }{
+	cases := []struct {
+		access, secret, region string
+		want                   bool
+	}{
 		{"AKID", "secret", "eu-west-1", true},
 		{"", "secret", "eu-west-1", false},
 		{"AKID", "", "eu-west-1", false},
@@ -150,7 +153,10 @@ func TestAzureSTTProvider_Name(t *testing.T) {
 }
 
 func TestAzureSTTProvider_IsAvailable(t *testing.T) {
-	cases := []struct{ key, region string; want bool }{
+	cases := []struct {
+		key, region string
+		want        bool
+	}{
 		{"key123", "eastus", true},
 		{"", "eastus", false},
 		{"key123", "", false},
@@ -198,8 +204,11 @@ func TestAzureSTTProvider_Transcribe(t *testing.T) {
 // ── Factory ───────────────────────────────────────────────────────────────────
 
 func TestSTTNewProviderFactory(t *testing.T) {
-	cases := []struct{ provider string; wantErr bool }{
-		{"", true}, {"unsupported", true},
+	cases := []struct {
+		provider string
+		wantErr  bool
+	}{
+		{"", true}, {"unsupported", true}, {"stub", false},
 	}
 	for _, c := range cases {
 		p, err := stt.NewProvider(&stt.STTConfig{Provider: c.provider})
@@ -211,6 +220,19 @@ func TestSTTNewProviderFactory(t *testing.T) {
 			t.Errorf("provider=%q: unexpected error or nil provider: %v", c.provider, err)
 		}
 	}
+}
+
+func TestStubProvider_Transcribe(t *testing.T) {
+	provider := stt.NewStubProvider()
+	result, err := provider.Transcribe(context.Background(), &stt.AudioData{
+		SessionID: "session-1",
+		Role:      "therapist",
+		Duration:  1500,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Segments, 1)
+	require.Equal(t, "stub", result.Provider)
+	require.Contains(t, result.Segments[0].Text, "1500ms")
 }
 
 // fakeRSAPrivateKeyPEM is a test-only RSA key — NOT used for real authentication.

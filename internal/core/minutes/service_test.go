@@ -1,0 +1,124 @@
+package minutes
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/pkg/webhook"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func init() { //nolint:gochecknoinits // test logger setup
+	_ = logging.Init("info", "console")
+}
+
+type scriptedLLMProvider struct {
+	prompts   []string
+	responses []string
+}
+
+func (p *scriptedLLMProvider) Generate(_ context.Context, prompt string) (string, error) {
+	p.prompts = append(p.prompts, prompt)
+	if len(p.responses) == 0 {
+		return `{"summary":{"overview":"","phases":[]},"sections":{},"citations":[]}`, nil
+	}
+	response := p.responses[0]
+	p.responses = p.responses[1:]
+	return response, nil
+}
+
+func (p *scriptedLLMProvider) Name() string {
+	return "scripted"
+}
+
+func (p *scriptedLLMProvider) IsAvailable() bool {
+	return true
+}
+
+func TestSplitTranscriptBatches(t *testing.T) {
+	transcript := strings.Join([]string{
+		"[0ms therapist]: Buongiorno",
+		"[1000ms patient]: Buongiorno",
+		"[2000ms therapist]: Come sta andando?",
+		"[3000ms patient]: Meglio di ieri",
+	}, "\n")
+
+	batches := splitTranscriptBatches(transcript, GenerationConfig{
+		Incremental:      true,
+		BatchMaxSegments: 2,
+		BatchMaxChars:    120,
+	})
+
+	require.Len(t, batches, 2)
+	assert.Contains(t, batches[0], "[0ms therapist]")
+	assert.Contains(t, batches[1], "[3000ms patient]")
+}
+
+func TestGenerateMinutes_IncrementalFlow(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	service := NewService(repo).WithGenerationConfig(GenerationConfig{
+		Incremental:      true,
+		BatchMaxSegments: 2,
+		BatchMaxChars:    120,
+		MaxSummaryPhases: 4,
+		MaxCitations:     4,
+	})
+
+	provider := &scriptedLLMProvider{
+		responses: []string{
+			`{
+				"summary":{"overview":"Prima parte","phases":[{"title":"Apertura","summary":"Saluti iniziali","start_ms":0,"end_ms":1000}]},
+				"sections":{"themes":["accoglienza"],"contents_reported":[],"professional_interventions":[],"progress_issues":{"progress":[],"issues":[]},"next_steps":[]},
+				"citations":[{"timestamp_ms":0,"text":"Buongiorno","role":"therapist"}]
+			}`,
+			`{
+				"summary":{"overview":"Bozza completa","phases":[{"title":"Apertura","summary":"Saluti iniziali","start_ms":0,"end_ms":1000},{"title":"Aggiornamento","summary":"Discussione sullo stato recente","start_ms":2000,"end_ms":3000}]},
+				"sections":{"themes":["accoglienza","stato emotivo"],"contents_reported":[{"text":"Il paziente riferisce di stare meglio","timestamp":3000}],"professional_interventions":[{"text":"Il terapeuta chiede un aggiornamento","timestamp":2000}],"progress_issues":{"progress":["Miglioramento percepito"],"issues":[]},"next_steps":["Monitorare i progressi"]},
+				"citations":[{"timestamp_ms":0,"text":"Buongiorno","role":"therapist"},{"timestamp_ms":3000,"text":"Meglio di ieri","role":"patient"}]
+			}`,
+			`{
+				"summary":{"overview":"La conversazione apre con i saluti e prosegue con un aggiornamento sul miglioramento percepito.","phases":[{"title":"Apertura","summary":"Saluti iniziali","start_ms":0,"end_ms":1000},{"title":"Aggiornamento","summary":"Il paziente riferisce un lieve miglioramento","start_ms":2000,"end_ms":3000}]},
+				"sections":{"themes":["accoglienza","stato emotivo"],"contents_reported":[{"text":"Il paziente riferisce di stare meglio del giorno precedente","timestamp":3000}],"professional_interventions":[{"text":"Il terapeuta chiede come sta andando","timestamp":2000}],"progress_issues":{"progress":["Miglioramento percepito"],"issues":[]},"next_steps":["Monitorare i progressi"]},
+				"citations":[{"timestamp_ms":3000,"text":"Meglio di ieri","role":"patient"}]
+			}`,
+		},
+	}
+
+	transcript := strings.Join([]string{
+		"[0ms therapist]: Buongiorno",
+		"[1000ms patient]: Buongiorno",
+		"[2000ms therapist]: Come sta andando?",
+		"[3000ms patient]: Meglio di ieri",
+	}, "\n")
+	tmpl := config.DefaultTemplates()[0]
+
+	mins, err := service.GenerateMinutes(context.Background(), "session-123", transcript, tmpl, webhook.SessionContext{}, "it", provider)
+	require.NoError(t, err)
+
+	require.Len(t, provider.prompts, 3)
+	assert.Contains(t, provider.prompts[1], `"overview": "Prima parte"`)
+	assert.Contains(t, provider.prompts[2], "CURRENT MINUTES STATE")
+	assert.Equal(t, "La conversazione apre con i saluti e prosegue con un aggiornamento sul miglioramento percepito.", mins.Summary.Overview)
+	assert.Len(t, mins.Summary.Phases, 2)
+	assert.Equal(t, MinutesStatusReady, mins.Status)
+	assert.Equal(t, "scripted", mins.Provider)
+	assert.Len(t, mins.Citations, 1)
+	assert.Contains(t, string(mins.Sections["themes"]), "stato emotivo")
+}
+
+func TestGenerateMinutes_EmptyTranscript(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	service := NewService(repo)
+
+	mins, err := service.GenerateMinutes(context.Background(), "session-empty", "   ", config.DefaultTemplates()[0], webhook.SessionContext{}, "it", &scriptedLLMProvider{})
+	require.NoError(t, err)
+	assert.Equal(t, MinutesStatusReady, mins.Status)
+	assert.Empty(t, mins.Summary.Overview)
+	assert.Empty(t, mins.Citations)
+}

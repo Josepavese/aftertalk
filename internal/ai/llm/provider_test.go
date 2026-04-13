@@ -39,8 +39,26 @@ func TestCitation(t *testing.T) {
 	}
 }
 
+func TestSummary(t *testing.T) {
+	s := llm.Summary{
+		Overview: "Overview",
+		Phases: []llm.Phase{
+			{Title: "Opening", Summary: "Started", StartMs: 0, EndMs: 1000},
+		},
+	}
+	if s.Overview != "Overview" || len(s.Phases) != 1 {
+		t.Error("Summary fields mismatch")
+	}
+}
+
 func TestParseMinutesDynamic_Success(t *testing.T) {
 	raw := `{
+		"summary": {
+			"overview": "short summary",
+			"phases": [
+				{"title":"Opening","summary":"Started","start_ms":0,"end_ms":1000}
+			]
+		},
 		"sections": {
 			"themes": ["topic1","topic2"],
 			"contents_reported": [{"text":"point1","timestamp":100}],
@@ -58,6 +76,12 @@ func TestParseMinutesDynamic_Success(t *testing.T) {
 	if len(r.Sections) != 3 {
 		t.Errorf("Expected 3 sections, got %d", len(r.Sections))
 	}
+	if r.Summary.Overview != "short summary" {
+		t.Errorf("Expected summary overview, got %q", r.Summary.Overview)
+	}
+	if len(r.Summary.Phases) != 1 {
+		t.Errorf("Expected 1 phase, got %d", len(r.Summary.Phases))
+	}
 	if len(r.Citations) != 1 {
 		t.Errorf("Expected 1 citation, got %d", len(r.Citations))
 	}
@@ -67,13 +91,16 @@ func TestParseMinutesDynamic_Success(t *testing.T) {
 }
 
 func TestParseMinutesDynamic_Empty(t *testing.T) {
-	raw := `{"sections":{},"citations":[]}`
+	raw := `{"summary":{"overview":"","phases":[]},"sections":{},"citations":[]}`
 	r, err := llm.ParseMinutesDynamic(raw)
 	if err != nil {
 		t.Fatalf("ParseMinutesDynamic error: %v", err)
 	}
 	if r.Sections == nil {
 		t.Error("Sections should not be nil")
+	}
+	if r.Summary.Phases == nil {
+		t.Error("Summary phases should not be nil")
 	}
 	if r.Citations == nil {
 		t.Error("Citations should not be nil")
@@ -84,6 +111,28 @@ func TestParseMinutesDynamic_InvalidJSON(t *testing.T) {
 	_, err := llm.ParseMinutesDynamic(`not json`)
 	if err == nil {
 		t.Error("Expected error for invalid JSON")
+	}
+}
+
+func TestParseMinutesDynamic_SanitizesCodeFenceAndTrailingCommas(t *testing.T) {
+	raw := "```json\n{\n  \"summary\": {\"overview\": \"ok\", \"phases\": []},\n  \"sections\": {\n    \"themes\": [\"a\", \"b\"],\n  },\n  \"citations\": [],\n}\n```"
+	r, err := llm.ParseMinutesDynamic(raw)
+	if err != nil {
+		t.Fatalf("ParseMinutesDynamic error: %v", err)
+	}
+	if r.Summary.Overview != "ok" {
+		t.Errorf("Expected overview 'ok', got %q", r.Summary.Overview)
+	}
+}
+
+func TestParseMinutesDynamic_StripsJunkAroundJSON(t *testing.T) {
+	raw := "Some text before {\"summary\":{\"overview\":\"ok\",\"phases\":[]},\"sections\":{},\"citations\":[]} trailing"
+	r, err := llm.ParseMinutesDynamic(raw)
+	if err != nil {
+		t.Fatalf("ParseMinutesDynamic error: %v", err)
+	}
+	if r.Summary.Overview != "ok" {
+		t.Errorf("Expected overview 'ok', got %q", r.Summary.Overview)
 	}
 }
 

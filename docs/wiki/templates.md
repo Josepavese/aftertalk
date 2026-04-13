@@ -98,7 +98,7 @@ Custom templates are merged with built-in templates. If you define a template wi
 
 ```bash
 curl -X POST http://localhost:8080/v1/sessions \
-  -H "X-API-Key: $KEY" \
+  -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_count": 2,
@@ -115,7 +115,7 @@ If `template_id` is omitted, the server uses the default template (`therapy` by 
 ### Get available templates
 
 ```bash
-curl -H "X-API-Key: $KEY" http://localhost:8080/v1/config
+curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/config
 # → {"templates":[...],"default_template_id":"therapy"}
 ```
 

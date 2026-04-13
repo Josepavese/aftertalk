@@ -25,6 +25,8 @@ func TestNewMinutes(t *testing.T) {
 	assert.Equal(t, 1, m.Version)
 	assert.NotZero(t, m.GeneratedAt)
 	assert.Equal(t, MinutesStatusPending, m.Status)
+	assert.Empty(t, m.Summary.Overview)
+	assert.Empty(t, m.Summary.Phases)
 	assert.Empty(t, m.Citations)
 }
 
@@ -91,6 +93,12 @@ func TestCitationWithZeroTimestamp(t *testing.T) {
 
 func TestMinutesJSONSerialization(t *testing.T) {
 	m := NewMinutes("test-id", "session-123", "tmpl-1")
+	m.Summary = Summary{
+		Overview: "Short summary",
+		Phases: []Phase{
+			{Title: "Opening", Summary: "Introductions", StartMs: 0, EndMs: 1000},
+		},
+	}
 	m.Sections = map[string]json.RawMessage{
 		"themes": json.RawMessage(`["Theme 1","Theme 2"]`),
 	}
@@ -112,6 +120,8 @@ func TestMinutesJSONSerialization(t *testing.T) {
 	assert.Equal(t, m.TemplateID, decoded.TemplateID)
 	assert.Equal(t, m.Version, decoded.Version)
 	assert.Equal(t, m.Status, decoded.Status)
+	assert.Equal(t, "Short summary", decoded.Summary.Overview)
+	assert.Len(t, decoded.Summary.Phases, 1)
 	assert.Len(t, decoded.Citations, 1)
 	assert.Equal(t, 1000, decoded.Citations[0].TimestampMs)
 }

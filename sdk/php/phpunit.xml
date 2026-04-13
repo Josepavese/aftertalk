@@ -12,10 +12,10 @@
     </testsuite>
   </testsuites>
 
-  <source>
+  <coverage>
     <include>
       <directory>src</directory>
     </include>
-  </source>
+  </coverage>
 
 </phpunit>

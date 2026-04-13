@@ -83,7 +83,7 @@ Client connects via WebSocket → /signaling?token=eyJ...
 RTP audio received
   └─ session.Service.ProcessAudioChunk()
        ├─ Buffer in AudioBufferCache
-       └─ Every 15s (chunkSizeMs): flush → transcribeCh (buffered chan 100)
+       └─ Every 15s (`processing.chunk_size_ms`): flush → transcribeCh (buffered chan 100)
 
 Transcription worker
   └─ processTranscriptionQueue()
@@ -95,11 +95,14 @@ POST /v1/sessions/{id}/end
   └─ session.Service.EndSession()
        ├─ status → "ended"
        ├─ processRemainingAudio() — drains buffer
-       ├─ time.Sleep(2s)           ← known race condition (see improvements/09)
        └─ generateMinutesForSession()
-            ├─ Concatenate all transcriptions as text
-            ├─ llm.Provider.Generate(prompt, text)
-            ├─ ParseMinutesDynamic() → Minutes{Sections, Citations}
+            ├─ Wait for in-flight transcription writes to complete
+            ├─ Read ordered transcriptions from DB
+            ├─ Split transcript into bounded batches
+            ├─ llm.Provider.Generate() on compact minutes state + next batch
+            ├─ Normalize summary / phases / citations after each pass
+            ├─ Optional final compaction pass
+            ├─ ParseMinutesDynamic() → Minutes{Summary, Sections, Citations}
             ├─ Persist to minutes table
             ├─ status → "completed"
             └─ webhook.Client.Send() / SendNotification()
@@ -151,7 +154,7 @@ All tables created inline in `main.go:runMigrations()`.
 | `participants` | JWT tokens, roles, user IDs |
 | `audio_streams` | Per-participant audio stream state |
 | `transcriptions` | Text segments with timestamps and role |
-| `minutes` | Generated minutes JSON blob + template_id |
+| `minutes` | Generated minutes JSON blob (`summary`, `sections`, `citations`) + template_id |
 | `minutes_history` | Previous versions of minutes (for auditing) |
 | `webhook_events` | Delivery attempts log |
 | `processing_queue` | Pending STT/LLM jobs |
@@ -176,7 +179,7 @@ Config → Providers (STT, LLM, ICE) → Services (session, transcription, minut
 
 - Each WebRTC peer runs its RTP read loop in a goroutine
 - Transcription queue: single goroutine reading from a buffered `chan` (size 100)
-- Minutes generation: goroutine spawned per session end
+- Minutes generation: goroutine spawned per session end; internally reduced in bounded LLM batches
 - In-memory caches use `sync.RWMutex`
 - SQLite runs in WAL mode — concurrent reads with serialized writes
 

@@ -157,7 +157,7 @@ Without this, recipients must maintain a local `session_id → context` mapping 
 
 ```bash
 curl -X POST http://localhost:8080/v1/sessions \
-  -H "X-API-Key: $KEY" \
+  -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "participant_count": 2,

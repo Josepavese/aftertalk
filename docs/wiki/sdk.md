@@ -97,6 +97,8 @@ const txn = await client.transcriptions.get(transcriptionId);
 ```typescript
 // Get minutes for a session
 const minutes = await client.minutes.getBySession(sessionId);
+console.log(minutes.summary.overview);
+console.log(minutes.summary.phases);
 
 // Get by ID
 const minutes = await client.minutes.get(minutesId);
@@ -104,6 +106,13 @@ const minutes = await client.minutes.get(minutesId);
 // Update minutes (saves previous version to history)
 // userId is passed as X-User-Id header to track the editor
 await client.minutes.update(minutesId, { sections }, userId?);
+await client.minutes.update(minutesId, {
+  summary: {
+    overview: 'Updated summary',
+    phases: [],
+  },
+  sections,
+}, userId?);
 
 // Delete minutes
 await client.minutes.delete(minutesId);
@@ -191,6 +200,27 @@ await conn.disconnect();
 ```
 
 ## Minutes Polling
+
+The `Minutes` object contains:
+
+```typescript
+{
+  summary: {
+    overview: string,
+    phases: Array<{
+      title: string,
+      summary: string,
+      startMs: number,
+      endMs: number,
+    }>
+  },
+  sections: Record<string, unknown>,
+  citations: Citation[],
+}
+```
+
+`summary` is template-agnostic and always represents the whole conversation.
+`sections` remain template-driven (`therapy`, `consulting`, custom templates, etc.).
 
 ### Wait once
 

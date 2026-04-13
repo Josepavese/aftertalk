@@ -62,7 +62,7 @@ The central rule is simple:
 │  ├── REST API (protected by API key)                                 │
 │  ├── WebSocket /signaling    (protected by JWT room token)           │
 │  ├── STT pipeline (Whisper / Google / AWS / Azure)                   │
-│  └── LLM pipeline (OpenAI / Anthropic / Ollama)                      │
+│  └── Incremental LLM pipeline (OpenAI / Anthropic / Ollama)          │
 │                                                                      │
 │  → POST YOUR_WEBHOOK_URL (minutes delivered after session ends)      │
 └──────────────────────────────────────────────────────────────────────┘
@@ -200,7 +200,7 @@ function handleRoomJoin(AftertalkClient $aftertalk, User $user, Appointment $app
 // POST /your-api/sessions/end
 function handleSessionEnd(AftertalkClient $aftertalk, string $sessionId): void
 {
-    // This triggers the STT transcription + LLM minute generation pipeline.
+    // This triggers the STT transcription + incremental LLM minute generation pipeline.
     // Minutes will be delivered to your WEBHOOK_URL when ready.
     $aftertalk->sessions->end($sessionId);
 }
@@ -348,7 +348,7 @@ Browser: sdk.connectWebRTC({ session_id, token })
         ▼ call ends — user clicks "End"
 Browser: POST /api/sessions/end { session_id } → Your PHP
          Your PHP: POST /v1/sessions/{id}/end (API key) → Aftertalk
-         Aftertalk: close WebRTC, run STT → transcript, run LLM → minutes
+         Aftertalk: close WebRTC, run STT → transcript, run incremental LLM reduction → minutes
          Aftertalk: POST YOUR_WEBHOOK_URL { minutes, metadata }
          Your PHP webhook handler: verify HMAC, save minutes, notify user
 ```
@@ -401,7 +401,27 @@ Two patterns are supported:
 ### Explicit end (recommended as primary path)
 
 The frontend signals the PHP backend when the user ends the call. The PHP backend calls
-`POST /v1/sessions/{id}/end`. Aftertalk starts the STT + LLM pipeline immediately.
+`POST /v1/sessions/{id}/end`. Aftertalk starts the STT + incremental LLM pipeline immediately.
+
+The minutes output includes a top-level `summary` object:
+
+```json
+{
+  "summary": {
+    "overview": "Compact session synopsis",
+    "phases": [
+      {
+        "title": "Opening",
+        "summary": "Greeting and initial alignment",
+        "start_ms": 0,
+        "end_ms": 60000
+      }
+    ]
+  }
+}
+```
+
+This summary is template-agnostic. Template-specific content remains in `sections`.
 
 This is the fastest path to minutes — the pipeline starts as soon as `end` is called.
 

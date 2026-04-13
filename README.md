@@ -21,6 +21,9 @@ transcribes with STT (Whisper · Google · AWS · Azure), generates structured
 minutes with an LLM (OpenAI · Anthropic · Ollama), and delivers them to your
 backend via webhook — all without storing audio.
 
+Minutes generation is incremental: the server reduces the transcript batch by batch,
+so smaller local models can work without seeing the whole conversation in one request.
+
 > No audio is ever persisted. Minutes are always editable. Humans stay in the loop.
 
 ---
@@ -32,8 +35,8 @@ backend via webhook — all without storing audio.
 curl -fsSL https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/install.sh | bash
 
 # Configure
-cp ~/.aftertalk/aftertalk.yaml.example ~/.aftertalk/aftertalk.yaml
-# set: API_KEY, JWT_SECRET, LLM_PROVIDER, STT_PROVIDER
+nano ~/.aftertalk/config/config.yaml
+# set: api.key, jwt.secret, stt.provider, llm.provider
 
 # Start
 aftertalk start

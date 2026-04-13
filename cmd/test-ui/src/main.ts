@@ -83,6 +83,10 @@ class Middleware {
 // Minutes shape returned by the PHP middleware (camelCase from PHP DTO).
 interface PhpMinutes {
   status: string;
+  summary?: {
+    overview?: string;
+    phases?: Array<{ title: string; summary: string; start_ms: number; end_ms: number }>;
+  };
   sections: Record<string, unknown>;
   citations: Array<{ role: string; text: string; timestampMs: number }>;
   templateId?: string;
@@ -329,6 +333,19 @@ function renderMinutes(m: PhpMinutes): string {
   };
 
   let html = '';
+
+  const summary = m.summary;
+  if (summary?.overview) {
+    html += `<div class="sec"><strong>Summary</strong><p>${esc(summary.overview)}</p>`;
+    if ((summary.phases ?? []).length > 0) {
+      html += '<ul>';
+      for (const phase of summary.phases ?? []) {
+        html += `<li><code>${msToTs(phase.start_ms)}-${msToTs(phase.end_ms)}</code> <strong>${esc(phase.title)}</strong>: ${esc(phase.summary)}</li>`;
+      }
+      html += '</ul>';
+    }
+    html += '</div>';
+  }
 
   for (const key of keys) {
     const val = sections[key];

@@ -193,7 +193,7 @@ jwt:
 
 stt:
   provider: whisper-local
-  whisperlocal:
+  whisper_local:
     url: http://localhost:9001
     model: $WHISPER_MODEL
     language: $WHISPER_LANGUAGE
@@ -203,11 +203,11 @@ stt:
 llm:
   provider: ollama
   ollama:
-    url: http://localhost:11434
+    base_url: http://localhost:11434
     model: $OLLAMA_MODEL
 
 processing:
-  chunkSizeMs: 15000
+  chunk_size_ms: 15000
 "@ | Set-Content $CONFIG_FILE
   Write-OK "Config: $CONFIG_FILE"
 } else {
