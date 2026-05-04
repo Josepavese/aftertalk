@@ -10,6 +10,7 @@ function makeMinutes(overrides: Partial<Minutes> = {}): Minutes {
     sessionId: 's1',
     templateId: 'therapy',
     status: 'pending',
+    summary: { overview: '', phases: [] },
     sections: {},
     citations: [],
     provider: 'openai',
@@ -55,7 +56,7 @@ describe('MinutesPoller', () => {
 
   it('throws minutes_polling_timeout after deadline', async () => {
     const api = {
-      getBySession: vi.fn().mockResolvedValue(makeMinutes({ status: 'processing' })),
+      getBySession: vi.fn().mockResolvedValue(makeMinutes({ status: 'pending' })),
     } as unknown as MinutesAPI;
     const poller = new MinutesPoller(api);
 

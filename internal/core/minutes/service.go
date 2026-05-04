@@ -2,15 +2,17 @@ package minutes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/pkg/webhook"
-	"github.com/google/uuid"
 )
 
 // webhookModeNotifyPull is the notify_pull delivery mode identifier.
@@ -128,14 +130,17 @@ func (s *Service) WithWebhookRetrier(r *webhook.Retrier) {
 // GenerateMinutes generates structured minutes using the given LLM provider.
 // Provider resolution (profile → concrete provider) is the caller's responsibility
 // and must happen in the Middleware/Adapter layer, not here.
-func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string, provider llm.LLMProvider) (*Minutes, error) {
+func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string, provider llm.LLMProvider) (*Minutes, error) {
 	logging.Infof("Generating minutes for session %s (template=%s)", sessionID, tmpl.ID)
 
-	m := NewMinutes(uuid.New().String(), sessionID, tmpl.ID)
-	m.Provider = provider.Name()
-
-	if err := s.repo.Create(ctx, m); err != nil {
-		return nil, fmt.Errorf("failed to create minutes: %w", err)
+	m, err := s.prepareMinutesRecord(ctx, sessionID, tmpl.ID, provider.Name())
+	if err != nil {
+		return nil, err
+	}
+	if m.Status == MinutesStatusReady || m.Status == MinutesStatusDelivered {
+		logging.Infof("Minutes already generated for session %s (minutes=%s, status=%s)", sessionID, m.ID, m.Status)
+		s.ensureWebhookDelivery(ctx, sessionID, m, sessCtx)
+		return m, nil
 	}
 
 	if strings.TrimSpace(transcriptionText) == "" {
@@ -166,9 +171,60 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID string, transcr
 	}
 
 	logging.Infof("Minutes generated successfully for session %s", sessionID)
-	go s.deliverWebhook(sessionID, m, sessCtx) //nolint:contextcheck,gosec // webhook delivery is intentionally fire-and-forget, must outlive the request context
+	s.deliverWebhook(sessionID, m, sessCtx)
 
 	return m, nil
+}
+
+func (s *Service) prepareMinutesRecord(ctx context.Context, sessionID, templateID, providerName string) (*Minutes, error) {
+	existing, err := s.repo.GetBySession(ctx, sessionID)
+	if err == nil {
+		existing.TemplateID = templateID
+		existing.Provider = providerName
+		if existing.Status == MinutesStatusError {
+			existing.Status = MinutesStatusPending
+			existing.DeliveredAt = nil
+			if updateErr := s.repo.Update(ctx, existing); updateErr != nil {
+				return nil, fmt.Errorf("failed to reset existing minutes: %w", updateErr)
+			}
+		}
+		return existing, nil
+	}
+	if !errors.Is(err, errMinutesNotFound) {
+		return nil, fmt.Errorf("failed to inspect existing minutes: %w", err)
+	}
+
+	m := NewMinutes(uuid.New().String(), sessionID, templateID)
+	m.Provider = providerName
+	if err := s.repo.Create(ctx, m); err != nil {
+		// Concurrent recovery/manual triggers can race on the UNIQUE(session_id)
+		// constraint. Re-read by session and continue from the single canonical row.
+		existing, getErr := s.repo.GetBySession(ctx, sessionID)
+		if getErr == nil {
+			existing.TemplateID = templateID
+			existing.Provider = providerName
+			return existing, nil
+		}
+		return nil, fmt.Errorf("failed to create minutes: %w", err)
+	}
+	return m, nil
+}
+
+func (s *Service) ensureWebhookDelivery(ctx context.Context, sessionID string, m *Minutes, sessCtx webhook.SessionContext) {
+	if s.webhookClient == nil {
+		return
+	}
+	if s.webhookRetrier != nil {
+		hasEvent, err := s.repo.HasWebhookEvent(ctx, m.ID)
+		if err != nil {
+			logging.Errorf("ensureWebhookDelivery: inspect webhook event for minutes=%s: %v", m.ID, err)
+			return
+		}
+		if hasEvent {
+			return
+		}
+	}
+	s.deliverWebhook(sessionID, m, sessCtx)
 }
 
 func (s *Service) generateStructuredMinutes(ctx context.Context, transcriptionText string, tmpl config.TemplateConfig, detectedLanguage string, provider llm.LLMProvider) (*llm.DynamicMinutesResponse, error) {

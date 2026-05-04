@@ -13,14 +13,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pion/turn/v4"
+
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
-	"github.com/pion/turn/v4"
 )
 
 var (
-	errTURNBothDisabled    = errors.New("turn: both UDP and TCP are disabled — enable at least one")
-	errUnexpectedAddrType  = errors.New("unexpected local addr type")
+	errTURNBothDisabled   = errors.New("turn: both UDP and TCP are disabled — enable at least one")
+	errUnexpectedAddrType = errors.New("unexpected local addr type")
 )
 
 // TURNServer wraps a pion/turn server with lifecycle management.
@@ -48,7 +49,7 @@ func (s *TURNServer) GenerateCredentials(label string, ttl int) (username, crede
 	mac := hmac.New(sha1.New, []byte(s.secret)) //nolint:gosec
 	mac.Write([]byte(username))
 	credential = base64.StdEncoding.EncodeToString(mac.Sum(nil))
-	return
+	return username, credential
 }
 
 // StartTURNServer starts a pion/turn server according to cfg.

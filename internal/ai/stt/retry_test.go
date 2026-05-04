@@ -188,7 +188,6 @@ func TestTranscribeWithRetry_SuccessOnFirstAttempt(t *testing.T) {
 
 	cfg := stt.DefaultRetryConfig()
 	result, err := stt.TranscribeWithRetry(context.Background(), provider, audioData, cfg)
-
 	if err != nil {
 		t.Errorf("Expected success on first attempt, got error: %v", err)
 	}
@@ -214,7 +213,6 @@ func TestTranscribeWithRetry_SuccessOnRetry(t *testing.T) {
 
 	cfg := stt.DefaultRetryConfig()
 	result, err := stt.TranscribeWithRetry(context.Background(), provider, audioData, cfg)
-
 	if err != nil {
 		t.Errorf("Expected success after retries, got error: %v", err)
 	}
@@ -308,7 +306,6 @@ func TestTranscribeWithRetry_RetryDelays(t *testing.T) {
 	}
 
 	_, err := stt.TranscribeWithRetry(context.Background(), provider, audioData, cfg)
-
 	if err != nil {
 		t.Errorf("Expected success after retries, got error: %v", err)
 	}
@@ -338,7 +335,6 @@ func TestTranscribeWithRetry_MaxDelayClamping(t *testing.T) {
 	}
 
 	_, err := stt.TranscribeWithRetry(context.Background(), provider, audioData, cfg)
-
 	if err != nil {
 		t.Errorf("Expected success after retries, got error: %v", err)
 	}
@@ -396,7 +392,6 @@ func TestTranscribeWithRetry_SuccessWithResult(t *testing.T) {
 
 	cfg := stt.DefaultRetryConfig()
 	result, err := stt.TranscribeWithRetry(context.Background(), provider, audioData, cfg)
-
 	if err != nil {
 		t.Errorf("Expected success, got error: %v", err)
 	}
@@ -426,7 +421,6 @@ func TestTranscribeWithRetry_EmptyConfig(t *testing.T) {
 
 	cfg := &stt.RetryConfig{MaxAttempts: 1}
 	result, err := stt.TranscribeWithRetry(context.Background(), provider, audioData, cfg)
-
 	if err != nil {
 		t.Errorf("Expected success with empty config, got error: %v", err)
 	}
@@ -449,7 +443,6 @@ func TestTranscribeWithRetry_MultipleProviders(t *testing.T) {
 
 	cfg := stt.DefaultRetryConfig()
 	result, err := stt.TranscribeWithRetry(context.Background(), provider1, audioData, cfg)
-
 	if err != nil {
 		t.Errorf("Expected success after provider1 fails and provider2 succeeds, got error: %v", err)
 	}

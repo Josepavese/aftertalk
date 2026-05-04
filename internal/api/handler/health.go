@@ -3,8 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/Josepavese/aftertalk/internal/version"
 	"github.com/go-chi/render"
+
+	"github.com/Josepavese/aftertalk/internal/version"
 )
 
 type healthResponse struct {

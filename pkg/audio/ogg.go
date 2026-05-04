@@ -80,12 +80,12 @@ func WriteOGGOpus(frames [][]byte, sampleRate uint32, channels uint8) ([]byte, e
 func buildOpusHead(channels uint8, inputSampleRate uint32) []byte {
 	h := &bytes.Buffer{}
 	h.WriteString("OpusHead")
-	h.WriteByte(1)                                        // version
-	h.WriteByte(channels)                                 // channel count
+	h.WriteByte(1)                                            // version
+	h.WriteByte(channels)                                     // channel count
 	_ = binary.Write(h, binary.LittleEndian, uint16(3840))    //nolint:errcheck // bytes.Buffer never fails
 	_ = binary.Write(h, binary.LittleEndian, inputSampleRate) //nolint:errcheck // bytes.Buffer never fails
 	_ = binary.Write(h, binary.LittleEndian, int16(0))        //nolint:errcheck // bytes.Buffer never fails
-	h.WriteByte(0)                                        // channel mapping family (mono/stereo)
+	h.WriteByte(0)                                            // channel mapping family (mono/stereo)
 	return h.Bytes()
 }
 
@@ -102,7 +102,7 @@ func buildOpusTags() []byte {
 
 // writePage writes a single OGG page to w (RFC 3533).
 // data must fit in a single page (max 255*255 = 65025 bytes).
-func writePage(w *bytes.Buffer, data []byte, headerType byte, granulePos int64, serial uint32, seqNo uint32) {
+func writePage(w *bytes.Buffer, data []byte, headerType byte, granulePos int64, serial, seqNo uint32) {
 	// Build segment table: each segment is at most 255 bytes.
 	var segTable []byte
 	remaining := len(data)
@@ -123,16 +123,16 @@ func writePage(w *bytes.Buffer, data []byte, headerType byte, granulePos int64, 
 	}
 
 	page := &bytes.Buffer{}
-	page.WriteString("OggS")                                       // capture pattern
-	page.WriteByte(0)                                              // version
-	page.WriteByte(headerType)                                     // header type
-	_ = binary.Write(page, binary.LittleEndian, granulePos)            //nolint:errcheck // bytes.Buffer never fails
-	_ = binary.Write(page, binary.LittleEndian, serial)                //nolint:errcheck // bytes.Buffer never fails
-	_ = binary.Write(page, binary.LittleEndian, seqNo)                 //nolint:errcheck // bytes.Buffer never fails
-	_ = binary.Write(page, binary.LittleEndian, uint32(0))             //nolint:errcheck // bytes.Buffer never fails
-	page.WriteByte(byte(len(segTable)))                                 //nolint:gosec // Ogg spec: segment count ≤ 255
-	page.Write(segTable)                                           // segment table
-	page.Write(data)                                               // page data
+	page.WriteString("OggS")                                // capture pattern
+	page.WriteByte(0)                                       // version
+	page.WriteByte(headerType)                              // header type
+	_ = binary.Write(page, binary.LittleEndian, granulePos) //nolint:errcheck // bytes.Buffer never fails
+	_ = binary.Write(page, binary.LittleEndian, serial)     //nolint:errcheck // bytes.Buffer never fails
+	_ = binary.Write(page, binary.LittleEndian, seqNo)      //nolint:errcheck // bytes.Buffer never fails
+	_ = binary.Write(page, binary.LittleEndian, uint32(0))  //nolint:errcheck // bytes.Buffer never fails
+	page.WriteByte(byte(len(segTable)))                     //nolint:gosec // Ogg spec: segment count ≤ 255
+	page.Write(segTable)                                    // segment table
+	page.Write(data)                                        // page data
 
 	// Compute CRC over the complete page (checksum bytes are zero as written above).
 	pageBytes := page.Bytes()

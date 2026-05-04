@@ -68,20 +68,20 @@ func markDone(cfg *instconfig.InstallConfig, stepID string) error {
 
 // RunResult is the outcome of a single step execution.
 type RunResult struct {
-	StepID    string
-	Skipped   bool
-	Err       error
-	Duration  time.Duration
+	StepID   string
+	Skipped  bool
+	Err      error
+	Duration time.Duration
 }
 
 // Runner executes a list of steps in order.
 type Runner struct {
-	Steps   []*Step
-	cfg     *instconfig.InstallConfig
-	log     Logger
-	Only    string // if set, run only this step ID
-	From    string // if set, run from this step ID onwards
-	DryRun  bool
+	Steps  []*Step
+	cfg    *instconfig.InstallConfig
+	log    Logger
+	Only   string // if set, run only this step ID
+	From   string // if set, run from this step ID onwards
+	DryRun bool
 }
 
 // NewRunner creates a Runner with all registered steps.
@@ -162,15 +162,15 @@ func (r *Runner) Run(ctx context.Context) []RunResult {
 // Steps are always executed in this order.
 func Registry() []*Step {
 	return []*Step{
-		stepPrereqs(),   // 00 — system packages
-		stepOllama(),    // 10 — Ollama LLM daemon + model pull
-		stepWhisper(),   // 15 — whisper-local STT server
-		stepUser(),      // 20 — service user + directories
+		stepPrereqs(),     // 00 — system packages
+		stepOllama(),      // 10 — Ollama LLM daemon + model pull
+		stepWhisper(),     // 15 — whisper-local STT server
+		stepUser(),        // 20 — service user + directories
 		stepConfigWrite(), // 30 — aftertalk.yaml + env file
-		stepBinary(),    // 40 — aftertalk server binary
-		stepFirewall(),  // 50 — open port
-		stepService(),   // 60 — systemd/launchd/windows service
-		stepApache(),    // 70 — Apache reverse proxy injection
-		stepVerify(),    // 90 — health check
+		stepBinary(),      // 40 — aftertalk server binary
+		stepFirewall(),    // 50 — open port
+		stepService(),     // 60 — systemd/launchd/windows service
+		stepApache(),      // 70 — Apache reverse proxy injection
+		stepVerify(),      // 90 — health check
 	}
 }

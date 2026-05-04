@@ -2,12 +2,15 @@ package steps
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	instconfig "github.com/Josepavese/aftertalk/cmd/installer/config"
 )
@@ -66,7 +69,7 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dst), err)
@@ -81,11 +84,11 @@ func copyFile(src, dst string) error {
 	defer os.Remove(tmpName) //nolint:errcheck // cleanup if rename fails
 
 	if err := tmp.Chmod(0o755); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("chmod temp: %w", err)
 	}
 	if _, err := io.Copy(tmp, in); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("copy to temp: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
@@ -125,20 +128,44 @@ func downloadBinary(ctx context.Context, url, dest string, log Logger) error {
 	defer os.Remove(tmpName) //nolint:errcheck
 
 	if err := tmp.Chmod(0o755); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("chmod temp: %w", err)
 	}
 	n, err := io.Copy(tmp, resp.Body)
 	if err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("write %s: %w", tmpName, err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("flush: %w", err)
 	}
+	if expected := os.Getenv("AFTERTALK_DOWNLOAD_SHA256"); expected != "" {
+		if err := verifyFileSHA256(tmpName, expected); err != nil {
+			return err
+		}
+	}
 	if err := os.Rename(tmpName, dest); err != nil {
 		return fmt.Errorf("rename → %s: %w", dest, err)
 	}
 	log.Info(fmt.Sprintf("binary installed (%d bytes) → %s", n, dest))
+	return nil
+}
+
+func verifyFileSHA256(path, expected string) error {
+	expected = strings.ToLower(strings.TrimSpace(expected))
+	file, err := os.Open(path) //nolint:gosec // installer verifies its own downloaded temp file
+	if err != nil {
+		return fmt.Errorf("open for checksum: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, file); err != nil {
+		return fmt.Errorf("hash %s: %w", path, err)
+	}
+	actual := hex.EncodeToString(h.Sum(nil))
+	if actual != expected {
+		return fmt.Errorf("checksum mismatch for downloaded binary: expected %s, got %s", expected, actual) //nolint:err113
+	}
 	return nil
 }

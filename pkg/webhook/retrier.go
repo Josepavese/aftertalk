@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/google/uuid"
+
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 const (
@@ -112,7 +113,7 @@ func isLegacyWebhookEventsSchemaError(err error) bool {
 		strings.Contains(msg, "on conflict clause does not match any primary key or unique constraint")
 }
 
-// Run starts the background delivery loop. It blocks until ctx is cancelled.
+// Run starts the background delivery loop. It blocks until ctx is canceled.
 func (r *Retrier) Run(ctx context.Context) {
 	ticker := time.NewTicker(workerInterval)
 	defer ticker.Stop()

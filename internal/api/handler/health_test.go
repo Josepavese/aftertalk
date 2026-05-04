@@ -6,9 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Josepavese/aftertalk/internal/version"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Josepavese/aftertalk/internal/version"
 )
 
 func TestHealthCheck(t *testing.T) {

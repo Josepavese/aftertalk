@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
+
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 func init() {

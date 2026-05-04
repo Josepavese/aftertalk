@@ -27,8 +27,8 @@ class SessionsApiTest extends TestCase
             'status'            => 'active',
             'participant_count' => 2,
             'participants'      => [
-                ['participant_id' => 'p1', 'user_id' => 'doc', 'role' => 'terapeuta', 'token' => 'jwt1'],
-                ['participant_id' => 'p2', 'user_id' => 'pat', 'role' => 'paziente',  'token' => 'jwt2'],
+                ['id' => 'p1', 'user_id' => 'doc', 'role' => 'terapeuta', 'token' => 'jwt1'],
+                ['id' => 'p2', 'user_id' => 'pat', 'role' => 'paziente',  'token' => 'jwt2'],
             ],
             'created_at' => '2026-03-19T10:00:00Z',
             'updated_at' => '2026-03-19T10:00:00Z',
@@ -97,7 +97,7 @@ class SessionsApiTest extends TestCase
 
     public function testGetReturnsSession(): void
     {
-        $http    = $this->makeHttpClient(200, $this->makeSessionJson());
+        $http    = $this->makeHttpClient(200, $this->makeSessionJson(['id' => 'sess-abc', 'session_id' => null]));
         $api     = new SessionsApi($http);
         $session = $api->get('sess-abc');
 

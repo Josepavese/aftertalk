@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -269,6 +270,38 @@ func TestService_EndSession_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
+func TestTranscriptionTrackerWaitsPerSession(t *testing.T) {
+	tracker := newTranscriptionTracker()
+	tracker.Add("session-a")
+	tracker.Add("session-b")
+
+	waitA := make(chan struct{})
+	go func() {
+		tracker.Wait("session-a")
+		close(waitA)
+	}()
+
+	select {
+	case <-waitA:
+		t.Fatal("session-a wait returned before session-a completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	tracker.Done("session-b")
+	select {
+	case <-waitA:
+		t.Fatal("session-a wait returned after unrelated session completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	tracker.Done("session-a")
+	select {
+	case <-waitA:
+	case <-time.After(time.Second):
+		t.Fatal("session-a wait did not return after session-a completed")
+	}
+}
+
 func TestService_EndSession_DBError(t *testing.T) {
 	now := time.Now().UTC()
 	sessionID := uuid.New().String()
@@ -429,13 +462,14 @@ func TestService_ConnectParticipant_Success(t *testing.T) {
 	err = repo.CreateParticipant(ctx, participant)
 	assert.NoError(t, err)
 
-	// Note: The service ConnectParticipant method has a bug - it calls GetParticipantsBySession
-	// instead of GetParticipantByJTI. This test verifies the bug exists.
 	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	err = service.ConnectParticipant(ctx, participantID)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "participant not found")
+	require.NoError(t, err)
+
+	connected, err := repo.GetParticipantByID(ctx, participantID)
+	require.NoError(t, err)
+	require.NotNil(t, connected.ConnectedAt)
 }
 
 func TestService_ConnectParticipant_NoParticipants(t *testing.T) {
@@ -454,7 +488,7 @@ func TestService_ConnectParticipant_NoParticipants(t *testing.T) {
 	assert.Contains(t, err.Error(), "participant not found")
 }
 
-func TestService_ConnectParticipant_SessionCacheError(t *testing.T) {
+func TestService_ConnectParticipant_WithoutCachedSessionSucceeds(t *testing.T) {
 	now := time.Now().UTC()
 	sessionID := "session-1"
 	participantID := "participant-1"
@@ -477,7 +511,7 @@ func TestService_ConnectParticipant_SessionCacheError(t *testing.T) {
 	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	err := service.ConnectParticipant(ctx, participantID)
-	assert.Error(t, err)
+	require.NoError(t, err)
 }
 
 func TestService_ConnectParticipant_SessionNotActive(t *testing.T) {
@@ -504,5 +538,6 @@ func TestService_ConnectParticipant_SessionNotActive(t *testing.T) {
 	service := NewService(repo, jwtManager, sessionCache, tokenCache, nil, nil, nil, 0, config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
 
 	err := service.ConnectParticipant(ctx, participantID)
-	assert.Error(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "session is not active")
 }

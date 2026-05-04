@@ -42,7 +42,6 @@ func (r *TranscriptionRepository) Create(ctx context.Context, transcription *Tra
 		transcription.CreatedAt.Format(time.RFC3339),
 		string(transcription.Status),
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to create transcription: %w", err)
 	}
@@ -74,7 +73,6 @@ func (r *TranscriptionRepository) GetByID(ctx context.Context, id string) (*Tran
 		&createdAt,
 		&t.Status,
 	)
-
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %s", errTranscriptionNotFound, id)
@@ -82,7 +80,9 @@ func (r *TranscriptionRepository) GetByID(ctx context.Context, id string) (*Tran
 		return nil, fmt.Errorf("failed to get transcription: %w", err)
 	}
 
-	if parsed, err := time.Parse(time.RFC3339, createdAt); err == nil { t.CreatedAt = parsed }
+	if parsed, err := time.Parse(time.RFC3339, createdAt); err == nil {
+		t.CreatedAt = parsed
+	}
 	if confidence.Valid {
 		t.Confidence = confidence.Float64
 	}
@@ -123,12 +123,13 @@ func (r *TranscriptionRepository) GetBySession(ctx context.Context, sessionID st
 			&createdAt,
 			&t.Status,
 		)
-
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan transcription: %w", err)
 		}
 
-		if parsed, err := time.Parse(time.RFC3339, createdAt); err == nil { t.CreatedAt = parsed }
+		if parsed, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			t.CreatedAt = parsed
+		}
 		if confidence.Valid {
 			t.Confidence = confidence.Float64
 		}

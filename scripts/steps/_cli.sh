@@ -19,6 +19,43 @@ MODELS="$AFTERTALK_HOME/models/whisper"
 
 _is_running() { [[ -f "$1" ]] && kill -0 "$(cat "$1")" 2>/dev/null; }
 
+_verify_release_checksum() {
+  local checksums_file="$1"
+  local asset="$2"
+  local file="$3"
+
+  if [[ ! -f "$checksums_file" ]]; then
+    echo "  ⚠ checksums.txt unavailable; skipping checksum for $asset"
+    return 0
+  fi
+
+  local expected
+  expected="$(awk -v asset="$asset" '$2 == asset {print $1}' "$checksums_file")"
+  if [[ -z "$expected" ]]; then
+    echo "  ⚠ checksum missing for $asset; skipping"
+    return 0
+  fi
+
+  local actual
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$file" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+  else
+    echo "  ⚠ no SHA256 tool found; skipping checksum for $asset"
+    return 0
+  fi
+
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Checksum mismatch for $asset" >&2
+    echo "expected: $expected" >&2
+    echo "actual:   $actual" >&2
+    return 1
+  fi
+
+  echo "  ✓ checksum verified: $asset"
+}
+
 cmd_start() {
   echo "▶ Starting Aftertalk stack..."
 
@@ -84,25 +121,39 @@ cmd_restart() { cmd_stop; sleep 1; cmd_start; }
 cmd_update() {
   cmd_stop
   local release="${AFTERTALK_RELEASE:-latest}"
-  local os arch bin_name url whisper_url
+  local os arch asset_os bin_name base_url url whisper_url checksums_file
   case "$(uname -s)" in Linux*) os=linux ;; Darwin*) os=macos ;; *) echo "Unsupported OS" ; return 1 ;; esac
   case "$(uname -m 2>/dev/null)" in x86_64|amd64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) echo "Unsupported arch" ; return 1 ;; esac
-  bin_name="aftertalk-${os}-${arch}"
+  asset_os="$os"
+  [[ "$asset_os" == "macos" ]] && asset_os=darwin
+  bin_name="aftertalk-${asset_os}-${arch}"
 
   if [[ "$release" == "latest" ]]; then
-    url="https://github.com/Josepavese/aftertalk/releases/latest/download/${bin_name}"
-    whisper_url="https://github.com/Josepavese/aftertalk/releases/latest/download/whisper_server.py"
+    base_url="https://github.com/Josepavese/aftertalk/releases/latest/download"
   else
-    url="https://github.com/Josepavese/aftertalk/releases/download/${release}/${bin_name}"
-    whisper_url="https://github.com/Josepavese/aftertalk/releases/download/${release}/whisper_server.py"
+    base_url="https://github.com/Josepavese/aftertalk/releases/download/${release}"
+  fi
+  url="${base_url}/${bin_name}"
+  whisper_url="${base_url}/whisper_server.py"
+
+  checksums_file="$(mktemp)"
+  if ! curl -fsSL "${base_url}/checksums.txt" -o "$checksums_file" 2>/dev/null; then
+    rm -f "$checksums_file"
+    checksums_file=""
+    echo "  ⚠ checksums.txt not available for ${release}; downloads will not be hash-verified"
   fi
 
-  echo "▶ Downloading update (${os}/${arch}, release: ${release})..."
+  echo "▶ Downloading update (${asset_os}/${arch}, release: ${release})..."
   curl -fL --progress-bar "$url" -o "$BIN/aftertalk-server"
+  _verify_release_checksum "$checksums_file" "$bin_name" "$BIN/aftertalk-server" || return 1
   chmod +x "$BIN/aftertalk-server"
-  curl -fsSL "$whisper_url" -o "$BIN/whisper_server.py" \
-    || curl -fsSL "https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/whisper_server.py" \
-         -o "$BIN/whisper_server.py"
+  if curl -fsSL "$whisper_url" -o "$BIN/whisper_server.py"; then
+    _verify_release_checksum "$checksums_file" "whisper_server.py" "$BIN/whisper_server.py" || return 1
+  else
+    curl -fsSL "https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/whisper_server.py" \
+      -o "$BIN/whisper_server.py"
+  fi
+  [[ -n "$checksums_file" ]] && rm -f "$checksums_file"
   chmod +x "$BIN/whisper_server.py"
   echo "✓ Updated. Run: aftertalk start"
 }

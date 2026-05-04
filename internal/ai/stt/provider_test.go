@@ -130,8 +130,8 @@ func TestGoogleConfig(t *testing.T) {
 
 func TestAWSConfig(t *testing.T) {
 	cfg := stt.AWSConfig{
-		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",                         
-		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",   
+		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
+		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 		Region:          "us-west-2",
 	}
 

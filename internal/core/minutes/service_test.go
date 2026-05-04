@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/pkg/webhook"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func init() { //nolint:gochecknoinits // test logger setup
@@ -121,4 +122,53 @@ func TestGenerateMinutes_EmptyTranscript(t *testing.T) {
 	assert.Equal(t, MinutesStatusReady, mins.Status)
 	assert.Empty(t, mins.Summary.Overview)
 	assert.Empty(t, mins.Citations)
+}
+
+func TestGenerateMinutes_ReturnsExistingReadyMinutes(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	service := NewService(repo)
+
+	existing := NewMinutes("existing-minutes", "session-existing", "therapy")
+	existing.Summary.Overview = "Already generated"
+	existing.MarkReady()
+	require.NoError(t, repo.Create(context.Background(), existing))
+
+	provider := &scriptedLLMProvider{
+		responses: []string{`{"summary":{"overview":"should not be used","phases":[]},"sections":{},"citations":[]}`},
+	}
+
+	mins, err := service.GenerateMinutes(context.Background(), "session-existing", "[0ms therapist]: Ciao", config.DefaultTemplates()[0], webhook.SessionContext{}, "it", provider)
+	require.NoError(t, err)
+	assert.Equal(t, "existing-minutes", mins.ID)
+	assert.Equal(t, "Already generated", mins.Summary.Overview)
+	assert.Empty(t, provider.prompts)
+}
+
+func TestGenerateMinutes_ReusesExistingErrorMinutes(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	service := NewService(repo)
+
+	existing := NewMinutes("retry-minutes", "session-retry", "therapy")
+	existing.MarkError()
+	require.NoError(t, repo.Create(context.Background(), existing))
+
+	provider := &scriptedLLMProvider{
+		responses: []string{`{
+			"summary":{"overview":"Retry completed","phases":[]},
+			"sections":{"themes":["retry"]},
+			"citations":[]
+		}`},
+	}
+
+	mins, err := service.GenerateMinutes(context.Background(), "session-retry", "[0ms therapist]: Ripartiamo", config.DefaultTemplates()[0], webhook.SessionContext{}, "it", provider)
+	require.NoError(t, err)
+	assert.Equal(t, "retry-minutes", mins.ID)
+	assert.Equal(t, MinutesStatusReady, mins.Status)
+	assert.Equal(t, "Retry completed", mins.Summary.Overview)
+
+	bySession, err := repo.GetBySession(context.Background(), "session-retry")
+	require.NoError(t, err)
+	assert.Equal(t, "retry-minutes", bySession.ID)
 }

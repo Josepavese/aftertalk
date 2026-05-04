@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 	"github.com/Josepavese/aftertalk/internal/logging"
-	"github.com/google/uuid"
 )
 
 type Service struct {

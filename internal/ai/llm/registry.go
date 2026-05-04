@@ -42,7 +42,7 @@ func NewLLMRegistry(cfg *config.LLMConfig) (*LLMRegistry, error) {
 			Deployment:     cfg.Azure.Deployment,
 			RequestTimeout: cfg.Azure.RequestTimeout,
 		},
-		Ollama:    OllamaConfig{BaseURL: cfg.Ollama.BaseURL, Model: cfg.Ollama.Model},
+		Ollama: OllamaConfig{BaseURL: cfg.Ollama.BaseURL, Model: cfg.Ollama.Model},
 	}
 
 	if len(cfg.Profiles) == 0 {

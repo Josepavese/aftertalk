@@ -27,18 +27,27 @@ interface Session {
     sessionId: string;
     status: SessionStatus;
     templateId?: string;
+    metadata?: string;
+    sttProfile?: string;
+    llmProfile?: string;
     participantCount: number;
     participants: Participant[];
     createdAt: string;
     endedAt?: string;
-    updatedAt: string;
+    updatedAt?: string;
 }
 interface Participant {
-    participantId: string;
+    id: string;
+    sessionId?: string;
     userId: string;
     role: string;
-    token: string;
+    token?: string;
+    expiresAt?: string;
+    tokenJti?: string;
+    tokenExpiresAt?: string;
+    tokenUsed?: boolean;
     connectedAt?: string;
+    disconnectedAt?: string;
     audioStreamId?: string;
 }
 interface CreateSessionRequest {
@@ -76,10 +85,10 @@ interface ParticipantInput {
 }
 interface CreateSessionResponse {
     sessionId: string;
-    status: SessionStatus;
-    templateId?: string;
     participants: Participant[];
-    createdAt: string;
+    status?: SessionStatus;
+    templateId?: string;
+    createdAt?: string;
 }
 interface SessionFilters {
     status?: SessionStatus;
@@ -90,12 +99,15 @@ type TranscriptionStatus = 'pending' | 'processing' | 'ready' | 'error';
 interface Transcription {
     id: string;
     sessionId: string;
+    segmentIndex: number;
     role: string;
     text: string;
+    provider?: string;
+    language?: string;
     status: TranscriptionStatus;
-    confidence: number;
-    startedAtMs: number;
-    endedAtMs: number;
+    confidence?: number;
+    startMs: number;
+    endMs: number;
     createdAt: string;
 }
 interface TranscriptionFilters {
@@ -117,13 +129,12 @@ interface Minutes {
 }
 interface MinutesVersion {
     id: string;
-    sessionId: string;
+    minutesId: string;
     version: number;
-    summary?: MinutesSummary;
-    sections: Record<string, unknown>;
-    citations: Citation[];
-    updatedAt: string;
+    content: string;
+    editedAt: string;
     updatedBy?: string;
+    editedBy?: string;
 }
 interface MinutesSummary {
     overview: string;
@@ -295,7 +306,7 @@ declare class SessionsAPI {
     constructor(http: HttpClient);
     create(request: CreateSessionRequest): Promise<CreateSessionResponse>;
     get(sessionId: string): Promise<Session>;
-    getStatus(sessionId: string): Promise<Pick<Session, 'sessionId' | 'status' | 'updatedAt'>>;
+    getStatus(sessionId: string): Promise<Pick<Session, 'sessionId' | 'status'>>;
     end(sessionId: string): Promise<void>;
     list(filters?: SessionFilters): Promise<PaginatedResponse<Session>>;
     delete(sessionId: string): Promise<void>;

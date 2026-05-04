@@ -23,17 +23,17 @@ export class RoomsAPI {
    * Role is exclusive: two participants cannot share the same role.
    */
   async join(request: JoinRoomRequest): Promise<JoinRoomResponse> {
-    const raw = await this.http.post<{ session_id: string; token: string }>(
+    const raw = await this.http.post<{ sessionId: string; token: string }>(
       '/v1/rooms/join',
       {
-        code:        request.code,
-        name:        request.name,
-        role:        request.role,
-        template_id: request.templateId,
-        stt_profile: request.sttProfile,
-        llm_profile: request.llmProfile,
+        code:       request.code,
+        name:       request.name,
+        role:       request.role,
+        templateId: request.templateId,
+        sttProfile: request.sttProfile,
+        llmProfile: request.llmProfile,
       },
     );
-    return { sessionId: raw.session_id, token: raw.token };
+    return { sessionId: raw.sessionId, token: raw.token };
   }
 }

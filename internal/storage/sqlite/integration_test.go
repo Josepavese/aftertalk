@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Josepavese/aftertalk/internal/core/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
+
+	"github.com/Josepavese/aftertalk/internal/core/session"
 )
 
 func TestDB_Migrations(t *testing.T) {
@@ -84,12 +85,12 @@ func TestDB_Migrations(t *testing.T) {
 		assert.NoError(t, rows.Err())
 
 		expectedColumns := map[string]bool{
-			"id": true,
-			"status": true,
-			"created_at": true,
-			"ended_at": true,
+			"id":                true,
+			"status":            true,
+			"created_at":        true,
+			"ended_at":          true,
 			"participant_count": true,
-			"metadata": true,
+			"metadata":          true,
 		}
 
 		for col := range expectedColumns {

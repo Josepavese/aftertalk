@@ -6,9 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Josepavese/aftertalk/internal/metrics"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/Josepavese/aftertalk/internal/metrics"
 )
 
 func PrometheusMetrics() http.Handler {

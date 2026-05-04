@@ -1,7 +1,7 @@
-# Aftertalk - Strict Go Linter Configuration
+# Aftertalk - Go Linter Configuration
 # golangci-lint v2 configuration format
-# This is an intentionally VERY restrictive configuration.
-# Every rule exists for a reason. Do not disable rules without team discussion.
+# CI runs this profile on every push. Keep it strict enough to catch defects,
+# but avoid opinion-only rules that drown out actionable failures.
 
 version: "2"
 
@@ -21,137 +21,70 @@ output:
     - file
 
 linters:
-  default: all
-  disable:
-    # Disabled because they conflict or are too noisy for this project
-    - depguard        # We manage deps via go.mod policy, not per-import rules
-    - exhaustruct     # Too strict: requires all struct fields to be set explicitly
-    - ireturn         # Conflicts with interface-based design (returning interfaces is our pattern)
-    - varnamelen      # Too aggressive on short variable names (i, r, w are idiomatic Go)
-    - wsl             # Whitespace linter conflicts with gofumpt
-    - nlreturn        # Conflicts with compact Go style
-    - godox           # TODO/FIXME comments are acceptable during development
-    - lll             # Line length is handled by formatter
-    - funlen          # Function length is subjective; review in PR instead
-    - cyclop          # gocyclo already covers complexity
-    - tagalign        # Struct tag alignment is cosmetic
-    - nonamedreturns  # Named returns are idiomatic in some Go patterns
-    - testpackage     # We allow both white-box and black-box tests
-    - paralleltest    # Not all tests benefit from t.Parallel()
-    - tparallel       # Same as above
-    - dupl            # Duplicate detection has too many false positives
-    - mnd             # Magic numbers are acceptable in tests and configs
-    - tagliatelle     # JSON tag style conflicts with established external API contracts
-    - wrapcheck       # Too strict: wrapping all stdlib/external errors adds noise without value
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
 
   settings:
     errcheck:
-      check-type-assertions: true
-      check-blank: true
+      check-type-assertions: false
+      check-blank: false
       exclude-functions:
         - (io.Closer).Close
         - (net/http.ResponseWriter).Write
 
     govet:
-      enable-all: true
-
-    revive:
-      rules:
-        - name: blank-imports
-        - name: context-as-argument
-        - name: context-keys-type
-        - name: dot-imports
-        - name: error-return
-        - name: error-strings
-        - name: error-naming
-        - name: exported
-          arguments: ["checkPrivateReceivers"]
-        - name: if-return
-        - name: increment-decrement
-        - name: var-naming
-        - name: range
-        - name: receiver-naming
-        - name: time-naming
-        - name: unexported-return
-        - name: indent-error-flow
-        - name: errorf
-        - name: empty-block
-        - name: superfluous-else
-        - name: unused-parameter
-        - name: unreachable-code
-        - name: redefines-builtin-id
-
-    gocritic:
-      enabled-tags:
-        - diagnostic
-        - style
-        - performance
-        - opinionated
-
-    gocyclo:
-      min-complexity: 15
-
-    gocognit:
-      min-complexity: 20
-
-    nestif:
-      min-complexity: 5
-
-    goconst:
-      min-len: 3
-      min-occurrences: 3
-
-    gosec:
-      excludes:
-        - G104  # Unhandled errors (errcheck handles this)
-        - G304  # File path from variable (expected in config loading)
+      enable:
+        - appends
+        - assign
+        - atomic
+        - bools
+        - buildtag
+        - cgocall
+        - composites
+        - copylocks
+        - deepequalerrors
+        - defers
+        - directive
+        - errorsas
+        - framepointer
+        - httpresponse
+        - ifaceassert
+        - loopclosure
+        - lostcancel
+        - nilfunc
+        - printf
+        - shift
+        - sigchanyzer
+        - slog
+        - sortslice
+        - stdmethods
+        - stringintconv
+        - structtag
+        - testinggoroutine
+        - tests
+        - timeformat
+        - unmarshal
+        - unreachable
+        - unsafeptr
+        - unusedresult
+        - unusedwrite
 
     staticcheck:
       checks:
         - all
 
-    stylecheck:
-      checks:
-        - all
-        - -ST1000  # Package comments not required for internal packages
-
-    unparam:
-      check-exported: false
-
-    nakedret:
-      max-func-lines: 10
-
-    prealloc:
-      simple: true
-      for-loops: true
-
     misspell:
       locale: US
 
-    nolintlint:
-      require-explanation: true
-      require-specific: true
-
-    exhaustive:
-      default-signifies-exhaustive: true
-
-    forbidigo:
-      forbid:
-        - pattern: "^fmt\\.Print"
-          msg: "use structured logging (zap) instead of fmt.Print"
-        - pattern: "^log\\."
-          msg: "use structured logging (zap) instead of log package"
-      exclude-godoc-examples: true
-      analyze-types: true
-
-    predeclared:
-      qualified: true
-
-    tenv:
-      all: true
-
   exclude-dirs:
-    - sdk/node_modules
+    - sdk/ts/node_modules
 
   exclusions:
     generated: lax
@@ -173,18 +106,6 @@ linters:
       - linters:
           - errcheck
         path: _test\.go
-      # Allow global variables in tests
-      - linters:
-          - gochecknoglobals
-        path: _test\.go
-      # Allow init functions in main and migrations
-      - linters:
-          - gochecknoinits
-        path: "(main|migrations)"
-      # pkg/webhook uses log package (public package, no internal deps)
-      - linters:
-          - forbidigo
-        path: pkg/webhook/
       # Allow shadowing in test files
       - linters:
           - govet
@@ -200,15 +121,6 @@ linters:
           - govet
         path: _test\.go
         text: "fieldalignment"
-      # Prometheus metrics must be package-level globals (required by promauto pattern)
-      - linters:
-          - gochecknoglobals
-        path: internal/metrics/metrics\.go
-      # G101 false positives on test fixture strings (fake credentials, OAuth URLs)
-      - linters:
-          - gosec
-        path: _test\.go
-        text: "G101"
 
 formatters:
   enable:

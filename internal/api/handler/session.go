@@ -6,10 +6,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/Josepavese/aftertalk/internal/core/session"
-	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
+
+	"github.com/Josepavese/aftertalk/internal/core/session"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 type SessionService interface {
@@ -46,6 +47,8 @@ type CreateSessionRequest struct {
 	Metadata         string               `json:"metadata,omitempty"`
 	Participants     []ParticipantRequest `json:"participants"`
 	ParticipantCount int                  `json:"participant_count"`
+	STTProfile       string               `json:"stt_profile,omitempty"`
+	LLMProfile       string               `json:"llm_profile,omitempty"`
 }
 
 type ParticipantRequest struct {
@@ -95,6 +98,8 @@ func (h *SessionHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		TemplateID:       req.TemplateID,
 		Participants:     make([]session.ParticipantRequest, len(req.Participants)),
 		Metadata:         req.Metadata,
+		STTProfile:       req.STTProfile,
+		LLMProfile:       req.LLMProfile,
 	}
 
 	for i, p := range req.Participants {

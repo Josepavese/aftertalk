@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	errXirsysServerError      = errors.New("xirsys ice: server error")
-	errXirsysAPIError         = errors.New("xirsys ice: api error")
-	errXirsysEmptyICEServers  = errors.New("xirsys ice: empty ice_servers in response")
+	errXirsysServerError     = errors.New("xirsys ice: server error")
+	errXirsysAPIError        = errors.New("xirsys ice: api error")
+	errXirsysEmptyICEServers = errors.New("xirsys ice: empty ice_servers in response")
 )
 
 // XirsysProvider fetches ICE credentials from the Xirsys TURN network.
@@ -22,11 +22,11 @@ var (
 // Auth: HTTP Basic (ident : secretKey)
 // Docs: https://docs.xirsys.com/?pg=api-turn
 type XirsysProvider struct {
-	ident      string
-	secretKey  string
-	channel    string
-	client     *http.Client
-	baseURL    string // override for tests; default: https://global.xirsys.net
+	ident     string
+	secretKey string
+	channel   string
+	client    *http.Client
+	baseURL   string // override for tests; default: https://global.xirsys.net
 }
 
 func NewXirsysProvider(ident, secretKey, channel string) *XirsysProvider {

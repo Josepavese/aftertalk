@@ -227,6 +227,7 @@ func (p *AzureOpenAIProvider) Generate(ctx context.Context, prompt string) (stri
 			{"role": "system", "content": "You are a helpful assistant that generates structured meeting minutes in JSON format."},
 			{"role": "user", "content": prompt},
 		},
+		"response_format": map[string]string{"type": "json_object"},
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -234,7 +235,7 @@ func (p *AzureOpenAIProvider) Generate(ctx context.Context, prompt string) (stri
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=2023-05-15", p.endpoint, p.deployment)
+	url := fmt.Sprintf("%s/openai/deployments/%s/chat/completions?api-version=2024-02-15-preview", p.endpoint, p.deployment)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)

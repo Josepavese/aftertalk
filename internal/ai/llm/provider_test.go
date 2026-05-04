@@ -136,6 +136,28 @@ func TestParseMinutesDynamic_StripsJunkAroundJSON(t *testing.T) {
 	}
 }
 
+func TestParseMinutesDynamic_ExtractsFirstBalancedJSONObject(t *testing.T) {
+	raw := "prefix {\"summary\":{\"overview\":\"ok } inside string\",\"phases\":[]},\"sections\":{},\"citations\":[]} trailing {not-json}"
+	r, err := llm.ParseMinutesDynamic(raw)
+	if err != nil {
+		t.Fatalf("ParseMinutesDynamic error: %v", err)
+	}
+	if r.Summary.Overview != "ok } inside string" {
+		t.Errorf("Expected balanced object extraction, got %q", r.Summary.Overview)
+	}
+}
+
+func TestParseMinutesDynamic_StripsBOM(t *testing.T) {
+	raw := "\ufeff{\"summary\":{\"overview\":\"ok\",\"phases\":[]},\"sections\":{},\"citations\":[]}"
+	r, err := llm.ParseMinutesDynamic(raw)
+	if err != nil {
+		t.Fatalf("ParseMinutesDynamic error: %v", err)
+	}
+	if r.Summary.Overview != "ok" {
+		t.Errorf("Expected overview 'ok', got %q", r.Summary.Overview)
+	}
+}
+
 func TestParseMinutesDynamic_SectionValues(t *testing.T) {
 	raw := `{
 		"sections": {

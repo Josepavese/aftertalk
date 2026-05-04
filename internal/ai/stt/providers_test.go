@@ -9,9 +9,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 	"github.com/Josepavese/aftertalk/internal/logging"
-	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -29,7 +30,7 @@ func TestGoogleSTTProvider_Name(t *testing.T) {
 func TestGoogleSTTProvider_IsAvailable(t *testing.T) {
 	tmp := t.TempDir()
 	credPath := filepath.Join(tmp, "creds.json")
-	os.WriteFile(credPath, []byte(`{}`), 0600) //nolint:errcheck
+	os.WriteFile(credPath, []byte(`{}`), 0o600) //nolint:errcheck
 
 	if !stt.NewGoogleSTTProvider(credPath).IsAvailable() {
 		t.Error("should be available when credentials file exists")
@@ -67,7 +68,7 @@ func TestGoogleSTTProvider_Transcribe(t *testing.T) {
 	}
 	b, err := json.Marshal(sa)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(credPath, b, 0600))
+	require.NoError(t, os.WriteFile(credPath, b, 0o600))
 
 	p := stt.NewGoogleSTTProvider(credPath)
 	p.SetSpeechEndpoint(srv.URL + "/speech:recognize")

@@ -50,7 +50,7 @@ type MinutesAdapter struct {
 	LLMRegistry *llm.LLMRegistry
 }
 
-func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string, llmProfile string) (interface{}, error) {
+func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage, llmProfile string) (interface{}, error) {
 	provider := a.LLMRegistry.Get(llmProfile)
 	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage, provider)
 }

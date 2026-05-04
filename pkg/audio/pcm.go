@@ -77,7 +77,7 @@ func WritePCM(w io.Writer, samples []int16) error {
 	return err
 }
 
-func ChunkPCM(samples []int16, chunkSizeMs int, sampleRate int) [][]int16 {
+func ChunkPCM(samples []int16, chunkSizeMs, sampleRate int) [][]int16 {
 	samplesPerChunk := (sampleRate * chunkSizeMs) / 1000
 	if samplesPerChunk <= 0 {
 		return nil

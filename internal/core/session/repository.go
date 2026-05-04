@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	errAudioStreamNotFound   = errors.New("audio stream not found for participant")
-	errSessionNotFound       = errors.New("session not found")
+	errAudioStreamNotFound    = errors.New("audio stream not found for participant")
+	errSessionNotFound        = errors.New("session not found")
 	errParticipantNotFoundJTI = errors.New("participant not found with jti")
 )
 
@@ -48,7 +48,6 @@ func (r *SessionRepository) Create(ctx context.Context, session *Session) error 
 		session.STTProfile,
 		session.LLMProfile,
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to create session: %w", err)
 	}
@@ -78,7 +77,6 @@ func (r *SessionRepository) GetByID(ctx context.Context, id string) (*Session, e
 		&sttProfile,
 		&llmProfile,
 	)
-
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %s", errSessionNotFound, id)
@@ -132,7 +130,6 @@ func (r *SessionRepository) Update(ctx context.Context, session *Session) error 
 		session.Metadata,
 		session.ID,
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to update session: %w", err)
 	}
@@ -170,7 +167,6 @@ func (r *SessionRepository) CreateParticipant(ctx context.Context, participant *
 		connectedAt,
 		disconnectedAt,
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to create participant: %w", err)
 	}
@@ -200,10 +196,58 @@ func (r *SessionRepository) GetParticipantByJTI(ctx context.Context, jti string)
 		&connectedAt,
 		&disconnectedAt,
 	)
-
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %s", errParticipantNotFoundJTI, jti)
+		}
+		return nil, fmt.Errorf("failed to get participant: %w", err)
+	}
+
+	if tokenExpiresAt.Valid {
+		if t, err := time.Parse(time.RFC3339, tokenExpiresAt.String); err == nil {
+			participant.TokenExpiresAt = t
+		}
+	}
+	participant.TokenUsed = tokenUsed == 1
+	if connectedAt.Valid {
+		if t, err := time.Parse(time.RFC3339, connectedAt.String); err == nil {
+			participant.ConnectedAt = &t
+		}
+	}
+	if disconnectedAt.Valid {
+		if t, err := time.Parse(time.RFC3339, disconnectedAt.String); err == nil {
+			participant.DisconnectedAt = &t
+		}
+	}
+
+	return &participant, nil
+}
+
+func (r *SessionRepository) GetParticipantByID(ctx context.Context, id string) (*Participant, error) {
+	query := `
+		SELECT id, session_id, user_id, role, token_jti, token_expires_at, token_used, connected_at, disconnected_at
+		FROM participants
+		WHERE id = ?
+	`
+
+	var participant Participant
+	var tokenExpiresAt, connectedAt, disconnectedAt sql.NullString
+	var tokenUsed int
+
+	err := r.QueryRowContext(ctx, query, id).Scan(
+		&participant.ID,
+		&participant.SessionID,
+		&participant.UserID,
+		&participant.Role,
+		&participant.TokenJTI,
+		&tokenExpiresAt,
+		&tokenUsed,
+		&connectedAt,
+		&disconnectedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %s", errParticipantNotFound, id)
 		}
 		return nil, fmt.Errorf("failed to get participant: %w", err)
 	}
@@ -259,7 +303,6 @@ func (r *SessionRepository) GetParticipantsBySession(ctx context.Context, sessio
 			&connectedAt,
 			&disconnectedAt,
 		)
-
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan participant: %w", err)
 		}
@@ -319,7 +362,6 @@ func (r *SessionRepository) UpdateParticipant(ctx context.Context, participant *
 		disconnectedAt,
 		participant.ID,
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to update participant: %w", err)
 	}
@@ -350,7 +392,6 @@ func (r *SessionRepository) CreateAudioStream(ctx context.Context, stream *Audio
 		stream.ChunksReceived,
 		string(stream.Status),
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to create audio stream: %w", err)
 	}
@@ -380,7 +421,6 @@ func (r *SessionRepository) GetAudioStreamByParticipant(ctx context.Context, par
 		&stream.ChunksReceived,
 		&stream.Status,
 	)
-
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: %s", errAudioStreamNotFound, participantID)
@@ -420,7 +460,6 @@ func (r *SessionRepository) UpdateAudioStream(ctx context.Context, stream *Audio
 		endedAt,
 		stream.ID,
 	)
-
 	if err != nil {
 		return fmt.Errorf("failed to update audio stream: %w", err)
 	}

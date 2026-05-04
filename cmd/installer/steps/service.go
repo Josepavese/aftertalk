@@ -69,10 +69,12 @@ func installSystemd(ctx context.Context, cfg *instconfig.InstallConfig, log Logg
 		return fmt.Errorf("write unit file: %w", err)
 	}
 	if err := t.Execute(f, cfg); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("render unit: %w", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close unit file: %w", err)
+	}
 	log.Info("written: " + unitPath)
 
 	for _, args := range [][]string{
@@ -127,10 +129,12 @@ func installLaunchd(ctx context.Context, cfg *instconfig.InstallConfig, log Logg
 		return fmt.Errorf("write plist: %w", err)
 	}
 	if err := t.Execute(f, cfg); err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("render plist: %w", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close plist: %w", err)
+	}
 	log.Info("written: " + plistPath)
 
 	// Unload first (ignore errors) then load

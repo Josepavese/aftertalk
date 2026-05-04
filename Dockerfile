@@ -11,7 +11,16 @@ RUN go mod download
 COPY . .
 
 # Build the binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /aftertalk ./cmd/aftertalk
+ARG AFTERTALK_COMMIT=local
+ARG AFTERTALK_TAG=dev
+ARG AFTERTALK_BUILD_TIME=
+ARG AFTERTALK_BUILD_SOURCE=docker
+RUN LDFLAGS="-s -w" && \
+    LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.Commit=${AFTERTALK_COMMIT}" && \
+    LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.Tag=${AFTERTALK_TAG}" && \
+    LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.BuildTime=${AFTERTALK_BUILD_TIME}" && \
+    LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.BuildSource=${AFTERTALK_BUILD_SOURCE}" && \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="${LDFLAGS}" -o /aftertalk ./cmd/aftertalk
 
 # Final stage
 FROM alpine:latest

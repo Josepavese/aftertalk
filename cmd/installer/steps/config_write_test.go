@@ -6,9 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	instconfig "github.com/Josepavese/aftertalk/cmd/installer/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	instconfig "github.com/Josepavese/aftertalk/cmd/installer/config"
 )
 
 func renderYAML(t *testing.T, cfg *instconfig.InstallConfig) string {
@@ -145,9 +146,9 @@ func TestConfigWrite_LLM_AzureOpenAI(t *testing.T) {
 	cfg := instconfig.Default()
 	cfg.LLMProvider = "azure"
 	cfg.LLMConfig = map[string]string{
-		"LLM_API_KEY":             "azure-key",
-		"LLM_MODEL":               "gpt-4",
-		"AZURE_OPENAI_ENDPOINT":   "https://myco.openai.azure.com/",
+		"LLM_API_KEY":           "azure-key",
+		"LLM_MODEL":             "gpt-4",
+		"AZURE_OPENAI_ENDPOINT": "https://myco.openai.azure.com/",
 	}
 
 	yaml := renderYAML(t, cfg)

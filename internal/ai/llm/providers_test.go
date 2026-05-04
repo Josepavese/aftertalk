@@ -105,7 +105,6 @@ func TestOpenAIProvider_Generate_Success(t *testing.T) {
 
 	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
-
 	if err != nil {
 		t.Errorf("Generate failed: %v", err)
 	}
@@ -151,7 +150,6 @@ func TestOpenAIProvider_Generate_MultipleChoices(t *testing.T) {
 
 	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
-
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
@@ -261,7 +259,6 @@ func TestOpenAIProvider_Generate_JSONObjectResponse(t *testing.T) {
 
 	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
-
 	if err != nil {
 		t.Errorf("Generate failed: %v", err)
 	}
@@ -408,7 +405,6 @@ func TestAnthropicProvider_Generate_Success(t *testing.T) {
 
 	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229").WithBaseURL(server.URL)
 	result, err := provider.Generate(context.Background(), "test prompt")
-
 	if err != nil {
 		t.Errorf("Generate failed: %v", err)
 	}
@@ -551,7 +547,7 @@ func TestAzureOpenAIProvider_Generate_Success(t *testing.T) {
 		if !strings.Contains(r.URL.Path, "openai/deployments/gpt-4-deployment/chat/completions") {
 			t.Errorf("Expected deployment path, got %s", r.URL.Path)
 		}
-		if !strings.Contains(r.URL.RawQuery, "api-version=2023-05-15") {
+		if !strings.Contains(r.URL.RawQuery, "api-version=2024-02-15-preview") {
 			t.Errorf("Expected api-version query param, got %s", r.URL.RawQuery)
 		}
 		if r.Header.Get("Api-Key") != "azure-key" {
@@ -561,6 +557,12 @@ func TestAzureOpenAIProvider_Generate_Success(t *testing.T) {
 		var reqBody map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 			t.Errorf("Failed to decode request body: %v", err)
+		}
+		responseFormat, ok := reqBody["response_format"].(map[string]interface{})
+		if !ok {
+			t.Error("Expected response_format to be a map")
+		} else if responseFormat["type"] != "json_object" {
+			t.Error("Expected response_format to be json_object")
 		}
 
 		w.WriteHeader(http.StatusOK)
@@ -578,7 +580,6 @@ func TestAzureOpenAIProvider_Generate_Success(t *testing.T) {
 
 	provider := llm.NewAzureOpenAIProvider("azure-key", server.URL, "gpt-4-deployment")
 	result, err := provider.Generate(context.Background(), "test prompt")
-
 	if err != nil {
 		t.Errorf("Generate failed: %v", err)
 	}

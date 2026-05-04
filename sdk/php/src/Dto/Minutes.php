@@ -26,6 +26,12 @@ class Minutes
 
     /**
      * @readonly
+     * @var array<string, mixed>  Conversation overview and chronological phases
+     */
+    public array $summary;
+
+    /**
+     * @readonly
      * @var array<string, mixed>  Keyed by section key (e.g. "themes", "next_steps")
      */
     public array $sections;
@@ -61,6 +67,7 @@ class Minutes
     public ?string $provider;
 
     /**
+     * @param array<string, mixed> $summary   Conversation overview and chronological phases
      * @param array<string, mixed> $sections  Keyed by section key (e.g. "themes", "next_steps")
      * @param Citation[]           $citations
      */
@@ -68,6 +75,7 @@ class Minutes
         string  $id,
         string  $sessionId,
         string  $status,
+        array   $summary,
         array   $sections,
         array   $citations,
         int     $version,
@@ -78,6 +86,7 @@ class Minutes
         $this->id          = $id;
         $this->sessionId   = $sessionId;
         $this->status      = $status;
+        $this->summary     = $summary;
         $this->sections    = $sections;
         $this->citations   = $citations;
         $this->version     = $version;
@@ -93,6 +102,7 @@ class Minutes
             $data['id'],
             $data['session_id'],
             $data['status'],
+            $data['summary']     ?? ['overview' => '', 'phases' => []],
             $data['sections']    ?? [],
             array_map(
                 fn(array $c) => Citation::fromArray($c),

@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AftertalkError } from './errors.js';
 import { HttpClient } from './http.js';
 
 function makeFetch(status: number, body: unknown, contentType = 'application/json') {
@@ -14,7 +13,7 @@ function makeFetch(status: number, body: unknown, contentType = 'application/jso
 
 describe('HttpClient', () => {
   it('GET 200 returns parsed body', async () => {
-    const fetchMock = makeFetch(200, { sessionId: 'abc' });
+    const fetchMock = makeFetch(200, { session_id: 'abc' });
     const client = new HttpClient({ baseUrl: 'http://localhost:8080', fetch: fetchMock as typeof fetch });
 
     const result = await client.get<{ sessionId: string }>('/v1/sessions/abc');
@@ -34,7 +33,40 @@ describe('HttpClient', () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
     expect(headers['Authorization']).toBe('Bearer secret');
-    expect(init.body).toContain('"participantCount":2');
+    expect(init.body).toContain('"participant_count":2');
+  });
+
+  it('preserves dynamic minutes section keys while transforming known fields', async () => {
+    const fetchMock = makeFetch(200, {
+      data: {
+        session_id: 's1',
+        summary: { overview: 'ok', phases: [{ start_ms: 0, end_ms: 1000 }] },
+        sections: { next_steps: [{ due_at_ms: 1000 }] },
+        citations: [{ timestamp_ms: 10, text: 'quote' }],
+      },
+    });
+    const client = new HttpClient({ baseUrl: 'http://localhost', fetch: fetchMock as typeof fetch });
+
+    await client.put('/v1/minutes/m1', {
+      summary: { phases: [{ startMs: 0, endMs: 1000 }] },
+      sections: { next_steps: [{ dueAtMs: 1000 }] },
+      citations: [{ timestampMs: 10, text: 'quote' }],
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toContain('"start_ms":0');
+    expect(init.body).toContain('"next_steps"');
+    expect(init.body).toContain('"dueAtMs":1000');
+
+    const result = await client.get<{
+      sessionId: string;
+      summary: { phases: Array<{ startMs: number; endMs: number }> };
+      sections: Record<string, unknown>;
+      citations: Array<{ timestampMs: number }>;
+    }>('/v1/minutes/m1');
+    expect(result.sessionId).toBe('s1');
+    expect(result.summary.phases[0].startMs).toBe(0);
+    expect(Object.keys(result.sections)).toEqual(['next_steps']);
+    expect(result.citations[0].timestampMs).toBe(10);
   });
 
   it('DELETE 204 returns undefined', async () => {

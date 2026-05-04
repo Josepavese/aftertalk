@@ -10,18 +10,18 @@ var ConfigAPI = class {
     const raw = await this.http.get("/v1/config");
     return {
       templates: raw.templates,
-      defaultTemplateId: raw.default_template_id,
-      sttProfiles: raw.stt_profiles,
-      llmProfiles: raw.llm_profiles,
-      sttDefaultProfile: raw.default_stt_profile,
-      llmDefaultProfile: raw.default_llm_profile
+      defaultTemplateId: raw.defaultTemplateId,
+      sttProfiles: raw.sttProfiles,
+      llmProfiles: raw.llmProfiles,
+      sttDefaultProfile: raw.sttDefaultProfile,
+      llmDefaultProfile: raw.llmDefaultProfile
     };
   }
   /** Returns ICE server list for WebRTC, optionally with HMAC credentials. */
   async getRTCConfig() {
     const raw = await this.http.get("/v1/rtc-config");
     return {
-      iceServers: raw.ice_servers ?? [],
+      iceServers: raw.iceServers ?? [],
       ttl: raw.ttl
     };
   }
@@ -72,12 +72,12 @@ var RoomsAPI = class {
         code: request.code,
         name: request.name,
         role: request.role,
-        template_id: request.templateId,
-        stt_profile: request.sttProfile,
-        llm_profile: request.llmProfile
+        templateId: request.templateId,
+        sttProfile: request.sttProfile,
+        llmProfile: request.llmProfile
       }
     );
-    return { sessionId: raw.session_id, token: raw.token };
+    return { sessionId: raw.sessionId, token: raw.token };
   }
 };
 
@@ -90,10 +90,14 @@ var SessionsAPI = class {
     return this.http.post("/v1/sessions", request);
   }
   async get(sessionId) {
-    return this.http.get(`/v1/sessions/${sessionId}`);
+    const raw = await this.http.get(`/v1/sessions/${sessionId}`);
+    return normalizeSession(raw);
   }
   async getStatus(sessionId) {
-    return this.http.get(`/v1/sessions/${sessionId}/status`);
+    const raw = await this.http.get(
+      `/v1/sessions/${sessionId}/status`
+    );
+    return { sessionId: raw.sessionId ?? raw.id ?? sessionId, status: raw.status };
   }
   async end(sessionId) {
     return this.http.post(`/v1/sessions/${sessionId}/end`);
@@ -104,12 +108,25 @@ var SessionsAPI = class {
     if (filters?.limit !== void 0) params.set("limit", String(filters.limit));
     if (filters?.offset !== void 0) params.set("offset", String(filters.offset));
     const qs = params.toString();
-    return this.http.get(`/v1/sessions${qs ? `?${qs}` : ""}`);
+    const raw = await this.http.get(`/v1/sessions${qs ? `?${qs}` : ""}`);
+    return {
+      items: (raw.sessions ?? raw.items ?? []).map(normalizeSession),
+      total: raw.total,
+      limit: raw.limit,
+      offset: raw.offset
+    };
   }
   async delete(sessionId) {
     return this.http.delete(`/v1/sessions/${sessionId}`);
   }
 };
+function normalizeSession(raw) {
+  const { id, sessionId, ...rest } = raw;
+  return {
+    ...rest,
+    sessionId: sessionId ?? id ?? ""
+  };
+}
 
 // src/api/transcriptions.ts
 var TranscriptionsAPI = class {
@@ -121,7 +138,13 @@ var TranscriptionsAPI = class {
     const params = new URLSearchParams({ session_id: sessionId });
     if (filters?.limit !== void 0) params.set("limit", String(filters.limit));
     if (filters?.offset !== void 0) params.set("offset", String(filters.offset));
-    return this.http.get(`/v1/transcriptions?${params}`);
+    const raw = await this.http.get(`/v1/transcriptions?${params}`);
+    return {
+      items: raw.transcriptions ?? raw.items ?? [],
+      total: raw.total,
+      limit: raw.limit,
+      offset: raw.offset
+    };
   }
   /** GET /v1/transcriptions/{transcriptionId} */
   async get(transcriptionId) {
@@ -168,6 +191,35 @@ function extractMessage(body) {
   return typeof b["error"] === "string" ? b["error"] : typeof b["message"] === "string" ? b["message"] : void 0;
 }
 
+// src/wire.ts
+var PRESERVE_CHILD_KEYS = /* @__PURE__ */ new Set(["sections"]);
+function toWireValue(value) {
+  return transformKeys(value, camelToSnake);
+}
+function fromWireValue(value) {
+  return transformKeys(value, snakeToCamel);
+}
+function transformKeys(value, convertKey) {
+  if (Array.isArray(value)) {
+    return value.map((item) => transformKeys(item, convertKey));
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  const out = {};
+  for (const [key, child] of Object.entries(value)) {
+    const nextKey = convertKey(key);
+    out[nextKey] = PRESERVE_CHILD_KEYS.has(key) || PRESERVE_CHILD_KEYS.has(nextKey) ? child : transformKeys(child, convertKey);
+  }
+  return out;
+}
+function camelToSnake(key) {
+  return key.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
+}
+function snakeToCamel(key) {
+  return key.replace(/_([a-z0-9])/g, (_, char) => char.toUpperCase());
+}
+
 // src/http.ts
 var HttpClient = class {
   constructor(options) {
@@ -206,7 +258,7 @@ var HttpClient = class {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method,
         headers: reqHeaders,
-        body: body !== void 0 ? JSON.stringify(body) : void 0,
+        body: body !== void 0 ? JSON.stringify(toWireValue(body)) : void 0,
         signal: combinedSignal
       });
     } catch (err) {
@@ -234,9 +286,9 @@ var HttpClient = class {
       throw AftertalkError.fromHttpStatus(response.status, responseBody);
     }
     if (responseBody !== null && typeof responseBody === "object" && "data" in responseBody) {
-      return responseBody.data;
+      return fromWireValue(responseBody.data);
     }
-    return responseBody;
+    return fromWireValue(responseBody);
   }
 };
 function anySignal(signals) {

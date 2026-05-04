@@ -74,7 +74,6 @@ func (j *JWTManager) Validate(tokenString string) (*Claims, error) {
 		}
 		return j.secret, nil
 	}, jwt.WithIssuer(j.issuer), jwt.WithExpirationRequired())
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %w", err)
 	}

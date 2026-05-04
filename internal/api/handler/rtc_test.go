@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
-	webrtcpkg "github.com/Josepavese/aftertalk/internal/bot/webrtc"
-	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	webrtcpkg "github.com/Josepavese/aftertalk/internal/bot/webrtc"
+	"github.com/Josepavese/aftertalk/internal/config"
 )
 
 // freeTURNPort finds a free UDP port on loopback.

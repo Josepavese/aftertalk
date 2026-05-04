@@ -5,9 +5,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 type MockAPIKeyChecker struct {

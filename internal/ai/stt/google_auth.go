@@ -38,11 +38,11 @@ func signServiceAccountJWT(ctx context.Context, client *http.Client, sa *googleS
 
 	header := base64url(mustJSON(map[string]string{"alg": "RS256", "typ": "JWT"}))
 	claims := base64url(mustJSON(map[string]interface{}{
-		"iss": sa.ClientEmail,
+		"iss":   sa.ClientEmail,
 		"scope": scope,
-		"aud": tokenURI,
-		"iat": now,
-		"exp": now + 3600,
+		"aud":   tokenURI,
+		"iat":   now,
+		"exp":   now + 3600,
 	}))
 
 	signingInput := header + "." + claims

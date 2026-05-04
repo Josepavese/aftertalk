@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/Josepavese/aftertalk/internal/core/minutes"
-	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
+
+	"github.com/Josepavese/aftertalk/internal/core/minutes"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 // MinutesService is the interface required by MinutesHandler.

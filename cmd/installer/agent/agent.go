@@ -170,14 +170,14 @@ func (a *Agent) handleSSE(w http.ResponseWriter, r *http.Request) {
 
 			for _, evt := range toSend {
 				data, _ := json.Marshal(evt)
-				fmt.Fprintf(w, "data: %s\n\n", data)
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 			}
 			flusher.Flush()
 
 			// Signal completion via SSE.
 			select {
 			case <-a.done:
-				fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+				_, _ = fmt.Fprintf(w, "event: done\ndata: {}\n\n")
 				flusher.Flush()
 				return
 			default:

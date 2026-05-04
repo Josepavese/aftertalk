@@ -85,7 +85,6 @@ func TestSessionRepository_Create(t *testing.T) {
 	session.CreatedAt = now
 
 	err := repo.Create(ctx, session)
-
 	if err != nil {
 		t.Fatalf("Create() failed: %v", err)
 	}

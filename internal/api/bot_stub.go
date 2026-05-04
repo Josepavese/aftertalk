@@ -41,9 +41,9 @@ func NewBotServer(sessionService *session.Service, jwtManager *jwt.JWTManager, t
 
 	bot := &BotServer{
 		SessionService:  sessionService,
-		JWTManager:     jwtManager,
-		TokenCache:     tokenCache,
-		WebRTCManager:  webrtcManager,
+		JWTManager:      jwtManager,
+		TokenCache:      tokenCache,
+		WebRTCManager:   webrtcManager,
 		SignalingServer: signalingServer,
 	}
 

@@ -1,21 +1,22 @@
 package handler
 
 import (
-	"strings"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
-	"github.com/Josepavese/aftertalk/internal/core/minutes"
-	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Josepavese/aftertalk/internal/core/minutes"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 var (

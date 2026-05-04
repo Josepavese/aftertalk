@@ -62,10 +62,10 @@ class Participant
     public static function fromArray(array $data): self
     {
         return new self(
-            $data['participant_id'],
+            $data['participant_id'] ?? $data['id'],
             $data['user_id'],
             $data['role'],
-            $data['token'],
+            $data['token'] ?? '',
             $data['connected_at']   ?? null,
             $data['audio_stream_id'] ?? null
         );

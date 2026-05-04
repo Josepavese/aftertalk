@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/Josepavese/aftertalk/internal/api"
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/core/session"
@@ -13,8 +16,6 @@ import (
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
 	"github.com/Josepavese/aftertalk/internal/storage/sqlite"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -69,9 +70,9 @@ func TestRunMigrations_SessionsTable(t *testing.T) {
 		var name string
 		var dtype string
 		var notnull int
-		var dflt_value interface{}
+		var dfltValue interface{}
 		var pk int
-		err := rows.Scan(&cid, &name, &dtype, &notnull, &dflt_value, &pk)
+		err := rows.Scan(&cid, &name, &dtype, &notnull, &dfltValue, &pk)
 		require.NoError(t, err)
 		columns = append(columns, name)
 	}

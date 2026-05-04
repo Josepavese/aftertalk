@@ -84,7 +84,7 @@ type InstallConfig struct {
 	// Apache reverse proxy (optional)
 	ApacheVhostConf string // absolute path to SSL vhost file
 
-	// Installation behaviour flags
+	// Installation behavior flags
 	SkipFirewall   bool
 	SkipApache     bool // true when ApacheVhostConf is empty
 	DryRun         bool

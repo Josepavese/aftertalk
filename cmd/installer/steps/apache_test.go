@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	instconfig "github.com/Josepavese/aftertalk/cmd/installer/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	instconfig "github.com/Josepavese/aftertalk/cmd/installer/config"
 )
 
 // dualVhost is a realistic Apache config with both port-80 redirect and port-443 SSL block.
