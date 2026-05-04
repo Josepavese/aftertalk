@@ -34,6 +34,7 @@ step_binary() {
   if curl -fL --progress-bar "$url" -o "$dest"; then
     chmod +x "$dest"
     success "Binary: $dest"
+    "$dest" --version 2>/dev/null | sed 's/^/  /' || true
   else
     die "Failed to download binary.
   URL: $url

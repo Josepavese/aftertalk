@@ -2,12 +2,14 @@ package steps
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	instconfig "github.com/Josepavese/aftertalk/cmd/installer/config"
+	"github.com/Josepavese/aftertalk/internal/version"
 )
 
 func stepVerify() *Step {
@@ -43,9 +45,29 @@ func waitAftertalkHealthy(ctx context.Context, cfg *instconfig.InstallConfig, lo
 		}
 		resp, err := client.Do(req)
 		if err == nil {
-			io.Copy(io.Discard, resp.Body) //nolint:errcheck
+			body, readErr := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
+				if readErr == nil {
+					var build version.BuildInfo
+					if json.Unmarshal(body, &build) == nil && build.Version != "" {
+						if err := verifyExpectedBuildIdentity(cfg, build); err != nil {
+							return err
+						}
+						log.Info(fmt.Sprintf(
+							"aftertalk is healthy (HTTP %d, version=%s, tag=%s, commit=%s, source=%s)",
+							resp.StatusCode,
+							build.Version,
+							build.Tag,
+							build.Commit,
+							build.BuildSource,
+						))
+						return nil
+					}
+				}
+				if cfg.ExpectedTag != "" || cfg.ExpectedCommit != "" {
+					return fmt.Errorf("health check succeeded but runtime build identity was not available")
+				}
 				log.Info(fmt.Sprintf("aftertalk is healthy (HTTP %d)", resp.StatusCode))
 				return nil
 			}
@@ -63,6 +85,16 @@ func waitAftertalkHealthy(ctx context.Context, cfg *instconfig.InstallConfig, lo
 		}
 	}
 	return fmt.Errorf("health check failed after 10 attempts: %w", lastErr)
+}
+
+func verifyExpectedBuildIdentity(cfg *instconfig.InstallConfig, build version.BuildInfo) error {
+	if cfg.ExpectedTag != "" && build.Tag != cfg.ExpectedTag {
+		return fmt.Errorf("runtime tag mismatch: expected %q, got %q", cfg.ExpectedTag, build.Tag)
+	}
+	if cfg.ExpectedCommit != "" && build.Commit != cfg.ExpectedCommit {
+		return fmt.Errorf("runtime commit mismatch: expected %q, got %q", cfg.ExpectedCommit, build.Commit)
+	}
+	return nil
 }
 
 // checkDependencies warns (but does not fail) if STT/LLM services are unreachable.

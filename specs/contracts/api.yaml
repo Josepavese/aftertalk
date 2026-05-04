@@ -279,11 +279,10 @@ paths:
   /health:
     get:
       summary: Health check
-      description: Check service health status
+      description: Check service health status and runtime build identity
       operationId: healthCheck
       tags:
         - Health
-      security: []
       responses:
         '200':
           description: Service is healthy
@@ -292,6 +291,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthStatus'
 
+  /version:
+    get:
+      summary: Runtime build identity
+      description: Return semantic version and deploy identity for the running binary
+      operationId: versionCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Runtime build identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildInfo'
+
   /ready:
     get:
       summary: Readiness check
@@ -299,20 +313,19 @@ paths:
       operationId: readinessCheck
       tags:
         - Health
-      security: []
       responses:
         '200':
           description: Service is ready
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthStatus'
+                $ref: '#/components/schemas/ReadyStatus'
         '503':
           description: Service not ready
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthStatus'
+                $ref: '#/components/schemas/ReadyStatus'
 
 components:
   securitySchemes:
@@ -633,24 +646,62 @@ components:
       type: object
       required:
         - status
-        - timestamp
+        - version
+        - commit
+        - tag
+        - build_source
       properties:
         status:
           type: string
-          enum: [healthy, unhealthy]
-        timestamp:
+          enum: [ok]
+        version:
           type: string
-          format: date-time
-        checks:
-          type: object
-          additionalProperties:
-            type: object
-            properties:
-              status:
-                type: string
-                enum: [pass, fail]
-              message:
-                type: string
+          example: "1.0.0"
+        commit:
+          type: string
+          example: e68b0fbed27c44aeb1eef855d1d6aa6c24dbaef5
+        tag:
+          type: string
+          example: edge
+        build_time:
+          type: string
+          example: "2026-05-04T12:00:00Z"
+        build_source:
+          type: string
+          example: github-actions
+
+    BuildInfo:
+      type: object
+      required:
+        - version
+        - commit
+        - tag
+        - build_source
+      properties:
+        version:
+          type: string
+          example: "1.0.0"
+        commit:
+          type: string
+          example: e68b0fbed27c44aeb1eef855d1d6aa6c24dbaef5
+        tag:
+          type: string
+          example: edge
+        build_time:
+          type: string
+          example: "2026-05-04T12:00:00Z"
+        build_source:
+          type: string
+          example: github-actions
+
+    ReadyStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [ready]
 
     Error:
       type: object

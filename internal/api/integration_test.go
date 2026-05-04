@@ -29,6 +29,7 @@ import (
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
 	"github.com/Josepavese/aftertalk/internal/storage/sqlite"
+	"github.com/Josepavese/aftertalk/internal/version"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -216,6 +217,20 @@ func TestAPI_Health_ContentType(t *testing.T) {
 	// Should return JSON
 	body, _ := io.ReadAll(resp.Body)
 	assert.True(t, json.Valid(body) || len(body) > 0)
+}
+
+func TestAPI_Version(t *testing.T) {
+	e := newTestEnv(t)
+	resp := e.get(t, "/v1/version")
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body version.BuildInfo
+	decodeJSON(t, resp, &body)
+	assert.Equal(t, version.Current, body.Version)
+	assert.Equal(t, "dev", body.Commit)
+	assert.Equal(t, "dev", body.Tag)
+	assert.Equal(t, "local", body.BuildSource)
 }
 
 // ── Public config endpoint ─────────────────────────────────────────────────

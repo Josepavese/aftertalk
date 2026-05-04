@@ -31,9 +31,28 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Resolve build identity
+        id: buildmeta
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="edge"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build cross-platform binaries
+        env:
+          BUILD_TAG: ${{ steps.buildmeta.outputs.tag }}
+          BUILD_TIME: ${{ steps.buildmeta.outputs.build_time }}
         run: |
           mkdir -p dist
+          LDFLAGS="-s -w"
+          LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.Commit=${GITHUB_SHA}"
+          LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.Tag=${BUILD_TAG}"
+          LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.BuildTime=${BUILD_TIME}"
+          LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.BuildSource=github-actions"
           declare -a PLATFORMS=(
             "linux/amd64"
             "linux/arm64"
@@ -50,14 +69,14 @@ jobs:
             [[ "$os" == "windows" ]] && output="${output}.exe"
             echo "→ Building aftertalk ${os}/${arch} → $(basename "$output")"
             GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
-              go build -trimpath -ldflags="-s -w" \
+              go build -trimpath -ldflags="${LDFLAGS}" \
               -o "$output" ./cmd/aftertalk
 
             installer_output="dist/aftertalk-installer-${os}-${arch}"
             [[ "$os" == "windows" ]] && installer_output="${installer_output}.exe"
             echo "→ Building installer ${os}/${arch} → $(basename "$installer_output")"
             GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
-              go build -trimpath -ldflags="-s -w" \
+              go build -trimpath -ldflags="${LDFLAGS}" \
               -o "$installer_output" ./cmd/installer
           done
 

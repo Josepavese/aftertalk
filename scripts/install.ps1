@@ -150,6 +150,7 @@ Write-Info "Downloading aftertalk-server.exe..."
 try {
   Invoke-WebRequest $BIN_URL -OutFile (Join-Path $BIN_DIR "aftertalk-server.exe")
   Write-OK "Binary: $BIN_DIR\aftertalk-server.exe"
+  & (Join-Path $BIN_DIR "aftertalk-server.exe") --version
 } catch {
   Write-Fail "Failed to download binary from $BIN_URL`nCheck https://github.com/Josepavese/aftertalk/releases or set AFTERTALK_RELEASE=edge"
 }
@@ -282,12 +283,15 @@ function Show-Status {
     else { Write-Host "  [X]  $svc stopped" -ForegroundColor Red }
   }
 }
+function Show-Version { & (Join-Path $BIN "aftertalk-server.exe") --version }
 
 switch ($Command) {
   "start"   { Start-Stack }
   "stop"    { Stop-Stack }
   "restart" { Stop-Stack; Start-Sleep 1; Start-Stack }
   "status"  { Show-Status }
+  "version" { Show-Version }
+  "--version" { Show-Version }
   "update"  {
     Stop-Stack
     $rel  = if ($env:AFTERTALK_RELEASE) { $env:AFTERTALK_RELEASE } else { "latest" }
@@ -305,10 +309,11 @@ switch ($Command) {
     }
     Write-Host "Downloading update (release: $rel)..."
     Invoke-WebRequest $binUrl -OutFile (Join-Path $BIN "aftertalk-server.exe")
+    & (Join-Path $BIN "aftertalk-server.exe") --version
     try { Invoke-WebRequest $whUrl -OutFile (Join-Path $BIN "whisper_server.py") } catch {}
     Write-Host "Updated. Run 'aftertalk start'."
   }
-  default { Write-Host "Usage: aftertalk {start|stop|restart|status|update}" }
+  default { Write-Host "Usage: aftertalk {start|stop|restart|status|update|version}" }
 }
 '@ | Set-Content $CLI_PS1
 

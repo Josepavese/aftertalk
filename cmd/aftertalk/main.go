@@ -24,14 +24,19 @@ import (
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
 	"github.com/Josepavese/aftertalk/internal/storage/sqlite"
+	"github.com/Josepavese/aftertalk/internal/version"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
 	"github.com/Josepavese/aftertalk/pkg/webhook"
 )
 
 func main() {
-	// Handle --dump-defaults before loading config so the binary can emit a
-	// starter config.yaml without any external dependencies (DB, providers…).
+	// Handle metadata-only flags before loading config so deploy scripts can
+	// inspect the binary without DB/provider dependencies.
 	for _, arg := range os.Args[1:] {
+		if arg == "--version" || arg == "-version" {
+			fmt.Println(version.Line("aftertalk")) //nolint:forbidigo // intentional stdout output for CLI --version
+			return
+		}
 		if arg == "--dump-defaults" || arg == "-dump-defaults" {
 			out, err := config.DumpYAML()
 			if err != nil {

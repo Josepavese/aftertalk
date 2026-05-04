@@ -35,11 +35,11 @@ type InstallConfig struct {
 	JWTExpiry string // Go duration string, e.g. "8h"
 
 	// STT provider
-	STTProvider  string            // google | aws | azure | whisper-local
-	STTConfig    map[string]string // provider-specific env vars
-	WhisperModel    string // faster-whisper model size (default: base)
-	WhisperURL      string // URL aftertalk uses to reach whisper server
-	WhisperLanguage string // STT language code (default: "it")
+	STTProvider     string            // google | aws | azure | whisper-local
+	STTConfig       map[string]string // provider-specific env vars
+	WhisperModel    string            // faster-whisper model size (default: base)
+	WhisperURL      string            // URL aftertalk uses to reach whisper server
+	WhisperLanguage string            // STT language code (default: "it")
 
 	STTDefaultProfile string                     // profile used when session omits stt_profile
 	STTProfiles       map[string]STTProfileEntry // named profiles
@@ -66,9 +66,9 @@ type InstallConfig struct {
 	SessionInactivityTimeout string // e.g. "20m"
 
 	// WebRTC / ICE
-	ICEUDPPortMin uint16 // Pion ephemeral UDP port range min (default: 49200)
-	ICEUDPPortMax uint16 // Pion ephemeral UDP port range max (default: 49209)
-	TURNEnabled   bool
+	ICEUDPPortMin  uint16 // Pion ephemeral UDP port range min (default: 49200)
+	ICEUDPPortMax  uint16 // Pion ephemeral UDP port range max (default: 49209)
+	TURNEnabled    bool
 	TURNListenAddr string
 	TURNPublicIP   string
 	TURNRealm      string
@@ -85,9 +85,11 @@ type InstallConfig struct {
 	ApacheVhostConf string // absolute path to SSL vhost file
 
 	// Installation behaviour flags
-	SkipFirewall bool
-	SkipApache   bool // true when ApacheVhostConf is empty
-	DryRun       bool
+	SkipFirewall   bool
+	SkipApache     bool // true when ApacheVhostConf is empty
+	DryRun         bool
+	ExpectedTag    string // optional runtime build tag verification after restart
+	ExpectedCommit string // optional runtime build commit verification after restart
 }
 
 // Default returns a config with sensible defaults for a fresh install.

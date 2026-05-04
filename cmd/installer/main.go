@@ -21,6 +21,7 @@ import (
 	"github.com/Josepavese/aftertalk/cmd/installer/agent"
 	instconfig "github.com/Josepavese/aftertalk/cmd/installer/config"
 	"github.com/Josepavese/aftertalk/cmd/installer/steps"
+	"github.com/Josepavese/aftertalk/internal/version"
 )
 
 func main() {
@@ -32,14 +33,20 @@ func main() {
 
 func run() error {
 	var (
-		envFile    = flag.String("env", "", "path to KEY=VALUE env file (non-interactive)")
-		agentMode  = flag.Bool("agent", false, "run as HTTP SSE agent on port 9977")
-		agentPort  = flag.Int("port", 9977, "agent HTTP port (with --agent)")
-		dryRun     = flag.Bool("dry-run", false, "print steps without executing")
-		stepOnly   = flag.String("step", "", "run only this step ID")
-		stepFrom   = flag.String("from", "", "run from this step ID onwards")
+		envFile     = flag.String("env", "", "path to KEY=VALUE env file (non-interactive)")
+		agentMode   = flag.Bool("agent", false, "run as HTTP SSE agent on port 9977")
+		agentPort   = flag.Int("port", 9977, "agent HTTP port (with --agent)")
+		dryRun      = flag.Bool("dry-run", false, "print steps without executing")
+		stepOnly    = flag.String("step", "", "run only this step ID")
+		stepFrom    = flag.String("from", "", "run from this step ID onwards")
+		versionFlag = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(version.Line("aftertalk-installer"))
+		return nil
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -61,6 +68,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	applyVerificationEnv(cfg)
 
 	cfg.DryRun = *dryRun
 
@@ -112,4 +120,13 @@ func loadFromEnvFile(path string) (*instconfig.InstallConfig, error) {
 		return nil, fmt.Errorf("read env file %s: %w", path, err)
 	}
 	return instconfig.FromEnvMap(m), nil
+}
+
+func applyVerificationEnv(cfg *instconfig.InstallConfig) {
+	if v := os.Getenv("AFTERTALK_EXPECTED_TAG"); v != "" {
+		cfg.ExpectedTag = v
+	}
+	if v := os.Getenv("AFTERTALK_EXPECTED_COMMIT"); v != "" {
+		cfg.ExpectedCommit = v
+	}
 }

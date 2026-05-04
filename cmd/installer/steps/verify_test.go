@@ -47,6 +47,41 @@ func TestWaitAftertalkHealthy_success(t *testing.T) {
 	assert.Contains(t, log.infos[len(log.infos)-1], "healthy")
 }
 
+func TestWaitAftertalkHealthy_logsRuntimeBuildIdentity(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","version":"1.0.0","commit":"abc123","tag":"edge","build_source":"github-actions"}`))
+	}))
+	defer srv.Close()
+
+	cfg := instconfig.Default()
+	cfg.HTTPPort = serverPort(t, srv)
+
+	log := &testLogger{}
+	err := waitAftertalkHealthy(context.Background(), cfg, log)
+	require.NoError(t, err)
+	assert.Contains(t, log.infos[len(log.infos)-1], "version=1.0.0")
+	assert.Contains(t, log.infos[len(log.infos)-1], "tag=edge")
+	assert.Contains(t, log.infos[len(log.infos)-1], "commit=abc123")
+}
+
+func TestWaitAftertalkHealthy_failsOnRuntimeBuildMismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","version":"1.0.0","commit":"abc123","tag":"edge","build_source":"github-actions"}`))
+	}))
+	defer srv.Close()
+
+	cfg := instconfig.Default()
+	cfg.HTTPPort = serverPort(t, srv)
+	cfg.ExpectedCommit = "different"
+
+	log := &testLogger{}
+	err := waitAftertalkHealthy(context.Background(), cfg, log)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "runtime commit mismatch")
+}
+
 func TestWaitAftertalkHealthy_cancelledContext(t *testing.T) {
 	// Server returns 503 so retries would run; cancel context to abort quickly.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -94,7 +129,7 @@ func TestCheckDependencies_whisperWarn(t *testing.T) {
 	cfg := instconfig.Default()
 	cfg.STTProvider = "whisper-local"
 	cfg.WhisperURL = "http://127.0.0.1:19998" // nothing listening
-	cfg.LLMProvider = "openai"                 // skip ollama check
+	cfg.LLMProvider = "openai"                // skip ollama check
 
 	log := &testLogger{}
 	checkDependencies(context.Background(), cfg, log)
@@ -105,7 +140,7 @@ func TestCheckDependencies_whisperWarn(t *testing.T) {
 
 func TestCheckDependencies_ollamaWarn(t *testing.T) {
 	cfg := instconfig.Default()
-	cfg.STTProvider = "google"                 // skip whisper check
+	cfg.STTProvider = "google" // skip whisper check
 	cfg.LLMProvider = "ollama"
 	cfg.OllamaURL = "http://127.0.0.1:19997" // nothing listening
 

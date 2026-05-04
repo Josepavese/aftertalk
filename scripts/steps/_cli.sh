@@ -108,6 +108,7 @@ cmd_update() {
 }
 
 cmd_logs() { exec tail -n 100 -f "$LOGS/${1:-aftertalk}.log"; }
+cmd_version() { exec "$BIN/aftertalk-server" --version; }
 
 # ── Service install / uninstall (systemd on Linux, launchd on macOS) ──────────
 cmd_service() {
@@ -199,8 +200,9 @@ case "${1:-start}" in
   status)          cmd_status ;;
   update)          cmd_update ;;
   logs)            cmd_logs "${2:-aftertalk}" ;;
+  version|--version|-version) cmd_version ;;
   service)         cmd_service "${2:-install}" ;;
-  *) echo "Usage: aftertalk {start|stop|restart|status|update|logs [aftertalk|whisper]|service [install|uninstall]}" ;;
+  *) echo "Usage: aftertalk {start|stop|restart|status|update|version|logs [aftertalk|whisper]|service [install|uninstall]}" ;;
 esac
 WRAPPER
   chmod +x "$wrapper"

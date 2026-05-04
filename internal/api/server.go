@@ -148,9 +148,10 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 	r.Group(func(r chi.Router) {
 		r.Use(apiKeyMiddleware)
 
-		r.Route("/v1", func(r chi.Router) {
-			r.Get("/health", handler.HealthCheck)
-			r.Get("/ready", handler.ReadyCheck)
+			r.Route("/v1", func(r chi.Router) {
+				r.Get("/health", handler.HealthCheck)
+				r.Get("/version", handler.VersionCheck)
+				r.Get("/ready", handler.ReadyCheck)
 
 			// POST /v1/rooms/join — join or create a session by room code.
 			// Promotes the former /test/start logic to a stable, versioned endpoint.
