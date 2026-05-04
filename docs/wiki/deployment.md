@@ -172,11 +172,12 @@ Or set `SKIP_FIREWALL=1` in `install.env` before running the installer manually.
 After install, the deployer calls:
 
 ```
-GET https://yourdomain.com/v1/health  → {"status":"ok"}
-GET https://yourdomain.com/v1/ready   → {"status":"ready"}
+GET https://yourdomain.com/v1/health   → {"status":"ok","version":"1.0.0","commit":"...","tag":"edge","build_source":"github-actions"}
+GET https://yourdomain.com/v1/version  → {"version":"1.0.0","commit":"...","tag":"edge","build_source":"github-actions"}
+GET https://yourdomain.com/v1/ready    → {"status":"ready"}
 ```
 
-If either check fails, the TUI reports the failure and exits non-zero. The service may still be running — check `journalctl -u aftertalk` on the target.
+If a check fails, the TUI reports the failure and exits non-zero. When `AFTERTALK_EXPECTED_TAG` or `AFTERTALK_EXPECTED_COMMIT` is set, installer verification also fails if the running process reports a different build identity. The service may still be running — check `journalctl -u aftertalk` on the target.
 
 ---
 

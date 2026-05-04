@@ -21,7 +21,13 @@ Exceptions:
 ### GET /v1/health
 ```bash
 curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/health
-# → {"status":"ok"}
+# → {"status":"ok","version":"1.0.0","commit":"...","tag":"edge","build_time":"...","build_source":"github-actions"}
+```
+
+### GET /v1/version
+```bash
+curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/version
+# → {"version":"1.0.0","commit":"...","tag":"edge","build_time":"...","build_source":"github-actions"}
 ```
 
 ### GET /v1/ready

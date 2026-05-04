@@ -31,6 +31,16 @@ func TestFromEnvMap_WhisperLanguage(t *testing.T) {
 	})
 }
 
+func TestFromEnvMap_BuildIdentityExpectations(t *testing.T) {
+	cfg := FromEnvMap(map[string]string{
+		"AFTERTALK_EXPECTED_TAG":    "edge",
+		"AFTERTALK_EXPECTED_COMMIT": "abc123",
+	})
+
+	assert.Equal(t, "edge", cfg.ExpectedTag)
+	assert.Equal(t, "abc123", cfg.ExpectedCommit)
+}
+
 func TestWriteReadEnvFile_WhisperLanguage_roundtrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "install.env")

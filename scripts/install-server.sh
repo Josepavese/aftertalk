@@ -50,6 +50,16 @@ if [[ "$RELEASE" == "latest" ]]; then
   BASE_URL="https://github.com/${REPO}/releases/latest/download"
 else
   BASE_URL="https://github.com/${REPO}/releases/download/${RELEASE}"
+  export AFTERTALK_EXPECTED_TAG="${AFTERTALK_EXPECTED_TAG:-$RELEASE}"
+  if [[ -z "${AFTERTALK_EXPECTED_COMMIT:-}" ]] && command -v git >/dev/null 2>&1; then
+    COMMIT="$(git ls-remote "https://github.com/${REPO}.git" "refs/tags/${RELEASE}^{}" 2>/dev/null | awk 'NR==1 {print $1}' || true)"
+    if [[ -z "$COMMIT" ]]; then
+      COMMIT="$(git ls-remote "https://github.com/${REPO}.git" "refs/tags/${RELEASE}" 2>/dev/null | awk 'NR==1 {print $1}' || true)"
+    fi
+    if [[ -n "$COMMIT" ]]; then
+      export AFTERTALK_EXPECTED_COMMIT="$COMMIT"
+    fi
+  fi
 fi
 
 # ── Download ───────────────────────────────────────────────────────────────────
@@ -66,6 +76,8 @@ curl -fsSL "${BASE_URL}/${INSTALLER_BIN}" -o aftertalk-installer
 chmod +x aftertalk-installer
 
 echo "→ Downloaded to ${INSTALL_DIR}"
+./aftertalk --version || true
+./aftertalk-installer --version || true
 
 # ── Run installer ──────────────────────────────────────────────────────────────
 

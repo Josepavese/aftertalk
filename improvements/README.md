@@ -81,8 +81,15 @@
   - `GET /v1/minutes/pull/{token}`: pull endpoint authenticated by token, outside API key middleware
   - `webhook.NotificationPayload`: webhook body with retrieval URL only (zero sensitive data)
   - HMAC-SHA256 signature (`X-Aftertalk-Signature`) on notification webhooks
-  - `PurgeMinutes`: deletes minutes + transcriptions after successful pull (`delete_on_pull=true`)
-  - Retrier: `EnqueueNotification` + `payload_type` column for correct dispatch
+	- `PurgeMinutes`: deletes minutes + transcriptions after successful pull (`delete_on_pull=true`)
+	- Retrier: `EnqueueNotification` + `payload_type` column for correct dispatch
+
+- **[closed/30-runtime-build-identity.md](closed/30-runtime-build-identity.md)** — Runtime build identity and deploy verification ✅
+  - `internal/version.BuildInfo` with semver, commit, tag, build time, and build source
+  - `/v1/health` includes runtime build metadata; `/v1/version` exposes dedicated build identity
+  - `aftertalk --version` and `aftertalk-installer --version`
+  - Release workflow injects commit/tag/build time/source into server and installer binaries
+  - Installer verification can fail on expected tag/commit mismatch
 
 ### Open
 

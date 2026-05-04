@@ -93,6 +93,8 @@ func FromEnvMap(m map[string]string) *InstallConfig {
 	cfg.TLSKeyFile = get("TLS_KEY_FILE", "")
 	cfg.ApacheVhostConf = get("APACHE_VHOST_CONF", "")
 	cfg.SkipFirewall = getBool("SKIP_FIREWALL")
+	cfg.ExpectedTag = get("AFTERTALK_EXPECTED_TAG", "")
+	cfg.ExpectedCommit = get("AFTERTALK_EXPECTED_COMMIT", "")
 
 	// STT provider-specific keys
 	cfg.STTConfig = make(map[string]string)
@@ -171,6 +173,8 @@ func WriteEnvFile(path string, cfg *InstallConfig) error {
 	writeln("TLS_CERT_FILE", cfg.TLSCertFile)
 	writeln("TLS_KEY_FILE", cfg.TLSKeyFile)
 	writeln("APACHE_VHOST_CONF", cfg.ApacheVhostConf)
+	writeln("AFTERTALK_EXPECTED_TAG", cfg.ExpectedTag)
+	writeln("AFTERTALK_EXPECTED_COMMIT", cfg.ExpectedCommit)
 	if cfg.SkipFirewall {
 		writeln("SKIP_FIREWALL", "1")
 	}

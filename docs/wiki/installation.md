@@ -134,8 +134,11 @@ On first startup the server:
 
 Verify:
 ```bash
-curl http://localhost:8080/v1/health
-# → {"status":"ok"}
+curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/health
+# → {"status":"ok","version":"1.0.0","commit":"dev","tag":"dev","build_source":"local"}
+
+aftertalk --version
+# → aftertalk 1.0.0 dev dev local
 ```
 
 ---
