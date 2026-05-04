@@ -1,6 +1,6 @@
 {
   "name": "@aftertalk/sdk",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Official JavaScript/TypeScript SDK for Aftertalk API",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -40,6 +40,12 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["aftertalk", "webrtc", "transcription", "minutes", "sdk"],
+  "keywords": [
+    "aftertalk",
+    "webrtc",
+    "transcription",
+    "minutes",
+    "sdk"
+  ],
   "license": "MIT"
 }
