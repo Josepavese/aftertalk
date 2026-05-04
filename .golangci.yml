@@ -11,15 +11,6 @@ run:
   modules-download-mode: readonly
   go: "1.25"
 
-output:
-  formats:
-    colored-line-number: {}
-  sort-results: true
-  sort-order:
-    - linter
-    - severity
-    - file
-
 linters:
   default: none
   enable:
@@ -82,9 +73,6 @@ linters:
 
     misspell:
       locale: US
-
-  exclude-dirs:
-    - sdk/ts/node_modules
 
   exclusions:
     generated: lax
