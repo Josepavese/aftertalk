@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/Josepavese/aftertalk/internal/core"
 	"github.com/Josepavese/aftertalk/internal/config"
+	_ "github.com/Josepavese/aftertalk/internal/core"
 	"github.com/Josepavese/aftertalk/internal/core/minutes"
 	"github.com/Josepavese/aftertalk/internal/core/session"
 	"github.com/Josepavese/aftertalk/internal/core/transcription"
@@ -145,7 +145,7 @@ func setupTestDB(t any) *sql.DB {
 		panic("Failed to setup test DB: " + err.Error())
 	}
 
-	if err := db.DB.PingContext(context.Background()); err != nil {
+	if err := db.PingContext(context.Background()); err != nil {
 		panic("Failed to ping DB: " + err.Error())
 	}
 
@@ -165,8 +165,8 @@ type benchStubLLM struct{}
 func (benchStubLLM) Generate(_ context.Context, _ string) (string, error) {
 	return `{"sections":{},"citations":[]}`, nil
 }
-func (benchStubLLM) Name() string        { return "stub" }
-func (benchStubLLM) IsAvailable() bool   { return true }
+func (benchStubLLM) Name() string      { return "stub" }
+func (benchStubLLM) IsAvailable() bool { return true }
 
 func BenchmarkSessionCreation1000(b *testing.B) {
 	db := setupTestDB(b)
@@ -361,7 +361,7 @@ func BenchmarkDatabaseInsert(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		sessionID := randString(36)
-		_, err := db.ExecContext(context.Background(), 
+		_, err := db.ExecContext(context.Background(),
 			"INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata) VALUES (?, ?, ?, ?, ?, ?)",
 			sessionID, "active", time.Now(), nil, 2, "test metadata",
 		)
@@ -376,7 +376,7 @@ func BenchmarkDatabaseSelect(b *testing.B) {
 	defer teardownTestDB()
 
 	sessionID := randString(36)
-	_, err := db.ExecContext(context.Background(), 
+	_, err := db.ExecContext(context.Background(),
 		"INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata) VALUES (?, ?, ?, ?, ?, ?)",
 		sessionID, "active", time.Now(), nil, 2, "test metadata",
 	)
@@ -400,7 +400,7 @@ func BenchmarkDatabaseUpdate(b *testing.B) {
 	defer teardownTestDB()
 
 	sessionID := randString(36)
-	_, err := db.ExecContext(context.Background(), 
+	_, err := db.ExecContext(context.Background(),
 		"INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata) VALUES (?, ?, ?, ?, ?, ?)",
 		sessionID, "active", time.Now(), nil, 2, "test metadata",
 	)
@@ -411,7 +411,7 @@ func BenchmarkDatabaseUpdate(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := db.ExecContext(context.Background(), 
+		_, err := db.ExecContext(context.Background(),
 			"UPDATE sessions SET status = ? WHERE id = ?",
 			"completed", sessionID,
 		)
@@ -426,7 +426,7 @@ func BenchmarkDatabaseDelete(b *testing.B) {
 	defer teardownTestDB()
 
 	sessionID := randString(36)
-	_, err := db.ExecContext(context.Background(), 
+	_, err := db.ExecContext(context.Background(),
 		"INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata) VALUES (?, ?, ?, ?, ?, ?)",
 		sessionID, "active", time.Now(), nil, 2, "test metadata",
 	)

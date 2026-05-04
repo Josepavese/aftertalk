@@ -37,10 +37,10 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      - name: Run staticcheck
-        uses: dominikh/staticcheck-action@v1
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v8
         with:
-          install-go: false
+          version: latest
 
   test:
     name: Test Suite
@@ -127,12 +127,24 @@ jobs:
 
       - name: Build application
         run: |
-          go build -v -ldflags="-s -w" -o bin/aftertalk ./cmd/aftertalk
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-s -w"
+          LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.Commit=${GITHUB_SHA}"
+          LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.Tag=ci"
+          LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.BuildTime=${BUILD_TIME}"
+          LDFLAGS="${LDFLAGS} -X github.com/Josepavese/aftertalk/internal/version.BuildSource=github-actions-ci"
+          go build -v -trimpath -ldflags="${LDFLAGS}" -o bin/aftertalk ./cmd/aftertalk
           ls -lh bin/
 
       - name: Build Docker image
         run: |
-          docker build -t aftertalk:ci -f Dockerfile .
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          docker build -t aftertalk:ci -f Dockerfile \
+            --build-arg AFTERTALK_COMMIT="${GITHUB_SHA}" \
+            --build-arg AFTERTALK_TAG=ci \
+            --build-arg AFTERTALK_BUILD_TIME="${BUILD_TIME}" \
+            --build-arg AFTERTALK_BUILD_SOURCE=github-actions-ci \
+            .
           docker save aftertalk:ci | gzip > aftertalk-ci.tar.gz
 
       - name: Upload build artifacts
@@ -227,6 +239,11 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix={{branch}}-
 
+      - name: Resolve build time
+        id: build_time
+        if: steps.docker_auth.outputs.enabled == 'true'
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push Docker image
         if: steps.docker_auth.outputs.enabled == 'true'
         uses: docker/build-push-action@v5
@@ -235,6 +252,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            AFTERTALK_COMMIT=${{ github.sha }}
+            AFTERTALK_TAG=${{ github.ref_name }}
+            AFTERTALK_BUILD_TIME=${{ steps.build_time.outputs.value }}
+            AFTERTALK_BUILD_SOURCE=github-actions-docker
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

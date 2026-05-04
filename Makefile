@@ -5,10 +5,19 @@ BINARY_NAME=aftertalk
 MAIN_PATH=./cmd/aftertalk
 GO=go
 GOFLAGS=-v
+COMMIT?=$(shell git rev-parse --short HEAD 2>/dev/null || echo local)
+TAG?=dev
+BUILD_TIME?=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+BUILD_SOURCE?=make
+LDFLAGS=-s -w \
+	-X github.com/Josepavese/aftertalk/internal/version.Commit=$(COMMIT) \
+	-X github.com/Josepavese/aftertalk/internal/version.Tag=$(TAG) \
+	-X github.com/Josepavese/aftertalk/internal/version.BuildTime=$(BUILD_TIME) \
+	-X github.com/Josepavese/aftertalk/internal/version.BuildSource=$(BUILD_SOURCE)
 
 # Build
 build:
-	$(GO) build $(GOFLAGS) -o bin/$(BINARY_NAME) $(MAIN_PATH)
+	$(GO) build $(GOFLAGS) -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY_NAME) $(MAIN_PATH)
 
 # Run
 run: build
@@ -67,7 +76,12 @@ fmt:
 
 # Docker
 docker-build:
-	docker build -t aftertalk:latest .
+	docker build -t aftertalk:latest \
+		--build-arg AFTERTALK_COMMIT=$(COMMIT) \
+		--build-arg AFTERTALK_TAG=$(TAG) \
+		--build-arg AFTERTALK_BUILD_TIME=$(BUILD_TIME) \
+		--build-arg AFTERTALK_BUILD_SOURCE=make-docker \
+		.
 
 # Help
 help:

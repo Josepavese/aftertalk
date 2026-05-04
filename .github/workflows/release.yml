@@ -84,6 +84,10 @@ jobs:
           # so installers can fetch it without cloning the repository.
           cp scripts/whisper_server.py dist/
 
+          # Publish a manifest that installers can verify before executing
+          # downloaded binaries/scripts.
+          (cd dist && sha256sum * > checksums.txt)
+
           echo ""
           echo "Built assets:"
           ls -lh dist/
@@ -158,6 +162,8 @@ jobs:
           | macOS Apple Silicon | `aftertalk-darwin-arm64` | `aftertalk-installer-darwin-arm64` |
           | Windows x86-64 | `aftertalk-windows-amd64.exe` | `aftertalk-installer-windows-amd64.exe` |
           | Windows ARM64  | `aftertalk-windows-arm64.exe` | `aftertalk-installer-windows-arm64.exe` |
+
+          `checksums.txt` contains SHA256 hashes for all release assets.
           NOTES
           fi
 

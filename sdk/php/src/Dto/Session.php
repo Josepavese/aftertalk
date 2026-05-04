@@ -103,15 +103,15 @@ class Session
     public static function fromArray(array $data): self
     {
         return new self(
-            $data['session_id'],
-            $data['status'],
-            $data['participant_count'] ?? 0,
+            $data['session_id'] ?? $data['id'],
+            $data['status'] ?? 'active',
+            $data['participant_count'] ?? count($data['participants'] ?? []),
             array_map(
                 fn(array $p) => Participant::fromArray($p),
                 $data['participants'] ?? []
             ),
-            $data['created_at'],
-            $data['updated_at'] ?? $data['created_at'],
+            $data['created_at'] ?? '',
+            $data['updated_at'] ?? $data['created_at'] ?? '',
             $data['template_id']  ?? null,
             $data['ended_at']     ?? null,
             $data['metadata']     ?? null,

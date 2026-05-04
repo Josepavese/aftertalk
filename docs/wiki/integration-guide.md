@@ -52,7 +52,7 @@ The central rule is simple:
 │  AftertalkClient (PHP SDK, with API key)                            │
 │  ├── POST /v1/rooms/join     → create/join session, get JWT token   │
 │  ├── POST /v1/sessions/{id}/end → trigger STT+LLM pipeline          │
-│  └── GET  /v1/sessions/{id}/minutes → read generated minutes        │
+│  └── GET  /v1/minutes?session_id={id} → read generated minutes      │
 └─────────────────────────────────────────────────────────────────────┘
          │ API key in Authorization: Bearer header
          ▼
@@ -212,7 +212,7 @@ function handleSessionEnd(AftertalkClient $aftertalk, string $sessionId): void
 // GET /your-api/minutes?session_id=<id>
 function handleGetMinutes(AftertalkClient $aftertalk, string $sessionId): array
 {
-    return $aftertalk->minutes->get($sessionId);
+    return $aftertalk->minutes->getBySession($sessionId);
 }
 ```
 
@@ -564,10 +564,10 @@ AFTERTALK_WEBHOOK_SECRET=<same value as server WEBHOOK_SECRET>
 | `GET /v1/sessions`                 | List sessions |
 | `GET /v1/sessions/{id}`            | Get session details |
 | `POST /v1/sessions/{id}/end`       | End session, trigger pipeline |
-| `GET /v1/sessions/{id}/transcriptions` | Raw transcript |
-| `GET /v1/sessions/{id}/minutes`    | Generated minutes |
-| `PUT /v1/sessions/{id}/minutes`    | Edit minutes |
-| `GET /v1/sessions/{id}/minutes/versions` | Version history |
+| `GET /v1/transcriptions?session_id={id}` | Raw transcript |
+| `GET /v1/minutes?session_id={id}` | Generated minutes |
+| `PUT /v1/minutes/{minutes_id}` | Edit minutes |
+| `GET /v1/minutes/{minutes_id}/versions` | Version history |
 | `GET /v1/minutes/pull/{token}`     | One-shot pull URL (notify_pull mode, no API key — URL is auth) |
 
 ---

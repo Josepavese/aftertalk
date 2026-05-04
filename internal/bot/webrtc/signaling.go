@@ -6,9 +6,10 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
+
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 // iceCandidatePayload matches the RTCIceCandidate object sent by browsers.
@@ -101,7 +102,7 @@ func (s *SignalingServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 		claims.SessionID, claims.UserID, claims.Role, participantID)
 
 	// Create a context tied to the WebSocket connection lifetime.
-	// We cannot use r.Context() because it is cancelled as soon as HandleWebSocket returns.
+	// We cannot use r.Context() because it is canceled as soon as HandleWebSocket returns.
 	ctx, cancel := context.WithCancel(context.Background())
 	cw := &connWriter{conn: conn}
 	go s.handleMessages(ctx, cancel, cw, claims.SessionID, participantID, claims.Role)
@@ -109,7 +110,7 @@ func (s *SignalingServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 
 func (s *SignalingServer) handleMessages(ctx context.Context, cancel context.CancelFunc, cw *connWriter, sessionID, participantID, role string) {
 	defer func() {
-		cancel() // signal peer cleanup goroutine
+		cancel()            // signal peer cleanup goroutine
 		_ = cw.conn.Close() //nolint:errcheck // best-effort cleanup on disconnect
 		key := sessionID + ":" + participantID
 		s.mu.Lock()

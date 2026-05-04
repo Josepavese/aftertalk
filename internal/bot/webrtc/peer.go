@@ -5,10 +5,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Josepavese/aftertalk/internal/config"
-	"github.com/Josepavese/aftertalk/internal/logging"
 	pionice "github.com/pion/ice/v4"
 	"github.com/pion/webrtc/v4"
+
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 type AudioTrackHandler func(sessionID, participantID, role string, payload []byte)
@@ -212,7 +213,7 @@ func (m *Manager) CreatePeer(ctx context.Context, sessionID, participantID, role
 	m.peers[key] = peer
 	logging.Infof("Created WebRTC peer for session=%s participant=%s", sessionID, participantID)
 
-	// Close the PeerConnection when the caller's context is cancelled (e.g. WebSocket disconnect).
+	// Close the PeerConnection when the caller's context is canceled (e.g. WebSocket disconnect).
 	// RemovePeer (called by the signaling layer) will also close it, but that may happen later;
 	// this goroutine ensures the PeerConnection is released promptly on abrupt disconnections.
 	go func() {

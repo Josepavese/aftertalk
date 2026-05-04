@@ -11,7 +11,7 @@ servers:
     description: Production server
   - url: https://api-staging.aftertalk.io/v1
     description: Staging server
-  - url: http://localhost:3000/v1
+  - url: http://localhost:8080/v1
     description: Development server
 
 security:
@@ -20,6 +20,41 @@ security:
 
 paths:
   /sessions:
+    get:
+      summary: List sessions
+      description: Retrieve sessions with optional status filter and pagination
+      operationId: listSessions
+      tags:
+        - Sessions
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/SessionStatus'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Paginated sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionList'
+
     post:
       summary: Create a new session
       description: Initialize a new conversational session with participants
@@ -33,12 +68,12 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateSessionRequest'
       responses:
-        '201':
+        '200':
           description: Session created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Session'
+                $ref: '#/components/schemas/CreateSessionResponse'
         '400':
           description: Invalid request
           content:
@@ -80,10 +115,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-    patch:
-      summary: Update session status
-      description: End session or update status
-      operationId: updateSession
+    delete:
+      summary: Delete a session
+      description: Delete a session after it has ended or entered an error/completed state
+      operationId: deleteSession
       tags:
         - Sessions
       parameters:
@@ -93,33 +128,23 @@ paths:
           schema:
             type: string
             format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateSessionRequest'
       responses:
-        '200':
-          description: Session updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Session'
-        '400':
-          description: Invalid state transition
+        '204':
+          description: Session deleted
+        '404':
+          description: Session not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /sessions/{sessionId}/participants:
+  /sessions/{sessionId}/status:
     get:
-      summary: List session participants
-      description: Get all participants in a session
-      operationId: listParticipants
+      summary: Get session status
+      description: Retrieve only the current session status
+      operationId: getSessionStatus
       tags:
-        - Participants
+        - Sessions
       parameters:
         - name: sessionId
           in: path
@@ -129,21 +154,19 @@ paths:
             format: uuid
       responses:
         '200':
-          description: List of participants
+          description: Session status
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Participant'
+                $ref: '#/components/schemas/SessionStatusResponse'
 
-  /sessions/{sessionId}/transcriptions:
-    get:
-      summary: Get session transcriptions
-      description: Retrieve all transcription segments for a session
-      operationId: getTranscriptions
+  /sessions/{sessionId}/end:
+    post:
+      summary: End a session
+      description: Mark a session as ended and start downstream processing
+      operationId: endSession
       tags:
-        - Transcriptions
+        - Sessions
       parameters:
         - name: sessionId
           in: path
@@ -151,18 +174,30 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: status
+      responses:
+        '204':
+          description: Session ended
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /transcriptions:
+    get:
+      summary: List transcriptions
+      description: Retrieve transcription segments filtered by session
+      operationId: listTranscriptions
+      tags:
+        - Transcriptions
+      parameters:
+        - name: session_id
           in: query
-          required: false
+          required: true
           schema:
             type: string
-            enum: [pending, processing, ready, error]
-        - name: startMs
-          in: query
-          required: false
-          description: Filter segments starting after this timestamp (milliseconds)
-          schema:
-            type: integer
+            format: uuid
         - name: limit
           in: query
           required: false
@@ -171,6 +206,13 @@ paths:
             minimum: 1
             maximum: 100
             default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
       responses:
         '200':
           description: Transcription segments
@@ -178,33 +220,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TranscriptionList'
-        '404':
-          description: Session not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
 
-  /sessions/{sessionId}/minutes:
+  /transcriptions/{transcriptionId}:
     get:
-      summary: Get session minutes
-      description: Retrieve minutes for a session
-      operationId: getMinutes
+      summary: Get transcription by ID
+      description: Retrieve one transcription segment
+      operationId: getTranscription
       tags:
-        - Minutes
+        - Transcriptions
       parameters:
-        - name: sessionId
+        - name: transcriptionId
           in: path
           required: true
           schema:
             type: string
             format: uuid
-        - name: version
+      responses:
+        '200':
+          description: Transcription segment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptionSegment'
+        '404':
+          description: Transcription not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /minutes:
+    get:
+      summary: Get minutes by session
+      description: Retrieve the generated minutes document for a session
+      operationId: getMinutesBySession
+      tags:
+        - Minutes
+      parameters:
+        - name: session_id
           in: query
-          required: false
-          description: Specific version to retrieve (defaults to latest)
+          required: true
           schema:
-            type: integer
+            type: string
+            format: uuid
       responses:
         '200':
           description: Session minutes
@@ -219,14 +277,41 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /minutes/{minutesId}:
+    get:
+      summary: Get minutes by ID
+      description: Retrieve one minutes document
+      operationId: getMinutesById
+      tags:
+        - Minutes
+      parameters:
+        - name: minutesId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Minutes document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Minutes'
+        '404':
+          description: Minutes not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     put:
-      summary: Update session minutes
+      summary: Update minutes
       description: Edit minutes (creates new version)
       operationId: updateMinutes
       tags:
         - Minutes
       parameters:
-        - name: sessionId
+        - name: minutesId
           in: path
           required: true
           schema:
@@ -251,8 +336,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete minutes
+      description: Delete a minutes document and its history
+      operationId: deleteMinutes
+      tags:
+        - Minutes
+      parameters:
+        - name: minutesId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Minutes deleted
 
-  /sessions/{sessionId}/minutes/versions:
+  /minutes/{minutesId}/versions:
     get:
       summary: Get minutes version history
       description: Retrieve all versions of minutes for audit trail
@@ -260,7 +361,7 @@ paths:
       tags:
         - Minutes
       parameters:
-        - name: sessionId
+        - name: minutesId
           in: path
           required: true
           schema:
@@ -275,6 +376,30 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/MinutesVersion'
+
+  /minutes/pull/{token}:
+    get:
+      summary: Pull minutes with retrieval token
+      description: One-shot notify_pull retrieval URL. The token in the path is the credential.
+      operationId: pullMinutes
+      security: []
+      tags:
+        - Minutes
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Minutes document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Minutes'
+        '404':
+          description: Invalid, expired, consumed, or unknown token
 
   /health:
     get:
@@ -344,125 +469,200 @@ components:
     CreateSessionRequest:
       type: object
       required:
+        - participant_count
         - participants
       properties:
+        participant_count:
+          type: integer
+          minimum: 2
+        template_id:
+          type: string
+        metadata:
+          type: string
+          description: Opaque metadata string propagated to webhook payloads
+        stt_profile:
+          type: string
+        llm_profile:
+          type: string
         participants:
           type: array
           minItems: 2
           items:
             type: object
             required:
-              - userId
+              - user_id
               - role
             properties:
-              userId:
+              user_id:
                 type: string
-                maxLength: 255
+                maxLength: 128
               role:
                 type: string
-                maxLength: 50
-                pattern: '^[a-z0-9_]+$'
-        metadata:
-          type: object
-          additionalProperties: true
+                maxLength: 64
+
+    CreateSessionResponse:
+      type: object
+      required:
+        - session_id
+        - participants
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        participants:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - user_id
+              - role
+              - token
+              - expires_at
+            properties:
+              id:
+                type: string
+                format: uuid
+              user_id:
+                type: string
+              role:
+                type: string
+              token:
+                type: string
+              expires_at:
+                type: string
+                format: date-time
+
+    SessionStatus:
+      type: string
+      enum: [active, ended, processing, completed, error]
 
     Session:
       type: object
       required:
         - id
         - status
-        - createdAt
-        - participantCount
+        - created_at
+        - participant_count
       properties:
         id:
           type: string
           format: uuid
         status:
-          type: string
-          enum: [active, ended, processing, completed, error]
-        createdAt:
-          type: string
-          format: date-time
-        endedAt:
+          $ref: '#/components/schemas/SessionStatus'
+        created_at:
           type: string
           format: date-time
-        participantCount:
+        ended_at:
+          type: string
+          format: date-time
+        participant_count:
           type: integer
           minimum: 2
+        template_id:
+          type: string
         metadata:
-          type: object
-          additionalProperties: true
+          type: string
+        stt_profile:
+          type: string
+        llm_profile:
+          type: string
 
-    UpdateSessionRequest:
+    SessionList:
       type: object
       required:
+        - sessions
+        - total
+        - limit
+        - offset
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    SessionStatusResponse:
+      type: object
+      required:
+        - id
         - status
       properties:
+        id:
+          type: string
+          format: uuid
         status:
-          type: string
-          enum: [ended, error]
-        endedAt:
-          type: string
-          format: date-time
+          $ref: '#/components/schemas/SessionStatus'
 
     Participant:
       type: object
       required:
         - id
-        - sessionId
-        - userId
+        - session_id
+        - user_id
         - role
-        - tokenJti
-        - tokenExpiresAt
-        - tokenUsed
+        - token_jti
+        - token_expires_at
+        - token_used
       properties:
         id:
           type: string
           format: uuid
-        sessionId:
+        session_id:
           type: string
           format: uuid
-        userId:
+        user_id:
           type: string
         role:
           type: string
-        tokenJti:
+        token_jti:
           type: string
           format: uuid
-        tokenExpiresAt:
+        token_expires_at:
           type: string
           format: date-time
-        tokenUsed:
+        token_used:
           type: boolean
-        connectedAt:
+        connected_at:
           type: string
           format: date-time
-        disconnectedAt:
+        disconnected_at:
           type: string
           format: date-time
 
     TranscriptionList:
       type: object
       required:
-        - segments
+        - transcriptions
         - total
+        - limit
+        - offset
       properties:
-        segments:
+        transcriptions:
           type: array
           items:
             $ref: '#/components/schemas/TranscriptionSegment'
         total:
+          type: integer
+        limit:
+          type: integer
+        offset:
           type: integer
 
     TranscriptionSegment:
       type: object
       required:
         - id
-        - sessionId
-        - segmentIndex
+        - session_id
+        - segment_index
         - role
-        - startMs
-        - endMs
+        - start_ms
+        - end_ms
         - text
         - provider
         - status
@@ -470,17 +670,17 @@ components:
         id:
           type: string
           format: uuid
-        sessionId:
+        session_id:
           type: string
           format: uuid
-        segmentIndex:
+        segment_index:
           type: integer
         role:
           type: string
-        startMs:
+        start_ms:
           type: integer
           description: Milliseconds since session start
-        endMs:
+        end_ms:
           type: integer
           description: Milliseconds since session start
         text:
@@ -492,7 +692,9 @@ components:
           maximum: 1.0
         provider:
           type: string
-        createdAt:
+        language:
+          type: string
+        created_at:
           type: string
           format: date-time
         status:
@@ -503,90 +705,40 @@ components:
       type: object
       required:
         - id
-        - sessionId
+        - session_id
+        - template_id
         - version
-        - themes
-        - contentsReported
-        - professionalInterventions
-        - progressIssues
-        - nextSteps
+        - summary
+        - sections
         - citations
         - status
         - provider
+        - generated_at
       properties:
         id:
           type: string
           format: uuid
-        sessionId:
+        session_id:
           type: string
           format: uuid
+        template_id:
+          type: string
         version:
           type: integer
-        themes:
-          type: array
-          items:
-            type: string
-        contentsReported:
-          type: array
-          items:
-            type: object
-            required:
-              - text
-              - timestampMs
-            properties:
-              text:
-                type: string
-              timestampMs:
-                type: integer
-        professionalInterventions:
-          type: array
-          items:
-            type: object
-            required:
-              - text
-              - timestampMs
-            properties:
-              text:
-                type: string
-              timestampMs:
-                type: integer
-        progressIssues:
+        summary:
+          $ref: '#/components/schemas/MinutesSummary'
+        sections:
           type: object
-          required:
-            - progress
-            - issues
-          properties:
-            progress:
-              type: array
-              items:
-                type: string
-            issues:
-              type: array
-              items:
-                type: string
-        nextSteps:
-          type: array
-          items:
-            type: string
+          additionalProperties: true
+          description: Template-defined section map. Values depend on each section type.
         citations:
           type: array
           items:
-            type: object
-            required:
-              - timestampMs
-              - text
-              - role
-            properties:
-              timestampMs:
-                type: integer
-              text:
-                type: string
-              role:
-                type: string
-        generatedAt:
+            $ref: '#/components/schemas/Citation'
+        generated_at:
           type: string
           format: date-time
-        deliveredAt:
+        delivered_at:
           type: string
           format: date-time
         status:
@@ -595,51 +747,87 @@ components:
         provider:
           type: string
 
-    UpdateMinutesRequest:
+    MinutesSummary:
       type: object
       required:
-        - themes
-        - contentsReported
-        - professionalInterventions
-        - progressIssues
-        - nextSteps
-        - citations
+        - overview
+        - phases
       properties:
-        themes:
+        overview:
+          type: string
+        phases:
           type: array
           items:
-            type: string
-        contentsReported:
-          type: array
-          items:
-            type: object
-        professionalInterventions:
-          type: array
-          items:
-            type: object
-        progressIssues:
+            $ref: '#/components/schemas/MinutesPhase'
+
+    MinutesPhase:
+      type: object
+      required:
+        - title
+        - summary
+        - start_ms
+        - end_ms
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        start_ms:
+          type: integer
+        end_ms:
+          type: integer
+
+    Citation:
+      type: object
+      required:
+        - timestamp_ms
+        - text
+        - role
+      properties:
+        timestamp_ms:
+          type: integer
+        text:
+          type: string
+        role:
+          type: string
+
+    UpdateMinutesRequest:
+      type: object
+      properties:
+        summary:
+          $ref: '#/components/schemas/MinutesSummary'
+        sections:
           type: object
-        nextSteps:
-          type: array
-          items:
-            type: string
+          additionalProperties: true
         citations:
           type: array
           items:
-            type: object
+            $ref: '#/components/schemas/Citation'
 
     MinutesVersion:
       type: object
       required:
+        - id
+        - minutes_id
         - version
-        - editedAt
+        - content
+        - edited_at
       properties:
+        id:
+          type: string
+          format: uuid
+        minutes_id:
+          type: string
+          format: uuid
         version:
           type: integer
-        editedAt:
+        content:
+          type: string
+          description: JSON snapshot of previous minutes content
+        edited_at:
           type: string
           format: date-time
-        editedBy:
+        edited_by:
           type: string
 
     HealthStatus:

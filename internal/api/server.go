@@ -11,13 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+
 	"github.com/Josepavese/aftertalk/internal/api/handler"
 	custommiddleware "github.com/Josepavese/aftertalk/internal/api/middleware"
 	"github.com/Josepavese/aftertalk/internal/api/response"
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/core/session"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 )
 
 type Server struct {
@@ -148,10 +149,10 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 	r.Group(func(r chi.Router) {
 		r.Use(apiKeyMiddleware)
 
-			r.Route("/v1", func(r chi.Router) {
-				r.Get("/health", handler.HealthCheck)
-				r.Get("/version", handler.VersionCheck)
-				r.Get("/ready", handler.ReadyCheck)
+		r.Route("/v1", func(r chi.Router) {
+			r.Get("/health", handler.HealthCheck)
+			r.Get("/version", handler.VersionCheck)
+			r.Get("/ready", handler.ReadyCheck)
 
 			// POST /v1/rooms/join — join or create a session by room code.
 			// Promotes the former /test/start logic to a stable, versioned endpoint.
@@ -265,8 +266,7 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 			if transcriptionHandler != nil {
 				r.Mount("/transcriptions", transcriptionHandler.Routes())
 			}
-
-			})
+		})
 	})
 
 	// GET /v1/minutes/pull/{token} — notify_pull secure retrieval endpoint.

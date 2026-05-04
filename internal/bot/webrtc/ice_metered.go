@@ -17,10 +17,10 @@ var errMeteredServerError = errors.New("metered ice: server error")
 // Auth: query parameter apiKey (no Authorization header)
 // Docs: https://www.metered.ca/docs/turn-rest-api
 type MeteredProvider struct {
-	appName    string
-	apiKey     string
-	client     *http.Client
-	baseURL    string // override for tests
+	appName string
+	apiKey  string
+	client  *http.Client
+	baseURL string // override for tests
 }
 
 func NewMeteredProvider(appName, apiKey string) *MeteredProvider {

@@ -12,10 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Josepavese/aftertalk/internal/config"
-	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Josepavese/aftertalk/internal/config"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 func init() {
@@ -174,7 +175,7 @@ func TestStartTURNServer_UDP(t *testing.T) {
 	assert.NotEmpty(t, username)
 	assert.NotEmpty(t, credential)
 
-	// Server shuts down cleanly when ctx is cancelled.
+	// Server shuts down cleanly when ctx is canceled.
 	cancel()
 	time.Sleep(200 * time.Millisecond) // give goroutine time to close
 }

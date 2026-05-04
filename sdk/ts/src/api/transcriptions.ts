@@ -12,7 +12,19 @@ export class TranscriptionsAPI {
     const params = new URLSearchParams({ session_id: sessionId });
     if (filters?.limit !== undefined) params.set('limit', String(filters.limit));
     if (filters?.offset !== undefined) params.set('offset', String(filters.offset));
-    return this.http.get<PaginatedResponse<Transcription>>(`/v1/transcriptions?${params}`);
+    const raw = await this.http.get<{
+      transcriptions?: Transcription[];
+      items?: Transcription[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/v1/transcriptions?${params}`);
+    return {
+      items: raw.transcriptions ?? raw.items ?? [],
+      total: raw.total,
+      limit: raw.limit,
+      offset: raw.offset,
+    };
   }
 
   /** GET /v1/transcriptions/{transcriptionId} */

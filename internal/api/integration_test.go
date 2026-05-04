@@ -17,6 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 	"github.com/Josepavese/aftertalk/internal/api"
@@ -31,8 +34,6 @@ import (
 	"github.com/Josepavese/aftertalk/internal/storage/sqlite"
 	"github.com/Josepavese/aftertalk/internal/version"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func init() { //nolint:gochecknoinits // test package init for logger setup

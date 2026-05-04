@@ -101,10 +101,10 @@ func NewClientWithSecret(url, secret string, timeout time.Duration) *Client {
 // Use NotificationPayload instead when sensitive data must not travel in the
 // webhook body (notify_pull mode).
 type MinutesPayload struct {
-	Timestamp       time.Time          `json:"timestamp"`
-	Minutes         interface{}        `json:"minutes"`
-	SessionID       string             `json:"session_id"`
-	SessionMetadata string             `json:"session_metadata,omitempty"`
+	Timestamp       time.Time            `json:"timestamp"`
+	Minutes         interface{}          `json:"minutes"`
+	SessionID       string               `json:"session_id"`
+	SessionMetadata string               `json:"session_metadata,omitempty"`
 	Participants    []ParticipantSummary `json:"participants,omitempty"`
 }
 
@@ -114,11 +114,11 @@ type MinutesPayload struct {
 // recipient has full routing context without needing to pull first.
 // The URL expires at ExpiresAt and becomes invalid after the first successful retrieval.
 type NotificationPayload struct {
-	ExpiresAt       time.Time          `json:"expires_at"`
-	Timestamp       time.Time          `json:"timestamp"`
-	SessionID       string             `json:"session_id"`
-	RetrieveURL     string             `json:"retrieve_url"`
-	SessionMetadata string             `json:"session_metadata,omitempty"`
+	ExpiresAt       time.Time            `json:"expires_at"`
+	Timestamp       time.Time            `json:"timestamp"`
+	SessionID       string               `json:"session_id"`
+	RetrieveURL     string               `json:"retrieve_url"`
+	SessionMetadata string               `json:"session_metadata,omitempty"`
 	Participants    []ParticipantSummary `json:"participants,omitempty"`
 }
 

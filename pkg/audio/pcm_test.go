@@ -299,7 +299,7 @@ func TestWritePCM(t *testing.T) {
 
 		assert.NoError(t, err)
 		assert.Len(t, buf.Bytes(), 2)
-		assert.Equal(t, int16(1000), int16(binary.LittleEndian.Uint16(buf.Bytes()[:2])))  //nolint:gosec // intentional uint16->int16 reinterpret in test
+		assert.Equal(t, int16(1000), int16(binary.LittleEndian.Uint16(buf.Bytes()[:2]))) //nolint:gosec // intentional uint16->int16 reinterpret in test
 	})
 
 	t.Run("WriteMultipleSamples", func(t *testing.T) {

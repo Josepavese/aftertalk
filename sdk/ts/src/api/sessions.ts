@@ -7,6 +7,11 @@ import type {
   SessionFilters,
 } from '../types.js';
 
+type WireSession = Omit<Session, 'sessionId'> & {
+  id?: string;
+  sessionId?: string;
+};
+
 export class SessionsAPI {
   constructor(private readonly http: HttpClient) {}
 
@@ -15,11 +20,15 @@ export class SessionsAPI {
   }
 
   async get(sessionId: string): Promise<Session> {
-    return this.http.get<Session>(`/v1/sessions/${sessionId}`);
+    const raw = await this.http.get<WireSession>(`/v1/sessions/${sessionId}`);
+    return normalizeSession(raw);
   }
 
-  async getStatus(sessionId: string): Promise<Pick<Session, 'sessionId' | 'status' | 'updatedAt'>> {
-    return this.http.get(`/v1/sessions/${sessionId}/status`);
+  async getStatus(sessionId: string): Promise<Pick<Session, 'sessionId' | 'status'>> {
+    const raw = await this.http.get<{ id?: string; sessionId?: string; status: Session['status'] }>(
+      `/v1/sessions/${sessionId}/status`,
+    );
+    return { sessionId: raw.sessionId ?? raw.id ?? sessionId, status: raw.status };
   }
 
   async end(sessionId: string): Promise<void> {
@@ -33,10 +42,30 @@ export class SessionsAPI {
     if (filters?.offset !== undefined) params.set('offset', String(filters.offset));
 
     const qs = params.toString();
-    return this.http.get<PaginatedResponse<Session>>(`/v1/sessions${qs ? `?${qs}` : ''}`);
+    const raw = await this.http.get<{
+      sessions?: WireSession[];
+      items?: WireSession[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/v1/sessions${qs ? `?${qs}` : ''}`);
+    return {
+      items: (raw.sessions ?? raw.items ?? []).map(normalizeSession),
+      total: raw.total,
+      limit: raw.limit,
+      offset: raw.offset,
+    };
   }
 
   async delete(sessionId: string): Promise<void> {
     return this.http.delete<void>(`/v1/sessions/${sessionId}`);
   }
+}
+
+function normalizeSession(raw: WireSession): Session {
+  const { id, sessionId, ...rest } = raw;
+  return {
+    ...rest,
+    sessionId: sessionId ?? id ?? '',
+  };
 }

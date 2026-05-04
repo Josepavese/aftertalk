@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AftertalkError } from '../errors.js';
 import { WebRTCConnection } from './connection.js';
-import type { SignalingClient } from './signaling.js';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 

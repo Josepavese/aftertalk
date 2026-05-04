@@ -39,6 +39,51 @@ function Write-Info   { param($msg) Write-Host "  [..] $msg" -ForegroundColor Bl
 function Write-Warn   { param($msg) Write-Host "  [!]  $msg" -ForegroundColor Yellow }
 function Write-Fail   { param($msg) Write-Host "  [X]  $msg" -ForegroundColor Red; exit 1 }
 
+function Get-ReleaseBaseUrl {
+  param([string]$Release)
+  if ($Release -eq "latest") {
+    return "https://github.com/Josepavese/aftertalk/releases/latest/download"
+  }
+  return "https://github.com/Josepavese/aftertalk/releases/download/$Release"
+}
+
+function Get-ReleaseChecksums {
+  param([string]$BaseUrl, [string]$Release)
+
+  $map = @{}
+  $tmp = Join-Path $env:TEMP ("aftertalk-checksums-" + [guid]::NewGuid().ToString("N") + ".txt")
+  try {
+    Invoke-WebRequest "$BaseUrl/checksums.txt" -OutFile $tmp -UseBasicParsing
+    foreach ($line in Get-Content $tmp) {
+      $parts = $line -split "\s+", 2
+      if ($parts.Count -eq 2) {
+        $map[$parts[1].Trim()] = $parts[0].Trim().ToLowerInvariant()
+      }
+    }
+  } catch {
+    Write-Warn "checksums.txt not available for $Release; downloads will not be hash-verified"
+  } finally {
+    Remove-Item $tmp -EA SilentlyContinue
+  }
+  return $map
+}
+
+function Verify-ReleaseChecksum {
+  param($Checksums, [string]$Asset, [string]$Path)
+
+  if (-not $Checksums.ContainsKey($Asset)) {
+    Write-Warn "checksum missing for $Asset; skipping"
+    return
+  }
+
+  $actual = (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
+  $expected = $Checksums[$Asset]
+  if ($actual -ne $expected) {
+    Write-Fail "Checksum mismatch for $Asset`nexpected: $expected`nactual:   $actual"
+  }
+  Write-OK "Checksum verified: $Asset"
+}
+
 Write-Host @"
   ╔═══════════════════════════════════╗
   ║   Aftertalk Installer $AFTERTALK_RELEASE
@@ -138,30 +183,35 @@ Write-OK "Directories created"
 Write-Header "5. Aftertalk binary ($AT_OS/$AT_ARCH, release: $AFTERTALK_RELEASE)"
 
 $BIN_NAME = "aftertalk-${AT_OS}-${AT_ARCH}.exe"
-if ($AFTERTALK_RELEASE -eq "latest") {
-  $BIN_URL     = "https://github.com/Josepavese/aftertalk/releases/latest/download/$BIN_NAME"
-  $WHISPER_URL = "https://github.com/Josepavese/aftertalk/releases/latest/download/whisper_server.py"
-} else {
-  $BIN_URL     = "https://github.com/Josepavese/aftertalk/releases/download/$AFTERTALK_RELEASE/$BIN_NAME"
-  $WHISPER_URL = "https://github.com/Josepavese/aftertalk/releases/download/$AFTERTALK_RELEASE/whisper_server.py"
-}
+$BASE_URL = Get-ReleaseBaseUrl $AFTERTALK_RELEASE
+$BIN_URL = "$BASE_URL/$BIN_NAME"
+$WHISPER_URL = "$BASE_URL/whisper_server.py"
+$CHECKSUMS = Get-ReleaseChecksums $BASE_URL $AFTERTALK_RELEASE
 
 Write-Info "Downloading aftertalk-server.exe..."
 try {
-  Invoke-WebRequest $BIN_URL -OutFile (Join-Path $BIN_DIR "aftertalk-server.exe")
+  $SERVER_PATH = Join-Path $BIN_DIR "aftertalk-server.exe"
+  Invoke-WebRequest $BIN_URL -OutFile $SERVER_PATH -UseBasicParsing
+  Verify-ReleaseChecksum $CHECKSUMS $BIN_NAME $SERVER_PATH
   Write-OK "Binary: $BIN_DIR\aftertalk-server.exe"
-  & (Join-Path $BIN_DIR "aftertalk-server.exe") --version
+  & $SERVER_PATH --version
 } catch {
   Write-Fail "Failed to download binary from $BIN_URL`nCheck https://github.com/Josepavese/aftertalk/releases or set AFTERTALK_RELEASE=edge"
 }
 
 Write-Info "Downloading whisper_server.py..."
+$WHISPER_PATH = Join-Path $BIN_DIR "whisper_server.py"
+$WHISPER_FROM_RELEASE = $false
 try {
-  Invoke-WebRequest $WHISPER_URL -OutFile (Join-Path $BIN_DIR "whisper_server.py")
+  Invoke-WebRequest $WHISPER_URL -OutFile $WHISPER_PATH -UseBasicParsing
+  $WHISPER_FROM_RELEASE = $true
 } catch {
   # Fallback to raw source
   Invoke-WebRequest "https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/whisper_server.py" `
-    -OutFile (Join-Path $BIN_DIR "whisper_server.py")
+    -OutFile $WHISPER_PATH -UseBasicParsing
+}
+if ($WHISPER_FROM_RELEASE) {
+  Verify-ReleaseChecksum $CHECKSUMS "whisper_server.py" $WHISPER_PATH
 }
 Write-OK "Whisper server: $BIN_DIR\whisper_server.py"
 
@@ -285,6 +335,46 @@ function Show-Status {
 }
 function Show-Version { & (Join-Path $BIN "aftertalk-server.exe") --version }
 
+function Get-ReleaseBaseUrl {
+  param([string]$Release)
+  if ($Release -eq "latest") {
+    return "https://github.com/Josepavese/aftertalk/releases/latest/download"
+  }
+  return "https://github.com/Josepavese/aftertalk/releases/download/$Release"
+}
+
+function Get-ReleaseChecksums {
+  param([string]$BaseUrl, [string]$Release)
+  $map = @{}
+  $tmp = Join-Path $env:TEMP ("aftertalk-checksums-" + [guid]::NewGuid().ToString("N") + ".txt")
+  try {
+    Invoke-WebRequest "$BaseUrl/checksums.txt" -OutFile $tmp -UseBasicParsing
+    foreach ($line in Get-Content $tmp) {
+      $parts = $line -split "\s+", 2
+      if ($parts.Count -eq 2) { $map[$parts[1].Trim()] = $parts[0].Trim().ToLowerInvariant() }
+    }
+  } catch {
+    Write-Host "  [!] checksums.txt not available for $Release; downloads will not be hash-verified" -ForegroundColor Yellow
+  } finally {
+    Remove-Item $tmp -EA SilentlyContinue
+  }
+  return $map
+}
+
+function Verify-ReleaseChecksum {
+  param($Checksums, [string]$Asset, [string]$Path)
+  if (-not $Checksums.ContainsKey($Asset)) {
+    Write-Host "  [!] checksum missing for $Asset; skipping" -ForegroundColor Yellow
+    return
+  }
+  $actual = (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
+  $expected = $Checksums[$Asset]
+  if ($actual -ne $expected) {
+    throw "Checksum mismatch for $Asset`nexpected: $expected`nactual:   $actual"
+  }
+  Write-Host "  [OK] checksum verified: $Asset" -ForegroundColor Green
+}
+
 switch ($Command) {
   "start"   { Start-Stack }
   "stop"    { Stop-Stack }
@@ -297,20 +387,27 @@ switch ($Command) {
     $rel  = if ($env:AFTERTALK_RELEASE) { $env:AFTERTALK_RELEASE } else { "latest" }
     $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") { "amd64" } else { "arm64" }
     $name = "aftertalk-windows-${arch}.exe"
-    $binUrl = if ($rel -eq "latest") {
-      "https://github.com/Josepavese/aftertalk/releases/latest/download/$name"
-    } else {
-      "https://github.com/Josepavese/aftertalk/releases/download/$rel/$name"
-    }
-    $whUrl = if ($rel -eq "latest") {
-      "https://github.com/Josepavese/aftertalk/releases/latest/download/whisper_server.py"
-    } else {
-      "https://github.com/Josepavese/aftertalk/releases/download/$rel/whisper_server.py"
-    }
+    $baseUrl = Get-ReleaseBaseUrl $rel
+    $binUrl = "$baseUrl/$name"
+    $whUrl = "$baseUrl/whisper_server.py"
+    $checksums = Get-ReleaseChecksums $baseUrl $rel
+    $serverPath = Join-Path $BIN "aftertalk-server.exe"
+    $whisperPath = Join-Path $BIN "whisper_server.py"
     Write-Host "Downloading update (release: $rel)..."
-    Invoke-WebRequest $binUrl -OutFile (Join-Path $BIN "aftertalk-server.exe")
-    & (Join-Path $BIN "aftertalk-server.exe") --version
-    try { Invoke-WebRequest $whUrl -OutFile (Join-Path $BIN "whisper_server.py") } catch {}
+    Invoke-WebRequest $binUrl -OutFile $serverPath -UseBasicParsing
+    Verify-ReleaseChecksum $checksums $name $serverPath
+    & $serverPath --version
+    $whisperFromRelease = $false
+    try {
+      Invoke-WebRequest $whUrl -OutFile $whisperPath -UseBasicParsing
+      $whisperFromRelease = $true
+    } catch {
+      Invoke-WebRequest "https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts/whisper_server.py" `
+        -OutFile $whisperPath -UseBasicParsing
+    }
+    if ($whisperFromRelease) {
+      Verify-ReleaseChecksum $checksums "whisper_server.py" $whisperPath
+    }
     Write-Host "Updated. Run 'aftertalk start'."
   }
   default { Write-Host "Usage: aftertalk {start|stop|restart|status|update|version}" }

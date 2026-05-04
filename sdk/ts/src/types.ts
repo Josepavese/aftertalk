@@ -6,19 +6,28 @@ export interface Session {
   sessionId: string;
   status: SessionStatus;
   templateId?: string;
+  metadata?: string;
+  sttProfile?: string;
+  llmProfile?: string;
   participantCount: number;
   participants: Participant[];
   createdAt: string;
   endedAt?: string;
-  updatedAt: string;
+  updatedAt?: string;
 }
 
 export interface Participant {
-  participantId: string;
+  id: string;
+  sessionId?: string;
   userId: string;
   role: string;
-  token: string;
+  token?: string;
+  expiresAt?: string;
+  tokenJti?: string;
+  tokenExpiresAt?: string;
+  tokenUsed?: boolean;
   connectedAt?: string;
+  disconnectedAt?: string;
   audioStreamId?: string;
 }
 
@@ -59,10 +68,10 @@ export interface ParticipantInput {
 
 export interface CreateSessionResponse {
   sessionId: string;
-  status: SessionStatus;
-  templateId?: string;
   participants: Participant[];
-  createdAt: string;
+  status?: SessionStatus;
+  templateId?: string;
+  createdAt?: string;
 }
 
 export interface SessionFilters {
@@ -78,12 +87,15 @@ export type TranscriptionStatus = 'pending' | 'processing' | 'ready' | 'error';
 export interface Transcription {
   id: string;
   sessionId: string;
+  segmentIndex: number;
   role: string;
   text: string;
+  provider?: string;
+  language?: string;
   status: TranscriptionStatus;
-  confidence: number;
-  startedAtMs: number;
-  endedAtMs: number;
+  confidence?: number;
+  startMs: number;
+  endMs: number;
   createdAt: string;
 }
 
@@ -111,13 +123,12 @@ export interface Minutes {
 
 export interface MinutesVersion {
   id: string;
-  sessionId: string;
+  minutesId: string;
   version: number;
-  summary?: MinutesSummary;
-  sections: Record<string, unknown>;
-  citations: Citation[];
-  updatedAt: string;
+  content: string;
+  editedAt: string;
   updatedBy?: string;
+  editedBy?: string;
 }
 
 export interface MinutesSummary {

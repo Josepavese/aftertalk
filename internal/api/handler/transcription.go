@@ -5,10 +5,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/Josepavese/aftertalk/internal/core/transcription"
-	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
+
+	"github.com/Josepavese/aftertalk/internal/core/transcription"
+	"github.com/Josepavese/aftertalk/internal/logging"
 )
 
 type TranscriptionService interface {

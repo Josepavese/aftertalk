@@ -114,9 +114,6 @@ func (p *GoogleSTTProvider) Transcribe(ctx context.Context, audioData *AudioData
 	}
 
 	langCode := "it-IT"
-	if len(audioData.Role) > 0 {
-		// Language can be extended via config; using Italian as default for the therapy use case.
-	}
 
 	reqBody := googleRecognizeRequest{
 		Config: googleRecognitionConfig{

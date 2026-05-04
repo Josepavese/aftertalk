@@ -24,7 +24,7 @@ func JSON(w http.ResponseWriter, statusCode int, data interface{}) {
 	}
 }
 
-func Error(w http.ResponseWriter, statusCode int, err string, message string) {
+func Error(w http.ResponseWriter, statusCode int, err, message string) {
 	JSON(w, statusCode, ErrorResponse{
 		Error:   err,
 		Message: message,

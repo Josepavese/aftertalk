@@ -35,6 +35,6 @@ class TranscriptionsApi
             'offset'     => $offset,
         ]);
 
-        return $data['items'] ?? $data;
+        return $data['transcriptions'] ?? $data['items'] ?? $data;
     }
 }

@@ -154,7 +154,7 @@ function getOrCreateAftertalkSession(string $appointmentId, Appointment $appt): 
 |-------|--------|
 | `Session` | `id`, `status`, `participantCount`, `participants[]`, `templateId?`, `metadata?`, `sttProfile?`, `llmProfile?`, `createdAt`, `updatedAt`, `endedAt?` |
 | `Participant` | `id`, `userId`, `role`, `token`, `connectedAt?`, `audioStreamId?` |
-| `Minutes` | `id`, `sessionId`, `status`, `sections`, `citations[]`, `version`, `generatedAt`, `templateId?`, `provider?` |
+| `Minutes` | `id`, `sessionId`, `status`, `summary`, `sections`, `citations[]`, `version`, `generatedAt`, `templateId?`, `provider?` |
 | `Citation` | `text`, `role`, `timestampMs` |
 | `ParticipantSummary` | `userId`, `role` (compact, for webhook payloads) |
 | `ServerConfig` | `templates[]`, `defaultTemplateId`, `sttProfiles[]`, `sttDefaultProfile?`, `llmProfiles[]`, `llmDefaultProfile?` |

@@ -65,7 +65,7 @@ func TestNewDB(t *testing.T) {
 		dbPath := filepath.Join(tmpDir, "test.db")
 
 		// Create directory
-		err := os.MkdirAll(tmpDir, 0755)
+		err := os.MkdirAll(tmpDir, 0o755)
 		require.NoError(t, err)
 
 		// Try to create database in directory

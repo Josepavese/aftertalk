@@ -32,7 +32,7 @@ func setupStressTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to setup stress test DB: %v", err)
 	}
 
-	if err := db.DB.PingContext(context.Background()); err != nil {
+	if err := db.PingContext(context.Background()); err != nil {
 		t.Fatalf("Failed to ping DB: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func TestLongRunningSessions24Hours(t *testing.T) {
 				select {
 				case <-ticker.C:
 					sessionID := randString(36)
-					_, err := db.ExecContext(context.Background(), 
+					_, err := db.ExecContext(context.Background(),
 						"UPDATE sessions SET participant_count = ? WHERE id = ?",
 						2, sessionID,
 					)
@@ -302,8 +302,9 @@ func TestDatabaseWALStress(t *testing.T) {
 					sessionID := randString(36)
 
 					// Mix of read and write operations
-					if i%3 == 0 {
-						_, err := db.ExecContext(context.Background(), 
+					switch i % 3 {
+					case 0:
+						_, err := db.ExecContext(context.Background(),
 							"INSERT INTO sessions (id, status, created_at, ended_at, participant_count, metadata) VALUES (?, ?, ?, ?, ?, ?)",
 							sessionID, "active", time.Now(), nil, 2, "wal stress",
 						)
@@ -311,15 +312,15 @@ func TestDatabaseWALStress(t *testing.T) {
 							results <- err
 							return
 						}
-					} else if i%3 == 1 {
+					case 1:
 						var status string
 						err := db.QueryRowContext(context.Background(), "SELECT status FROM sessions WHERE id = ?", sessionID).Scan(&status)
 						if err != nil {
 							results <- err
 							return
 						}
-					} else {
-						_, err := db.ExecContext(context.Background(), 
+					default:
+						_, err := db.ExecContext(context.Background(),
 							"UPDATE sessions SET status = ? WHERE id = ?",
 							"active", sessionID,
 						)

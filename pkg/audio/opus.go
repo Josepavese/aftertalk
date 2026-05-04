@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	kazopus  "github.com/kazzmir/opus-go/opus"
+	kazopus "github.com/kazzmir/opus-go/opus"
 	concentus "github.com/lostromb/concentus/go/opus"
 )
 
@@ -91,13 +91,13 @@ func encodeWAV(samples []int16, sampleRate int) []byte {
 	binary.LittleEndian.PutUint32(buf[4:], uint32(36+dataLen)) //nolint:gosec // dataLen is always non-negative
 	copy(buf[8:12], "WAVE")
 	copy(buf[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(buf[16:], 16)          // chunk size
-	binary.LittleEndian.PutUint16(buf[20:], 1)           // PCM
-	binary.LittleEndian.PutUint16(buf[22:], 1)           // mono
-	binary.LittleEndian.PutUint32(buf[24:], uint32(sampleRate))        //nolint:gosec // sampleRate is always positive
-	binary.LittleEndian.PutUint32(buf[28:], uint32(sampleRate*2))      //nolint:gosec // sampleRate is always positive
-	binary.LittleEndian.PutUint16(buf[32:], 2)           // block align
-	binary.LittleEndian.PutUint16(buf[34:], 16)          // bits per sample
+	binary.LittleEndian.PutUint32(buf[16:], 16)                   // chunk size
+	binary.LittleEndian.PutUint16(buf[20:], 1)                    // PCM
+	binary.LittleEndian.PutUint16(buf[22:], 1)                    // mono
+	binary.LittleEndian.PutUint32(buf[24:], uint32(sampleRate))   //nolint:gosec // sampleRate is always positive
+	binary.LittleEndian.PutUint32(buf[28:], uint32(sampleRate*2)) //nolint:gosec // sampleRate is always positive
+	binary.LittleEndian.PutUint16(buf[32:], 2)                    // block align
+	binary.LittleEndian.PutUint16(buf[34:], 16)                   // bits per sample
 	copy(buf[36:40], "data")
 	binary.LittleEndian.PutUint32(buf[40:], uint32(dataLen)) //nolint:gosec // dataLen is always non-negative
 	for i, s := range samples {
@@ -105,7 +105,6 @@ func encodeWAV(samples []int16, sampleRate int) []byte {
 	}
 	return buf
 }
-
 
 func ValidateOpusFrame(frame []byte) error {
 	if len(frame) == 0 {
@@ -119,7 +118,7 @@ func ValidateOpusFrame(frame []byte) error {
 	return nil
 }
 
-func GetOpusFrameDuration(frameSize int, sampleRate int) int {
+func GetOpusFrameDuration(frameSize, sampleRate int) int {
 	if sampleRate == 0 {
 		return 0
 	}

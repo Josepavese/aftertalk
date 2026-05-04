@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/core"
@@ -77,6 +78,23 @@ func (r *MinutesRepository) GetBySession(ctx context.Context, sessionID string) 
 	return r.scanOne(r.QueryRowContext(ctx, `
 		SELECT id, session_id, template_id, version, content, generated_at, delivered_at, status, provider
 		FROM minutes WHERE session_id = ?`, sessionID), "session_id="+sessionID)
+}
+
+func (r *MinutesRepository) HasWebhookEvent(ctx context.Context, minutesID string) (bool, error) {
+	var count int
+	err := r.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM webhook_events
+		WHERE minutes_id = ?`,
+		minutesID,
+	).Scan(&count)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table: webhook_events") {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect webhook events: %w", err)
+	}
+	return count > 0, nil
 }
 
 func (r *MinutesRepository) scanOne(row *sql.Row, hint string) (*Minutes, error) {

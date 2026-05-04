@@ -15,7 +15,11 @@
 
 ---
 
-## All improvements completed
+## Current status
+
+- Core improvements 01-09, 11-21, 24-27, 29 PHP compatibility, and 30 are closed.
+- `10-linter-warnings.md` is now functionally resolved for the active CI profile: `golangci-lint run` returns `0 issues`.
+- Remaining open documents are backlog/follow-up items, not active release blockers.
 
 ---
 
@@ -59,7 +63,7 @@
   - `webrtc/`: `SignalingClient` (reconnect + backoff + message queue), `WebRTCConnection`, `AudioManager`
   - `realtime/`: `MinutesPoller` with `waitForReady()` + `watch()` + exponential backoff
   - `client.ts`: `AfterthalkClient` with `connectWebRTC()` and `waitForMinutes()` high-level
-  - 27 unit tests (vitest), all passing
+  - 49 unit tests (vitest), all passing
   - `cmd/test-ui/src/main.ts`: demo UI rewritten in TypeScript with SDK
   - Build: tsup (CJS + ESM + types), peer dep only TypeScript ≥5.0
 
@@ -91,18 +95,9 @@
   - Release workflow injects commit/tag/build time/source into server and installer binaries
   - Installer verification can fail on expected tag/commit mismatch
 
-### Open
+### Open Backlog
 
-- **[09-code-quality-bugs.md](09-code-quality-bugs.md)** — 9 bugs found during wiki reverse engineering (race condition, nil context, hardcoded dev path, JWT expiry ignored, wrong HTTP status codes, HTTP client no timeout, stub LLM wrong keys, log stdlib, SDK typo)
-
-- **[10-linter-warnings.md](10-linter-warnings.md)** — fix warning funzionali golangci-lint (errcheck, gosec, noctx, errorlint, forcetypeassert, rowserrcheck, staticcheck); configurazione aggressiva `default: all` mantenuta
-
-- **[11-webhook-metadata.md](11-webhook-metadata.md)** — includere `session_metadata` e sommario partecipanti in `MinutesPayload` e `NotificationPayload`; prerequisito per integrazione MondoPsicologi
-
-- **[12-session-auto-timeout.md](12-session-auto-timeout.md)** — collegare `SessionConfig.MaxDuration` (già in config, non ancora letto) a un background reaper nel service; SSOT già rispettato, manca solo il wiring
-
-- **[13-php-sdk.md](13-php-sdk.md)** — PHP SDK `aftertalk/aftertalk-php` per integratori backend; affianca `@aftertalk/sdk` JS/TS; copre creazione sessioni, token, fine sessione, verifica webhook HMAC
-
-- **[14-integration-guide-mondopsicologi.md](14-integration-guide-mondopsicologi.md)** — guida all'integrazione per piattaforme telemedicina con backend PHP e WebRTC custom; pattern: chi crea la sessione, race condition, assegnazione ruoli, metadata, webhook; dipende da #11 e #13
-
-- **[29-ci-release-hardening-followups.md](29-ci-release-hardening-followups.md)** — incidenti emersi nel ciclo CI/release pubblico: root cause, workaround applicati e backlog hardening (auth header contract, metrics contract, coverage script, Node24 actions)
+- **[22-golang-sdk.md](22-golang-sdk.md)** — Go SDK.
+- **[23-sdk-distribution-automation.md](23-sdk-distribution-automation.md)** — package distribution automation.
+- **[28-readme-impact.md](28-readme-impact.md)** — README/product impact refinement.
+- **[29-ci-release-hardening-followups.md](29-ci-release-hardening-followups.md)** — CI/release hardening follow-ups that remain outside this release scope.

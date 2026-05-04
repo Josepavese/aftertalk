@@ -123,7 +123,7 @@ func FromEnvMap(m map[string]string) *InstallConfig {
 	return cfg
 }
 
-// WriteEnvFile serialises an InstallConfig into a KEY=VALUE env file.
+// WriteEnvFile serializes an InstallConfig into a KEY=VALUE env file.
 // Used when the interactive mode saves its output for later use or hand-off.
 func WriteEnvFile(path string, cfg *InstallConfig) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec
@@ -133,8 +133,8 @@ func WriteEnvFile(path string, cfg *InstallConfig) error {
 	defer f.Close() //nolint:errcheck
 
 	w := bufio.NewWriter(f)
-	writeln := func(k, v string) { fmt.Fprintf(w, "%s=%s\n", k, v) }
-	writeInt := func(k string, v int) { fmt.Fprintf(w, "%s=%d\n", k, v) }
+	writeln := func(k, v string) { _, _ = fmt.Fprintf(w, "%s=%s\n", k, v) }
+	writeInt := func(k string, v int) { _, _ = fmt.Fprintf(w, "%s=%d\n", k, v) }
 
 	writeln("SERVICE_ROOT", cfg.ServiceRoot)
 	writeln("SERVICE_USER", cfg.ServiceUser)

@@ -7,13 +7,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
 	"github.com/Josepavese/aftertalk/pkg/audio"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
 	"github.com/Josepavese/aftertalk/pkg/webhook"
-	"github.com/google/uuid"
 )
 
 var (
@@ -24,6 +25,7 @@ var (
 	errTokenAlreadyUsed         = errors.New("token already used")
 	errTokenExpired             = errors.New("token expired")
 	errParticipantNotFound      = errors.New("participant not found")
+	errTranscriptionQueueFull   = errors.New("transcription queue full")
 )
 
 type AudioData struct {
@@ -61,7 +63,7 @@ type MinutesServiceInterface interface {
 	// it is propagated unchanged to webhook deliveries so recipients can correlate
 	// the minutes with their own data model without a second API call.
 	// llmProfile selects the LLM provider profile; empty = registry default.
-	GenerateMinutes(ctx context.Context, sessionID string, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string, llmProfile string) (interface{}, error)
+	GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage, llmProfile string) (interface{}, error)
 	GetMinutes(ctx context.Context, sessionID string) (interface{}, error)
 }
 
@@ -88,10 +90,10 @@ type Service struct {
 	pcmConverter         *audio.PCMConverter
 	tokenCache           *cache.TokenCache
 	wg                   sync.WaitGroup
-	// transcribeWg tracks in-flight transcription jobs so that
+	// transcribeTracker tracks in-flight transcription jobs by session so that
 	// generateMinutesForSession can wait for all DB writes to complete
-	// before reading transcriptions. This replaces the former busy-wait loop.
-	transcribeWg      sync.WaitGroup
+	// before reading transcriptions without blocking unrelated sessions.
+	transcribeTracker *transcriptionTracker
 	jwtExpiration     time.Duration
 	maxDuration       time.Duration
 	inactivityTimeout time.Duration
@@ -106,6 +108,47 @@ type Service struct {
 type minutesLock struct {
 	mu   sync.Mutex
 	refs int
+}
+
+type transcriptionTracker struct {
+	mu       sync.Mutex
+	cond     *sync.Cond
+	inFlight map[string]int
+}
+
+func newTranscriptionTracker() *transcriptionTracker {
+	t := &transcriptionTracker{
+		inFlight: make(map[string]int),
+	}
+	t.cond = sync.NewCond(&t.mu)
+	return t
+}
+
+func (t *transcriptionTracker) Add(sessionID string) {
+	t.mu.Lock()
+	t.inFlight[sessionID]++
+	t.mu.Unlock()
+}
+
+func (t *transcriptionTracker) Done(sessionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.inFlight[sessionID] <= 1 {
+		delete(t.inFlight, sessionID)
+		t.cond.Broadcast()
+		return
+	}
+	t.inFlight[sessionID]--
+}
+
+func (t *transcriptionTracker) Wait(sessionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	for t.inFlight[sessionID] > 0 {
+		t.cond.Wait()
+	}
 }
 
 // SetOnSessionEnd registers a callback invoked when any session is ended.
@@ -249,6 +292,7 @@ func NewService(
 		opusDecoder:       audio.NewOpusDecoder(48000, 1),
 		pcmConverter:      audio.NewPCMConverter(16000, 1),
 		inactivityTimers:  make(map[string]*time.Timer),
+		transcribeTracker: newTranscriptionTracker(),
 		minutesLocks:      make(map[string]*minutesLock),
 		minutesSemaphore:  make(chan struct{}, maxMinutes),
 		templates:         tmplMap,
@@ -294,7 +338,7 @@ const reaperSweepInterval = 5 * time.Minute
 
 // StartSessionReaper starts a background goroutine that periodically closes
 // sessions that have exceeded cfg.Session.MaxDuration. It is a no-op when
-// MaxDuration is 0 (disabled). The goroutine exits when ctx is cancelled.
+// MaxDuration is 0 (disabled). The goroutine exits when ctx is canceled.
 //
 // Call this once from main.go after wiring the service.
 func (s *Service) StartSessionReaper(ctx context.Context) {
@@ -337,7 +381,7 @@ func (s *Service) processTranscriptionQueue() {
 
 	for job := range s.transcribeCh {
 		func() {
-			defer s.transcribeWg.Done() // signal completion after DB write
+			defer s.transcribeTracker.Done(job.SessionID) // signal completion after DB write
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
@@ -659,11 +703,10 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 		defer func() { <-s.minutesSemaphore }()
 	}
 
-	// Wait for all in-flight transcription jobs to finish writing to DB before
-	// reading them. This replaces the former busy-wait on len(s.transcribeCh),
-	// which had a race: the channel could be empty while a job was still being
-	// persisted by processTranscriptionQueue.
-	s.transcribeWg.Wait()
+	// Wait for this session's in-flight transcription jobs to finish writing to
+	// DB before reading them. This avoids cross-session blocking while preserving
+	// strict sequencing for the session being finalized.
+	s.transcribeTracker.Wait(sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.minutesTimeout)
 	defer cancel()
@@ -792,21 +835,19 @@ func (s *Service) ValidateParticipant(ctx context.Context, jti string) (*Partici
 }
 
 func (s *Service) ConnectParticipant(ctx context.Context, participantID string) error {
-	participant, err := s.repo.GetParticipantByJTI(ctx, participantID)
+	participant, err := s.repo.GetParticipantByID(ctx, participantID)
 	if err != nil {
 		return err
 	}
 
-	if participant == nil {
-		participants, err := s.repo.GetParticipantsBySession(ctx, participantID)
-		if err != nil {
-			return err
-		}
-		if len(participants) == 0 {
-			return errParticipantNotFound
-		}
-		participant = participants[0]
+	sess, err := s.repo.GetByID(ctx, participant.SessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get participant session: %w", err)
 	}
+	if sess.Status != StatusActive {
+		return fmt.Errorf("session is not active: %s", sess.Status) //nolint:err113
+	}
+
 	participant.Connect()
 
 	if err := s.repo.UpdateParticipant(ctx, participant); err != nil {
@@ -884,12 +925,14 @@ func (s *Service) ProcessAudioChunk(sessionID, participantID string, payload []b
 		}
 		copy(job.AudioData, buffer.Data)
 
+		s.transcribeTracker.Add(sessionID)
 		select {
 		case s.transcribeCh <- job:
-			s.transcribeWg.Add(1)
 			s.audioBuffer.ClearBuffer(sessionID, participantID)
 		default:
-			logging.Warnf("Transcription queue full, dropping chunk for session=%s participant=%s", sessionID, participantID)
+			s.transcribeTracker.Done(sessionID)
+			logging.Warnf("Transcription queue full, keeping buffered chunk for retry session=%s participant=%s", sessionID, participantID)
+			return errTranscriptionQueueFull
 		}
 	}
 

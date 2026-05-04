@@ -62,17 +62,60 @@ else
   fi
 fi
 
+verify_checksum() {
+  local asset="$1"
+  local file="$2"
+
+  if [[ ! -f checksums.txt ]]; then
+    echo "⚠ checksums.txt unavailable; skipping checksum for ${asset}"
+    return 0
+  fi
+
+  local expected
+  expected="$(awk -v asset="$asset" '$2 == asset {print $1}' checksums.txt)"
+  if [[ -z "$expected" ]]; then
+    echo "⚠ checksum missing for ${asset}; skipping"
+    return 0
+  fi
+
+  local actual
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$file" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+  else
+    echo "⚠ no SHA256 tool found; skipping checksum for ${asset}"
+    return 0
+  fi
+
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Checksum mismatch for ${asset}" >&2
+    echo "expected: ${expected}" >&2
+    echo "actual:   ${actual}" >&2
+    exit 1
+  fi
+
+  echo "✓ checksum verified: ${asset}"
+}
+
 # ── Download ───────────────────────────────────────────────────────────────────
 
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
+if ! curl -fsSL "${BASE_URL}/checksums.txt" -o checksums.txt 2>/dev/null; then
+  echo "⚠ checksums.txt not available for ${RELEASE}; downloads will not be hash-verified"
+  rm -f checksums.txt
+fi
+
 echo "→ Downloading aftertalk server binary..."
 curl -fsSL "${BASE_URL}/${SERVER_BIN}" -o aftertalk
+verify_checksum "$SERVER_BIN" aftertalk
 chmod +x aftertalk
 
 echo "→ Downloading aftertalk-installer..."
 curl -fsSL "${BASE_URL}/${INSTALLER_BIN}" -o aftertalk-installer
+verify_checksum "$INSTALLER_BIN" aftertalk-installer
 chmod +x aftertalk-installer
 
 echo "→ Downloaded to ${INSTALL_DIR}"

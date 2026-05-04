@@ -1,17 +1,18 @@
 package handler
 
 import (
-	"strings"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
-	"github.com/Josepavese/aftertalk/internal/core/transcription"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+
+	"github.com/Josepavese/aftertalk/internal/core/transcription"
 )
 
 var (

@@ -323,3 +323,28 @@ func TestMinutesRepositoryVersionIncrement(t *testing.T) {
 
 	db.Close()
 }
+
+func TestMinutesRepositoryHasWebhookEvent(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	ctx := context.Background()
+
+	hasEvent, err := repo.HasWebhookEvent(ctx, "minutes-1")
+	require.NoError(t, err)
+	assert.False(t, hasEvent)
+
+	_, err = db.ExecContext(ctx, `
+		CREATE TABLE webhook_events (
+			id TEXT PRIMARY KEY,
+			minutes_id TEXT NOT NULL
+		);
+		INSERT INTO webhook_events (id, minutes_id) VALUES ('event-1', 'minutes-1');
+	`)
+	require.NoError(t, err)
+
+	hasEvent, err = repo.HasWebhookEvent(ctx, "minutes-1")
+	require.NoError(t, err)
+	assert.True(t, hasEvent)
+
+	db.Close()
+}

@@ -1,4 +1,5 @@
 import { AftertalkError } from './errors.js';
+import { fromWireValue, toWireValue } from './wire.js';
 
 export interface RequestOptions {
   method?: string;
@@ -64,7 +65,7 @@ export class HttpClient {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method,
         headers: reqHeaders,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        body: body !== undefined ? JSON.stringify(toWireValue(body)) : undefined,
         signal: combinedSignal,
       });
     } catch (err) {
@@ -97,9 +98,9 @@ export class HttpClient {
 
     // The server wraps successful responses in { "data": ... } — unwrap transparently.
     if (responseBody !== null && typeof responseBody === 'object' && 'data' in (responseBody as object)) {
-      return (responseBody as { data: T }).data;
+      return fromWireValue<T>((responseBody as { data: unknown }).data);
     }
-    return responseBody as T;
+    return fromWireValue<T>(responseBody);
   }
 }
 

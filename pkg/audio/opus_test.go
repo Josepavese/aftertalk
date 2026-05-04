@@ -116,7 +116,7 @@ func TestDecodeFramesToWAV_SkipsBadFrames(t *testing.T) {
 		frames[0],
 		{0xFF, 0xFF, 0xFF}, // garbage — decoder will skip
 		frames[1],
-		{},        // empty — skipped by len==0 guard
+		{}, // empty — skipped by len==0 guard
 		frames[2],
 	}
 	wav, err := DecodeFramesToWAV(mixed, 16000)

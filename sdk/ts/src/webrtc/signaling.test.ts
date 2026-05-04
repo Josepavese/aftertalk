@@ -273,7 +273,7 @@ describe('SignalingClient — backoff jitter', () => {
     const delays: number[] = [];
     const origSetTimeout = vi.getRealSystemTime; // use to confirm fake timers active
     void origSetTimeout; // suppress unused warning
-    vi.spyOn(globalThis, 'setTimeout').mockImplementationOnce((fn, delay) => {
+    vi.spyOn(globalThis, 'setTimeout').mockImplementationOnce((_fn, delay) => {
       if (typeof delay === 'number') delays.push(delay);
       // Don't actually schedule — we just want to capture the delay
       return 0 as unknown as ReturnType<typeof setTimeout>;

@@ -1,18 +1,19 @@
 package handler
 
 import (
-	"strings"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
-	"github.com/Josepavese/aftertalk/internal/core/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+
+	"github.com/Josepavese/aftertalk/internal/core/session"
 )
 
 var errTestGetSessionFailed = errors.New("failed to get session")
@@ -81,6 +82,8 @@ func TestSessionHandler_CreateSession(t *testing.T) {
 			name: "Success - valid request",
 			request: CreateSessionRequest{
 				ParticipantCount: 3,
+				STTProfile:       "cloud-stt",
+				LLMProfile:       "local-llm",
 				Participants: []ParticipantRequest{
 					{UserID: "user1", Role: "moderator"},
 					{UserID: "user2", Role: "participant"},
@@ -88,7 +91,9 @@ func TestSessionHandler_CreateSession(t *testing.T) {
 				},
 			},
 			mockSetup: func(m *MockSessionService) {
-				m.On("CreateSession", mock.Anything, mock.AnythingOfType("*session.CreateSessionRequest")).
+				m.On("CreateSession", mock.Anything, mock.MatchedBy(func(req *session.CreateSessionRequest) bool {
+					return req.STTProfile == "cloud-stt" && req.LLMProfile == "local-llm"
+				})).
 					Return(&session.CreateSessionResponse{
 						SessionID: "test-session-id",
 						Participants: []session.ParticipantResponse{

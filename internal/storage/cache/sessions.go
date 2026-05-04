@@ -65,7 +65,7 @@ func NewTokenCache() *TokenCache {
 	}
 }
 
-func (tc *TokenCache) SetToken(jti string, sessionID string, ttl time.Duration) {
+func (tc *TokenCache) SetToken(jti, sessionID string, ttl time.Duration) {
 	tc.Set(fmt.Sprintf("token:%s", jti), sessionID, ttl)
 }
 
@@ -87,7 +87,7 @@ func (tc *TokenCache) DeleteToken(jti string) {
 	tc.Delete(fmt.Sprintf("token:%s", jti))
 }
 
-func (tc *TokenCache) UseToken(jti string, sessionID string) bool {
+func (tc *TokenCache) UseToken(jti, sessionID string) bool {
 	if _, exists := tc.GetToken(jti); exists {
 		return false
 	}
@@ -256,7 +256,7 @@ func (abc *AudioBufferCache) GetAllParticipantBuffers(sessionID string) map[stri
 	result := make(map[string]*AudioBuffer)
 	prefix := fmt.Sprintf("session:%s:participant:", sessionID)
 
-	abc.Cache.cache.Range(func(key, value interface{}) bool {
+	abc.cache.Range(func(key, value interface{}) bool {
 		k, ok := key.(string)
 		if !ok {
 			return true

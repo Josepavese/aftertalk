@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestCreatePeer_ContextCancel verifies that cancelling the context passed to
+// TestCreatePeer_ContextCancel verifies that canceling the context passed to
 // CreatePeer causes the underlying PeerConnection to be closed promptly.
 func TestCreatePeer_ContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
