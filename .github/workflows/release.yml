@@ -177,7 +177,14 @@ jobs:
           for asset in dist/*; do
             echo "→ Uploading $(basename "$asset")"
             for attempt in 1 2 3; do
-              if gh release upload "${{ steps.meta.outputs.tag }}" "$asset" --clobber; then
+              upload_output="$(gh release upload "${{ steps.meta.outputs.tag }}" "$asset" 2>&1)" && break
+              echo "$upload_output"
+              if grep -q "ReleaseAsset.name already exists" <<< "$upload_output"; then
+                echo "asset already exists after a previous upload attempt; continuing"
+                break
+              fi
+              if grep -q "already_exists" <<< "$upload_output"; then
+                echo "asset already exists after a previous upload attempt; continuing"
                 break
               fi
               if [[ "$attempt" == "3" ]]; then
