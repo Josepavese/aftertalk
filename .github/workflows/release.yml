@@ -169,7 +169,21 @@ jobs:
           [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]] && PRERELEASE_FLAG="--prerelease"
 
           gh release create "${{ steps.meta.outputs.tag }}" \
-            dist/* \
+            --target "${GITHUB_SHA}" \
             --title "${{ steps.meta.outputs.title }}" \
             --notes-file /tmp/release-notes.md \
             $PRERELEASE_FLAG
+
+          for asset in dist/*; do
+            echo "→ Uploading $(basename "$asset")"
+            for attempt in 1 2 3; do
+              if gh release upload "${{ steps.meta.outputs.tag }}" "$asset" --clobber; then
+                break
+              fi
+              if [[ "$attempt" == "3" ]]; then
+                echo "failed to upload $asset after 3 attempts" >&2
+                exit 1
+              fi
+              sleep $((attempt * 3))
+            done
+          done
