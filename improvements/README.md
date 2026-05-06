@@ -101,3 +101,9 @@
 - **[23-sdk-distribution-automation.md](23-sdk-distribution-automation.md)** — package distribution automation.
 - **[28-readme-impact.md](28-readme-impact.md)** — README/product impact refinement.
 - **[29-ci-release-hardening-followups.md](29-ci-release-hardening-followups.md)** — CI/release hardening follow-ups that remain outside this release scope.
+- **[2026-05-06-mondopsicologi-minutes-stuck-processing.md](2026-05-06-mondopsicologi-minutes-stuck-processing.md)** — production incident report for stuck minutes generation.
+- **[2026-05-06-provider-reasoning-controls-and-token-budget.md](2026-05-06-provider-reasoning-controls-and-token-budget.md)** — provider reasoning controls, Ollama `think:false`, OpenRouter reasoning controls, and token budgets.
+- **[2026-05-06-mixed-provider-profile-config.md](2026-05-06-mixed-provider-profile-config.md)** — mixed-provider profile config must materialize every provider's runtime credentials.
+- **[2026-05-06-session-error-recovery-and-regeneration.md](2026-05-06-session-error-recovery-and-regeneration.md)** — terminal error states, stuck-processing recovery, and first-class regeneration.
+- **[2026-05-06-profile-readiness-healthchecks.md](2026-05-06-profile-readiness-healthchecks.md)** — profile-level readiness and deploy health checks.
+- **[2026-05-06-webhook-status-and-replay.md](2026-05-06-webhook-status-and-replay.md)** — terminal error notifications, webhook inspection, and replay.

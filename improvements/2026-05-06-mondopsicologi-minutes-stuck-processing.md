@@ -88,6 +88,10 @@ retries empty outputs.
 8. The OpenAI-compatible provider should support a configurable `max_tokens`
    value. OpenRouter rejected the Premium recovery because the implicit provider
    output budget was too high for the available key limit.
+   OpenRouter reasoning/thinking controls must also be configurable: when the
+   chosen model supports it, Aftertalk should be able to send `reasoning.effort:
+   "none"` or `reasoning.enabled: false`. Merely excluding returned reasoning is
+   not enough if hidden reasoning still consumes tokens.
 
 9. The installer/config writer should materialize shared provider credentials
    even when profiles mix providers. Mondopsicologi has `llm_provider=ollama`
