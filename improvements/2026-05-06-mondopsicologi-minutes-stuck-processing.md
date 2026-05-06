@@ -44,9 +44,17 @@ marking the session/minutes as failed, so the DB update also fails and the
 session remains stuck in `processing` rather than moving to `error`.
 
 After the Mondopsicologi integration bug was fixed, forcing cloud recovery did
-select the cloud profile, but the configured cloud LLM API key on that VPS was
-invalid/placeholder and returned 401. In that path Aftertalk did mark the
-session as `error` correctly.
+select the cloud profile. A later runtime config patch confirmed that the
+provider is reachable through OpenRouter, but generation failed with HTTP 402:
+the request allowed up to 65,536 output tokens while the key could only afford a
+lower token budget. In that path Aftertalk did mark the session as `error`
+correctly.
+
+The local `qwen3.5:2b` fallback also needs a framework change. Direct Ollama
+tests show that this thinking-capable model returns the useful JSON in the
+`thinking` field and leaves `response` empty unless the request sets
+`think: false`. Aftertalk currently reads only `response`, so local generation
+retries empty outputs.
 
 ## Root Causes To Address In Aftertalk
 
@@ -73,6 +81,19 @@ session as `error` correctly.
 6. Webhook delivery should be easier to inspect and replay when minutes are
    generated but not reflected in the integrating application.
 
+7. The Ollama provider must support thinking controls. For `qwen3.5` generation
+   requests, pass `think: false` or switch to a chat/generate path that returns
+   final content in the field consumed by Aftertalk.
+
+8. The OpenAI-compatible provider should support a configurable `max_tokens`
+   value. OpenRouter rejected the Premium recovery because the implicit provider
+   output budget was too high for the available key limit.
+
+9. The installer/config writer should materialize shared provider credentials
+   even when profiles mix providers. Mondopsicologi has `llm_provider=ollama`
+   with a `cloud` OpenAI profile; the generated YAML must still include
+   `llm.openai.api_key`, model, and base URL.
+
 ## Immediate Production Mitigation Performed
 
 On the Mondopsicologi VPS:
@@ -81,11 +102,16 @@ On the Mondopsicologi VPS:
 - Backed up `/opt/aftertalk/aftertalk.yaml`.
 - Pulled `qwen3.5:2b` with Ollama.
 - Updated `/opt/aftertalk/aftertalk.yaml` local LLM model to `qwen3.5:2b`.
+- Patched `/opt/aftertalk/aftertalk.yaml` so the cloud OpenAI-compatible profile
+  has the configured API key, model, and OpenRouter base URL.
 - Added `processing.minutes_generation_timeout: "20m"` for local minutes
   generation.
 - Restarted `aftertalk.service`.
 - Removed old `qwen2.5:3b` and `qwen2.5:7b` models from the VPS.
-- Re-queued the affected session locally for minutes generation.
+- Re-queued the affected session locally and then via cloud. Local returned empty
+  responses without `think: false`; cloud reached OpenRouter but failed with a
+  token/credit budget error. The session is now in `error`, not stuck in
+  `processing`.
 
 ## Requested Framework Follow-Up
 
