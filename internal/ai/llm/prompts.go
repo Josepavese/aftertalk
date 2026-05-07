@@ -123,6 +123,94 @@ RULES:
 	)
 }
 
+// GenerateMinutesVerificationPrompt asks the model to perform a final
+// language/text-quality edit on already-structured minutes without changing
+// facts, timestamps, citations, or schema.
+func GenerateMinutesVerificationPrompt(candidate *DynamicMinutesResponse, tmpl config.TemplateConfig, detectedLanguage string) string {
+	stateJSON := mustMarshalState(seedState(candidate))
+	wrapperJSON := buildVerificationSchemaExample(tmpl)
+	sectionRules := buildSectionRules(tmpl)
+	langRule := buildLanguageRule(detectedLanguage)
+
+	return fmt.Sprintf(`You are the final quality verifier/editor for structured session minutes.
+
+%s
+
+You receive one already-generated MINUTES JSON object. Return a verification envelope containing the corrected minutes.
+
+SESSION TEMPLATE: %s
+PARTICIPANT ROLES: %s
+
+MINUTES JSON TO VERIFY:
+%s
+
+Return a JSON object with this exact structure:
+%s
+
+RULES:
+- Do not add facts, remove facts, infer facts, or reinterpret the session.
+- Correct only text-quality problems: malformed words, typos, grammar, mixed-language contamination, and inconsistent wording.
+- Keep all generated text fields in the required output language.
+- Do not translate, paraphrase, or modify citations.text; citations must remain verbatim.
+- Do not claim citation corrections in issues; citation text is intentionally copied verbatim even when it contains transcription errors.
+- Preserve citations.role, citations.timestamp_ms, phase start_ms/end_ms, section keys, and all numeric fields.
+- Preserve the same schema and all template sections.
+- If no correction is needed, return the same minutes object.
+- Set ok to true when the returned minutes object is safe to use; set ok to false only if you cannot produce a safe verified object.
+- Set issues to a concise list of corrections made or problems found; use [] when none.
+%s- Do NOT include diagnoses or clinical assessments.
+- If your model uses mandatory reasoning/thinking, keep it internal and still put the final JSON object in the final assistant content.
+- Output MUST be a single valid JSON object (no code fences, no trailing commas).
+- Respond ONLY with valid JSON — no extra text, no markdown fences.`,
+		langRule,
+		tmpl.Name,
+		formatRoles(tmpl.Roles),
+		stateJSON,
+		wrapperJSON,
+		sectionRules,
+	)
+}
+
+// GenerateMinutesVerificationRepairPrompt asks the model to repair malformed
+// verifier output while preserving the verifier envelope.
+func GenerateMinutesVerificationRepairPrompt(rawResponse string, tmpl config.TemplateConfig, detectedLanguage string) string {
+	wrapperJSON := buildVerificationSchemaExample(tmpl)
+	sectionRules := buildSectionRules(tmpl)
+	langRule := buildLanguageRule(detectedLanguage)
+
+	return fmt.Sprintf(`You are a strict JSON repair assistant for a minutes verification response.
+
+%s
+
+The previous response is invalid JSON or does not match the verification envelope. Output a corrected envelope while preserving the original content as much as possible.
+
+SESSION TEMPLATE: %s
+PARTICIPANT ROLES: %s
+
+INVALID RESPONSE (verbatim):
+%s
+
+Return a JSON object with this exact structure:
+%s
+
+RULES:
+- Preserve meaning and content; do not invent new facts.
+- The top-level object must contain ok, issues, and minutes.
+- Set ok to true when the returned minutes object is safe to use; set ok to false only if you cannot produce a safe verified object.
+- If a field is missing inside minutes, use empty values of the correct type.
+%s- Do NOT include diagnoses or clinical assessments.
+- If your model uses mandatory reasoning/thinking, keep it internal and still put the final JSON object in the final assistant content.
+- Output MUST be a single valid JSON object (no code fences, no trailing commas).
+- Respond ONLY with JSON.`,
+		langRule,
+		tmpl.Name,
+		formatRoles(tmpl.Roles),
+		rawResponse,
+		wrapperJSON,
+		sectionRules,
+	)
+}
+
 // GenerateMinutesRepairPrompt asks the model to fix invalid JSON while preserving content.
 func GenerateMinutesRepairPrompt(rawResponse string, tmpl config.TemplateConfig, detectedLanguage string) string {
 	schemaJSON := buildSchemaExample(tmpl)
@@ -159,6 +247,14 @@ RULES:
 		schemaJSON,
 		sectionRules,
 	)
+}
+
+func buildVerificationSchemaExample(tmpl config.TemplateConfig) string {
+	return fmt.Sprintf(`{
+  "ok": true,
+  "issues": [],
+  "minutes": %s
+}`, buildSchemaExample(tmpl))
 }
 
 func seedState(existing *DynamicMinutesResponse) *DynamicMinutesResponse {

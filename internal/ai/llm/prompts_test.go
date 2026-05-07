@@ -147,3 +147,25 @@ func TestGenerateIncrementalMinutesPrompt_IncludesExistingState(t *testing.T) {
 		t.Error("Expected prompt to include existing overview")
 	}
 }
+
+func TestGenerateMinutesVerificationPrompt_UsesEnvelopeAndPreservesCitations(t *testing.T) {
+	prompt := llm.GenerateMinutesVerificationPrompt(&llm.DynamicMinutesResponse{
+		Summary: llm.Summary{Overview: "Text with typo", Phases: []llm.Phase{}},
+	}, therapyTemplate, "it")
+
+	for _, want := range []string{
+		`"ok"`,
+		`"issues"`,
+		`"minutes"`,
+		"final quality verifier/editor",
+		"Do not add facts",
+		"Do not translate, paraphrase, or modify citations.text",
+		"Do not claim citation corrections",
+		"Set ok to true",
+		"mixed-language contamination",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("Expected verification prompt to contain %q", want)
+		}
+	}
+}

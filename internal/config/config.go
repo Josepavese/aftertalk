@@ -273,6 +273,7 @@ type ProcessingConfig struct {
 	MinutesBatchMaxChars            int           `koanf:"minutes_batch_max_chars"`
 	MinutesMaxSummaryPhases         int           `koanf:"minutes_max_summary_phases"`
 	MinutesMaxCitations             int           `koanf:"minutes_max_citations"`
+	MinutesVerifyFinal              bool          `koanf:"minutes_verify_final"`
 }
 
 type SessionConfig struct {
@@ -443,6 +444,7 @@ func Default() *Config {
 			MinutesBatchMaxChars:            6000,
 			MinutesMaxSummaryPhases:         8,
 			MinutesMaxCitations:             12,
+			MinutesVerifyFinal:              true,
 		},
 		WebRTC: WebRTCConfig{
 			ICEServers: []ICEServerConfig{

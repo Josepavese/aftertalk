@@ -3,6 +3,7 @@ package minutesgen
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
@@ -11,21 +12,23 @@ import (
 )
 
 type DefaultOrchestrator struct {
-	Prompts PromptBuilder
-	Runner  Runner
-	Reducer Reducer
-	Quality QualityGuard
-	Logger  Logger
+	Prompts  PromptBuilder
+	Runner   Runner
+	Reducer  Reducer
+	Verifier Verifier
+	Quality  QualityGuard
+	Logger   Logger
 }
 
 func NewDefaultOrchestrator() *DefaultOrchestrator {
 	reducer := DefaultReducer{}
 	return &DefaultOrchestrator{
-		Prompts: LLMPromptBuilder{},
-		Runner:  NewDefaultRunner(reducer),
-		Reducer: reducer,
-		Quality: DefaultQualityGuard{},
-		Logger:  loggingAdapter{},
+		Prompts:  LLMPromptBuilder{},
+		Runner:   NewDefaultRunner(reducer),
+		Reducer:  reducer,
+		Verifier: NewDefaultVerifier(reducer),
+		Quality:  DefaultQualityGuard{},
+		Logger:   loggingAdapter{},
 	}
 }
 
@@ -38,6 +41,7 @@ func (o *DefaultOrchestrator) Generate(ctx context.Context, input Input) (*Resul
 	prompts := o.promptBuilder()
 	runner := o.runner()
 	reducer := o.reducer()
+	verifier := o.verifier()
 	quality := o.qualityGuard()
 	logger := o.logger()
 
@@ -83,11 +87,47 @@ func (o *DefaultOrchestrator) Generate(ctx context.Context, input Input) (*Resul
 			return nil, fmt.Errorf("finalize minutes: %w", err)
 		}
 		result.Metrics.LLMCalls += runResult.Calls
-		state = reducer.Merge(state, runResult.State, input.Template, cfg)
+		state = reducer.Finalize(state, runResult.State, input.Template, cfg)
+	}
+
+	state = normalizeStateCitationsAgainstTranscript(state, input.Transcript, input.Template, cfg)
+
+	var verificationWarnings []string
+	if !cfg.DisableFinalVerification {
+		logger.Infof("Verifying final minutes")
+		verifyResult, err := verifier.Verify(ctx, VerificationRequest{
+			Provider:         input.Provider,
+			Template:         input.Template,
+			Retry:            retry,
+			Prompt:           prompts.Verify(state, input.Template, input.DetectedLanguage),
+			RepairPrompt:     func(raw string) string { return prompts.VerifyRepair(raw, input.Template, input.DetectedLanguage) },
+			DetectedLanguage: input.DetectedLanguage,
+			Config:           cfg,
+		})
+		if verifyResult != nil {
+			result.Metrics.LLMCalls += verifyResult.Calls
+		}
+		if err != nil {
+			logger.Warnf("Final minutes verification failed; keeping generated minutes: %v", err)
+			verificationWarnings = append(verificationWarnings, "verification_failed")
+		} else {
+			unchecked := reducer.Normalize(cloneDynamicMinutes(verifyResult.State), input.Template, cfg)
+			guarded := guardVerifiedMinutes(state, verifyResult.State, input.Template, cfg)
+			state = normalizeStateCitationsAgainstTranscript(guarded, input.Transcript, input.Template, cfg)
+			if reflect.DeepEqual(state, unchecked) {
+				result.VerificationIssues = verifyResult.Issues
+			} else {
+				result.VerificationIssues = []string{"verification_structural_guard_applied"}
+			}
+		}
 	}
 
 	result.State = state
 	result.QualityWarnings = quality.Evaluate(input.Transcript, len(batches), state)
+	result.QualityWarnings = append(result.QualityWarnings, verificationWarnings...)
+	if result.QualityWarnings == nil {
+		result.QualityWarnings = []string{}
+	}
 	return result, nil
 }
 
@@ -112,6 +152,13 @@ func (o *DefaultOrchestrator) reducer() Reducer {
 	return DefaultReducer{}
 }
 
+func (o *DefaultOrchestrator) verifier() Verifier {
+	if o != nil && o.Verifier != nil {
+		return o.Verifier
+	}
+	return NewDefaultVerifier(DefaultReducer{})
+}
+
 func (o *DefaultOrchestrator) qualityGuard() QualityGuard {
 	if o != nil && o.Quality != nil {
 		return o.Quality
@@ -134,6 +181,14 @@ func (LLMPromptBuilder) Incremental(existing *llm.DynamicMinutesResponse, transc
 
 func (LLMPromptBuilder) Finalize(existing *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, detectedLanguage string) string {
 	return llm.GenerateMinutesFinalizePrompt(existing, tmpl, detectedLanguage)
+}
+
+func (LLMPromptBuilder) Verify(candidate *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, detectedLanguage string) string {
+	return llm.GenerateMinutesVerificationPrompt(candidate, tmpl, detectedLanguage)
+}
+
+func (LLMPromptBuilder) VerifyRepair(rawResponse string, tmpl config.TemplateConfig, detectedLanguage string) string {
+	return llm.GenerateMinutesVerificationRepairPrompt(rawResponse, tmpl, detectedLanguage)
 }
 
 func (LLMPromptBuilder) Repair(rawResponse string, tmpl config.TemplateConfig, detectedLanguage string) string {

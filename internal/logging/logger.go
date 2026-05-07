@@ -10,7 +10,10 @@ import (
 
 var errInvalidLogFormat = errors.New("invalid log format (must be 'json' or 'console')")
 
-var Logger *zap.SugaredLogger //nolint:gochecknoglobals // global logger is the standard pattern for structured logging
+var (
+	Logger     *zap.SugaredLogger //nolint:gochecknoglobals // global logger is the standard pattern for structured logging
+	noopLogger = zap.NewNop().Sugar()
+)
 
 func Init(level, format string) error {
 	var config zap.Config
@@ -58,45 +61,52 @@ func Sync() {
 }
 
 func Debug(args ...interface{}) {
-	Logger.Debug(args...)
+	activeLogger().Debug(args...)
 }
 
 func Info(args ...interface{}) {
-	Logger.Info(args...)
+	activeLogger().Info(args...)
 }
 
 func Warn(args ...interface{}) {
-	Logger.Warn(args...)
+	activeLogger().Warn(args...)
 }
 
 func Error(args ...interface{}) {
-	Logger.Error(args...)
+	activeLogger().Error(args...)
 }
 
 func Fatal(args ...interface{}) {
-	Logger.Fatal(args...)
+	activeLogger().Fatal(args...)
 }
 
 func Debugf(template string, args ...interface{}) {
-	Logger.Debugf(template, args...)
+	activeLogger().Debugf(template, args...)
 }
 
 func Infof(template string, args ...interface{}) {
-	Logger.Infof(template, args...)
+	activeLogger().Infof(template, args...)
 }
 
 func Warnf(template string, args ...interface{}) {
-	Logger.Warnf(template, args...)
+	activeLogger().Warnf(template, args...)
 }
 
 func Errorf(template string, args ...interface{}) {
-	Logger.Errorf(template, args...)
+	activeLogger().Errorf(template, args...)
 }
 
 func Fatalf(template string, args ...interface{}) {
-	Logger.Fatalf(template, args...)
+	activeLogger().Fatalf(template, args...)
 }
 
 func With(fields ...interface{}) *zap.SugaredLogger {
-	return Logger.With(fields...)
+	return activeLogger().With(fields...)
+}
+
+func activeLogger() *zap.SugaredLogger {
+	if Logger != nil {
+		return Logger
+	}
+	return noopLogger
 }

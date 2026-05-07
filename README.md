@@ -37,12 +37,14 @@ curl -fsSL https://raw.githubusercontent.com/Josepavese/aftertalk/master/scripts
 # Configure
 nano ~/.aftertalk/config/config.yaml
 # set: api.key, jwt.secret, stt.provider, llm.provider
+# for OpenRouter/reasoning models, configure llm.profiles.<name>.request_timeout,
+# llm.profiles.<name>.generation_timeout, and retry budgets
 
 # Start
 aftertalk start
 ```
 
-Demo UI at `http://localhost:8080` · [Full installation guide](docs/wiki/installation.md)
+Demo UI at `http://localhost:8080` · [Full installation guide](docs/wiki/installation.md) · [LLM timeout profiles](docs/wiki/configuration.md#llm-timeout-budget-cookbook)
 
 ---
 
@@ -90,7 +92,7 @@ conn.on('connected', () => console.log('streaming audio'));
 | | |
 |--|--|
 | [Installation](docs/wiki/installation.md) | Requirements, install modes (`local-ai` · `cloud` · `offline`), first run |
-| [Configuration](docs/wiki/configuration.md) | All parameters with defaults |
+| [Configuration](docs/wiki/configuration.md) | All parameters with defaults, including LLM profile timeout/retry SSOT |
 | [REST API](docs/wiki/rest-api.md) | Every endpoint with curl examples |
 | [Integration Guide](docs/wiki/integration-guide.md) | PHP + TS full workflow, security model, race conditions |
 | [Webhook](docs/wiki/webhook.md) | Push vs `notify_pull`, HMAC verification |

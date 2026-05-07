@@ -98,11 +98,12 @@ func TestGenerateMinutes_IncrementalFlow(t *testing.T) {
 	db := setupTestDB(t)
 	repo := NewMinutesRepository(db)
 	service := NewService(repo).WithGenerationConfig(GenerationConfig{
-		Incremental:      true,
-		BatchMaxSegments: 2,
-		BatchMaxChars:    120,
-		MaxSummaryPhases: 4,
-		MaxCitations:     4,
+		Incremental:              true,
+		DisableFinalVerification: true,
+		BatchMaxSegments:         2,
+		BatchMaxChars:            120,
+		MaxSummaryPhases:         4,
+		MaxCitations:             4,
 	})
 
 	provider := &scriptedLLMProvider{
@@ -151,11 +152,12 @@ func TestGenerateMinutes_IncrementalMergePreservesEarlierContentWhenFinalization
 	db := setupTestDB(t)
 	repo := NewMinutesRepository(db)
 	service := NewService(repo).WithGenerationConfig(GenerationConfig{
-		Incremental:      true,
-		BatchMaxSegments: 2,
-		BatchMaxChars:    400,
-		MaxSummaryPhases: 8,
-		MaxCitations:     6,
+		Incremental:              true,
+		DisableFinalVerification: true,
+		BatchMaxSegments:         2,
+		BatchMaxChars:            400,
+		MaxSummaryPhases:         8,
+		MaxCitations:             6,
 	})
 
 	provider := &scriptedLLMProvider{
@@ -216,7 +218,7 @@ func TestGenerateMinutes_IncrementalMergePreservesEarlierContentWhenFinalization
 func TestGenerateMinutes_EmptyTranscript(t *testing.T) {
 	db := setupTestDB(t)
 	repo := NewMinutesRepository(db)
-	service := NewService(repo)
+	service := NewService(repo).WithGenerationConfig(GenerationConfig{DisableFinalVerification: true})
 
 	mins, err := service.GenerateMinutes(context.Background(), "session-empty", "   ", config.DefaultTemplates()[0], webhook.SessionContext{}, "it", &scriptedLLMProvider{})
 	require.NoError(t, err)
@@ -267,7 +269,7 @@ func TestGenerateMinutes_ReturnsExistingReadyMinutes(t *testing.T) {
 func TestGenerateMinutes_ReusesExistingErrorMinutes(t *testing.T) {
 	db := setupTestDB(t)
 	repo := NewMinutesRepository(db)
-	service := NewService(repo)
+	service := NewService(repo).WithGenerationConfig(GenerationConfig{DisableFinalVerification: true})
 
 	existing := NewMinutes("retry-minutes", "session-retry", "therapy")
 	existing.MarkError()
@@ -299,7 +301,7 @@ func TestGenerateMinutes_UsesProviderScopedRetryPolicy(t *testing.T) {
 		MaxRetries:     0,
 		InitialBackoff: time.Hour,
 		MaxBackoff:     time.Hour,
-	}, nil)
+	}, nil).WithGenerationConfig(GenerationConfig{DisableFinalVerification: true})
 	provider := &runtimeTunedLLMProvider{
 		failures: 1,
 		runtime: llm.RuntimeConfig{
@@ -320,7 +322,7 @@ func TestGenerateMinutes_UsesProviderScopedRetryPolicy(t *testing.T) {
 func TestGenerateMinutes_UsesProviderScopedGenerationTimeout(t *testing.T) {
 	db := setupTestDB(t)
 	repo := NewMinutesRepository(db)
-	service := NewService(repo)
+	service := NewService(repo).WithGenerationConfig(GenerationConfig{DisableFinalVerification: true})
 	provider := &runtimeTunedLLMProvider{
 		blockUntilContext: true,
 		runtime:           llm.RuntimeConfig{GenerationTimeout: time.Nanosecond},

@@ -152,11 +152,12 @@ func main() {
 		},
 	)
 	minutesService.WithGenerationConfig(minutes.GenerationConfig{
-		Incremental:      cfg.Processing.MinutesIncremental,
-		BatchMaxSegments: cfg.Processing.MinutesBatchMaxSegments,
-		BatchMaxChars:    cfg.Processing.MinutesBatchMaxChars,
-		MaxSummaryPhases: cfg.Processing.MinutesMaxSummaryPhases,
-		MaxCitations:     cfg.Processing.MinutesMaxCitations,
+		Incremental:              cfg.Processing.MinutesIncremental,
+		DisableFinalVerification: !cfg.Processing.MinutesVerifyFinal,
+		BatchMaxSegments:         cfg.Processing.MinutesBatchMaxSegments,
+		BatchMaxChars:            cfg.Processing.MinutesBatchMaxChars,
+		MaxSummaryPhases:         cfg.Processing.MinutesMaxSummaryPhases,
+		MaxCitations:             cfg.Processing.MinutesMaxCitations,
 	})
 
 	// Wire persistent webhook retry if a URL is configured.
