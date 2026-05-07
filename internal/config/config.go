@@ -80,8 +80,40 @@ type WebSocketConfig struct {
 }
 
 type LoggingConfig struct {
-	Level  string `koanf:"level"`
-	Format string `koanf:"format"`
+	Level     string                 `koanf:"level"`
+	Format    string                 `koanf:"format"`
+	Output    LoggingOutputConfig    `koanf:"output"`
+	Rotation  LoggingRotationConfig  `koanf:"rotation"`
+	Retention LoggingRetentionConfig `koanf:"retention"`
+	Redaction LoggingRedactionConfig `koanf:"redaction"`
+}
+
+type LoggingOutputConfig struct {
+	Stdout bool              `koanf:"stdout"`
+	File   LoggingFileConfig `koanf:"file"`
+}
+
+type LoggingFileConfig struct {
+	Enabled   bool   `koanf:"enabled"`
+	Path      string `koanf:"path"`
+	Mandatory bool   `koanf:"mandatory"`
+}
+
+type LoggingRotationConfig struct {
+	MaxSizeMB  int  `koanf:"max_size_mb"`
+	MaxAgeDays int  `koanf:"max_age_days"`
+	MaxBackups int  `koanf:"max_backups"`
+	Compress   bool `koanf:"compress"`
+}
+
+type LoggingRetentionConfig struct {
+	DeleteAfterDays       int `koanf:"delete_after_days"`
+	EmergencyCutoffSizeMB int `koanf:"emergency_cutoff_size_mb"`
+}
+
+type LoggingRedactionConfig struct {
+	Enabled bool     `koanf:"enabled"`
+	Fields  []string `koanf:"fields"`
 }
 
 type JWTConfig struct {
@@ -170,6 +202,7 @@ type LLMProfileConfig struct {
 	GenerationTimeout time.Duration     `koanf:"generation_timeout"`
 	Retry             RetryPolicyConfig `koanf:"retry"`
 	Reasoning         ReasoningConfig   `koanf:"reasoning"`
+	Budget            LLMBudgetConfig   `koanf:"budget"`
 	Think             *bool             `koanf:"think"`
 }
 
@@ -177,6 +210,7 @@ type LLMConfig struct {
 	Provider       string                      `koanf:"provider"`        // legacy default provider
 	DefaultProfile string                      `koanf:"default_profile"` // profile used when session omits llm_profile
 	Profiles       map[string]LLMProfileConfig `koanf:"profiles"`        // named profiles (e.g. "local", "cloud")
+	Budget         LLMBudgetConfig             `koanf:"budget"`
 	OpenAI         OpenAIConfig
 	Anthropic      AnthropicConfig
 	Azure          AzureLLMConfig
@@ -224,6 +258,12 @@ type RetryPolicyConfig struct {
 	MaxAttempts    int           `koanf:"max_attempts"`
 	InitialBackoff time.Duration `koanf:"initial_backoff"`
 	MaxBackoff     time.Duration `koanf:"max_backoff"`
+}
+
+type LLMBudgetConfig struct {
+	MaxSessionCostCredits float64 `koanf:"max_session_cost_credits"`
+	MaxDailyCostCredits   float64 `koanf:"max_daily_cost_credits"`
+	AllowLocalFallback    bool    `koanf:"allow_local_fallback"`
 }
 
 // WebhookConfig controls how generated minutes are delivered to the caller's system.
@@ -371,6 +411,37 @@ func Default() *Config {
 		Logging: LoggingConfig{
 			Level:  "info",
 			Format: "json",
+			Output: LoggingOutputConfig{
+				Stdout: true,
+				File: LoggingFileConfig{
+					Enabled: false,
+					Path:    "./logs/aftertalk.jsonl",
+				},
+			},
+			Rotation: LoggingRotationConfig{
+				MaxSizeMB:  100,
+				MaxAgeDays: 30,
+				MaxBackups: 20,
+				Compress:   true,
+			},
+			Retention: LoggingRetentionConfig{
+				DeleteAfterDays:       90,
+				EmergencyCutoffSizeMB: 2048,
+			},
+			Redaction: LoggingRedactionConfig{
+				Enabled: true,
+				Fields: []string{
+					"api_key",
+					"token",
+					"authorization",
+					"secret",
+					"password",
+					"webhook_payload",
+					"transcript_text",
+					"minutes",
+					"raw_provider_payload",
+				},
+			},
 		},
 		JWT: JWTConfig{
 			Secret:     "change-this-in-production",

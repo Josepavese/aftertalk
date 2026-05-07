@@ -3,6 +3,7 @@ package minutesgen
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -53,11 +54,20 @@ func (v DefaultVerifier) Verify(ctx context.Context, req VerificationRequest) (*
 			}
 		}
 
-		response, genErr := req.Provider.Generate(ctx, req.Prompt)
+		callCtx := llm.WithRequestMetadata(ctx, llm.RequestMetadata{
+			Phase:      req.Phase,
+			BatchIndex: req.BatchIndex,
+			BatchTotal: req.BatchTotal,
+			Attempt:    attempt + 1,
+		})
+		response, genErr := req.Provider.Generate(callCtx, req.Prompt)
 		result.Calls++
 		if genErr != nil {
 			err = genErr
 			logger.Errorf("LLM verification request failed (attempt %d): %v", attempt+1, genErr)
+			if errors.Is(genErr, llm.ErrLLMBudgetExceeded) {
+				return result, genErr
+			}
 			continue
 		}
 
@@ -73,7 +83,13 @@ func (v DefaultVerifier) Verify(ctx context.Context, req VerificationRequest) (*
 			repairPrompt = req.RepairPrompt(response)
 		}
 		if repairPrompt != "" {
-			repairResponse, repairErr := req.Provider.Generate(ctx, repairPrompt)
+			repairCtx := llm.WithRequestMetadata(ctx, llm.RequestMetadata{
+				Phase:      repairPhase(req.Phase),
+				BatchIndex: req.BatchIndex,
+				BatchTotal: req.BatchTotal,
+				Attempt:    attempt + 1,
+			})
+			repairResponse, repairErr := req.Provider.Generate(repairCtx, repairPrompt)
 			result.Calls++
 			if repairErr == nil {
 				repaired, repairIssues, repairedErr := parseVerificationResponse(repairResponse)
@@ -85,6 +101,9 @@ func (v DefaultVerifier) Verify(ctx context.Context, req VerificationRequest) (*
 				parseErr = repairedErr
 			} else {
 				logger.Errorf("LLM verification repair failed (attempt %d): %v", attempt+1, repairErr)
+				if errors.Is(repairErr, llm.ErrLLMBudgetExceeded) {
+					return result, repairErr
+				}
 			}
 		}
 

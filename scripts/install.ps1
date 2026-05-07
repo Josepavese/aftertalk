@@ -222,6 +222,7 @@ if (-not (Test-Path $CONFIG_FILE)) {
   $api_key    = -join ((65..90 + 97..122 + 48..57) | Get-Random -Count 32 | % { [char]$_ })
   $jwt_secret = -join ((65..90 + 97..122 + 48..57) | Get-Random -Count 48 | % { [char]$_ })
   $db_path    = (Join-Path $DATA_DIR "aftertalk.db") -replace "\\", "/"
+  $log_path   = (Join-Path $LOGS_DIR "aftertalk.jsonl") -replace "\\", "/"
   @"
 database:
   path: $db_path
@@ -233,6 +234,31 @@ http:
 logging:
   level: info
   format: json
+  output:
+    stdout: true
+    file:
+      enabled: true
+      path: $log_path
+  rotation:
+    max_size_mb: 100
+    max_age_days: 30
+    max_backups: 20
+    compress: true
+  retention:
+    delete_after_days: 90
+    emergency_cutoff_size_mb: 2048
+  redaction:
+    enabled: true
+    fields:
+      - api_key
+      - token
+      - authorization
+      - secret
+      - password
+      - webhook_payload
+      - transcript_text
+      - minutes
+      - raw_provider_payload
 
 api:
   key: $api_key

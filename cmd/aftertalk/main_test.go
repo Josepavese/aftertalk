@@ -176,6 +176,20 @@ func TestRunMigrations_ProcessingQueueTable(t *testing.T) {
 	assert.Equal(t, 1, count)
 }
 
+func TestRunMigrations_LLMUsageEventsTable(t *testing.T) {
+	db, err := sqlite.New(context.Background(), "/tmp/test_aftertalk.db")
+	require.NoError(t, err)
+	defer db.Close()
+
+	err = runMigrations(context.Background(), db)
+	require.NoError(t, err)
+
+	var count int
+	err = db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='llm_usage_events'").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+}
+
 func TestRunMigrations_Indexes(t *testing.T) {
 	db, err := sqlite.New(context.Background(), "/tmp/test_aftertalk.db")
 	require.NoError(t, err)
@@ -214,11 +228,11 @@ func TestRunMigrations_WithTransaction(t *testing.T) {
 	err = runMigrations(context.Background(), db)
 	require.NoError(t, err)
 
-	// Verify all tables were created (8 user tables + sqlite_sequence auto-created by AUTOINCREMENT = 9)
+	// Verify all tables were created (9 user tables + sqlite_sequence auto-created by AUTOINCREMENT = 10)
 	var count int
 	err = db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM sqlite_master WHERE type='table'").Scan(&count)
 	require.NoError(t, err)
-	assert.Equal(t, 9, count)
+	assert.Equal(t, 10, count)
 }
 
 func TestRunMigrations_CreatesAllTables(t *testing.T) {
@@ -236,6 +250,7 @@ func TestRunMigrations_CreatesAllTables(t *testing.T) {
 		"transcriptions",
 		"minutes",
 		"webhook_events",
+		"llm_usage_events",
 		"processing_queue",
 	}
 
@@ -399,7 +414,7 @@ func TestMigrationSQL(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify key tables are present
-	expectedTables := []string{"sessions", "participants", "audio_streams", "transcriptions", "minutes", "webhook_events", "processing_queue"}
+	expectedTables := []string{"sessions", "participants", "audio_streams", "transcriptions", "minutes", "webhook_events", "llm_usage_events", "processing_queue"}
 	for _, table := range expectedTables {
 		var count int
 		err = db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&count)

@@ -18,9 +18,14 @@ type RuntimeConfigProvider interface {
 	RuntimeConfig() RuntimeConfig
 }
 
+type ProfileNameProvider interface {
+	ProfileName() string
+}
+
 type RuntimeConfig struct {
 	GenerationTimeout time.Duration
 	Retry             RetryConfig
+	Budget            UsageBudget
 }
 
 type RetryConfig struct {

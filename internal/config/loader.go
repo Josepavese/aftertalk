@@ -92,6 +92,12 @@ func validate(cfg *Config) error { //nolint:gocyclo // validation function needs
 	if !validLogFormats[cfg.Logging.Format] {
 		return fmt.Errorf("%w: %s", errInvalidLogFormat, cfg.Logging.Format)
 	}
+	if err := validateLogging(cfg.Logging); err != nil {
+		return err
+	}
+	if err := validateLLMBudget("llm.budget", cfg.LLM.Budget); err != nil {
+		return err
+	}
 
 	validSTTProviders := map[string]bool{
 		"google":        true,
@@ -139,6 +145,35 @@ func validate(cfg *Config) error { //nolint:gocyclo // validation function needs
 	return nil
 }
 
+func validateLogging(cfg LoggingConfig) error {
+	if cfg.LoggingOutputDisabled() {
+		return errors.New("logging.output must enable stdout or file")
+	}
+	if cfg.Output.File.Enabled && strings.TrimSpace(cfg.Output.File.Path) == "" {
+		return errors.New("logging.output.file.path is required when file logging is enabled")
+	}
+	if cfg.Rotation.MaxSizeMB < 0 {
+		return errors.New("logging.rotation.max_size_mb must be non-negative")
+	}
+	if cfg.Rotation.MaxAgeDays < 0 {
+		return errors.New("logging.rotation.max_age_days must be non-negative")
+	}
+	if cfg.Rotation.MaxBackups < 0 {
+		return errors.New("logging.rotation.max_backups must be non-negative")
+	}
+	if cfg.Retention.DeleteAfterDays < 0 {
+		return errors.New("logging.retention.delete_after_days must be non-negative")
+	}
+	if cfg.Retention.EmergencyCutoffSizeMB < 0 {
+		return errors.New("logging.retention.emergency_cutoff_size_mb must be non-negative")
+	}
+	return nil
+}
+
+func (cfg LoggingConfig) LoggingOutputDisabled() bool {
+	return !cfg.Output.Stdout && !cfg.Output.File.Enabled
+}
+
 func validateLLMProfile(name string, profile LLMProfileConfig, llm LLMConfig) error {
 	if profile.RequestTimeout < 0 {
 		return fmt.Errorf("llm.profiles.%s.request_timeout must be non-negative", name)
@@ -154,6 +189,9 @@ func validateLLMProfile(name string, profile LLMProfileConfig, llm LLMConfig) er
 	}
 	if profile.Retry.MaxBackoff < 0 {
 		return fmt.Errorf("llm.profiles.%s.retry.max_backoff must be non-negative", name)
+	}
+	if err := validateLLMBudget("llm.profiles."+name+".budget", profile.Budget); err != nil {
+		return err
 	}
 	switch profile.Provider {
 	case "openai":
@@ -192,6 +230,16 @@ func validateLLMProfile(name string, profile LLMProfileConfig, llm LLMConfig) er
 		if model == "" {
 			return fmt.Errorf("llm.profiles.%s.model is required for ollama profile", name)
 		}
+	}
+	return nil
+}
+
+func validateLLMBudget(path string, budget LLMBudgetConfig) error {
+	if budget.MaxSessionCostCredits < 0 {
+		return fmt.Errorf("%s.max_session_cost_credits must be non-negative", path)
+	}
+	if budget.MaxDailyCostCredits < 0 {
+		return fmt.Errorf("%s.max_daily_cost_credits must be non-negative", path)
 	}
 	return nil
 }

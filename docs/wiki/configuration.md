@@ -138,7 +138,7 @@ Any OpenAI-compatible API can be used via `base_url`:
 llm:
   provider: openai
   openai:
-    api_key: sk-or-v1-...
+    api_key: "<openrouter-api-key>"
     model: openai/gpt-4o-mini
     base_url: https://openrouter.ai/api
 ```
@@ -250,6 +250,9 @@ llm:
       base_url: https://openrouter.ai/api
       request_timeout: 300s
       generation_timeout: 20m
+      budget:
+        max_session_cost_credits: 1.0
+        max_daily_cost_credits: 10.0
       retry:
         max_attempts: 4
         initial_backoff: 2s
@@ -282,6 +285,52 @@ profiles that do not declare their own budget.
 Operational rule: `request_timeout` is per LLM HTTP request; incremental minutes
 can make multiple requests for one session, so `generation_timeout` must cover all
 batches, retries, repairs, and finalization for that session.
+
+### LLM cost telemetry and usage reports
+
+OpenAI-compatible cloud calls persist one row per HTTP attempt in
+`llm_usage_events`, including session/minutes IDs, phase, provider profile,
+requested/resolved model, OpenRouter generation ID, token usage, reasoning tokens,
+cached tokens, cost credits, latency, retry attempt, HTTP status, and sanitized
+errors.
+
+```bash
+aftertalk logs usage --config /path/to/aftertalk.yaml --group-by session
+aftertalk logs usage --config /path/to/aftertalk.yaml --group-by day --from 2026-05-01
+aftertalk logs usage --config /path/to/aftertalk.yaml --session SESSION_ID --group-by model
+```
+
+Supported grouping keys are `session`, `day`, `model`, and `profile`. The command
+prints JSON and is implemented in Go, so it works the same on Linux, macOS, and
+Windows.
+
+### Structured logging
+
+```yaml
+logging:
+  level: info
+  format: json
+  output:
+    stdout: true
+    file:
+      enabled: true
+      path: ./logs/aftertalk.jsonl
+  rotation:
+    max_size_mb: 100
+    max_age_days: 30
+    max_backups: 20
+    compress: true
+  retention:
+    delete_after_days: 90
+    emergency_cutoff_size_mb: 2048
+  redaction:
+    enabled: true
+    fields: [api_key, token, authorization, secret, password, webhook_payload, transcript_text, minutes, raw_provider_payload]
+```
+
+Runtime diagnostic events use stable `event` names and structured fields. File
+logging uses application-level rotation and retention, with a best-effort startup
+cutoff to avoid unbounded log growth on small VPS deployments.
 
 ### Session creation with profile selection
 ```json

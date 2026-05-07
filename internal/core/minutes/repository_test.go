@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Josepavese/aftertalk/internal/ai/llm"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
@@ -38,6 +40,38 @@ func setupTestDB(t *testing.T) *sql.DB {
 			edited_at TEXT NOT NULL DEFAULT (datetime('now')),
 			edited_by TEXT
 		);
+
+		CREATE TABLE llm_usage_events (
+			id TEXT PRIMARY KEY,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			request_id TEXT NOT NULL DEFAULT '',
+			workflow_id TEXT NOT NULL DEFAULT '',
+			session_id TEXT NOT NULL DEFAULT '',
+			minutes_id TEXT NOT NULL DEFAULT '',
+			phase TEXT NOT NULL DEFAULT '',
+			batch_index INTEGER NOT NULL DEFAULT 0,
+			batch_total INTEGER NOT NULL DEFAULT 0,
+			attempt INTEGER NOT NULL DEFAULT 0,
+			provider_profile TEXT NOT NULL DEFAULT '',
+			provider TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
+			resolved_provider TEXT NOT NULL DEFAULT '',
+			resolved_model TEXT NOT NULL DEFAULT '',
+			generation_id TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT '',
+			http_status INTEGER NOT NULL DEFAULT 0,
+			prompt_tokens INTEGER NOT NULL DEFAULT 0,
+			completion_tokens INTEGER NOT NULL DEFAULT 0,
+			reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+			cached_tokens INTEGER NOT NULL DEFAULT 0,
+			total_tokens INTEGER NOT NULL DEFAULT 0,
+			cost_credits REAL NOT NULL DEFAULT 0,
+			requested_max_tokens INTEGER NOT NULL DEFAULT 0,
+			affordable_retry_max_tokens INTEGER NOT NULL DEFAULT 0,
+			duration_ms INTEGER NOT NULL DEFAULT 0,
+			error_class TEXT NOT NULL DEFAULT '',
+			error_message TEXT NOT NULL DEFAULT ''
+		);
 	`)
 	require.NoError(t, err)
 
@@ -64,6 +98,69 @@ func TestMinutesRepositoryCreate(t *testing.T) {
 
 	err := repo.Create(ctx, m)
 	require.NoError(t, err)
+
+	db.Close()
+}
+
+func TestMinutesRepositoryLLMUsageEvents(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	err := repo.InsertLLMUsageEvents(ctx, []llm.UsageEvent{
+		{
+			ID:               "usage-1",
+			Timestamp:        now,
+			SessionID:        "session-usage",
+			MinutesID:        "minutes-usage",
+			ProviderProfile:  "cloud",
+			Provider:         "openai",
+			Model:            "minimax/minimax-m2.7",
+			ResolvedProvider: "MiniMax",
+			GenerationID:     "gen-1",
+			Phase:            "minutes.batch",
+			Status:           "success",
+			PromptTokens:     100,
+			CompletionTokens: 20,
+			ReasoningTokens:  5,
+			CachedTokens:     7,
+			TotalTokens:      120,
+			CostCredits:      0.12,
+			DurationMs:       1500,
+		},
+		{
+			ID:                 "usage-2",
+			Timestamp:          now.Add(time.Second),
+			SessionID:          "session-usage",
+			MinutesID:          "minutes-usage",
+			ProviderProfile:    "cloud",
+			Provider:           "openai",
+			Model:              "minimax/minimax-m2.7",
+			Phase:              "minutes.verify",
+			Status:             "http_error",
+			HTTPStatus:         402,
+			CostCredits:        0.03,
+			RequestedMaxTokens: 65536,
+		},
+	})
+	require.NoError(t, err)
+
+	summary, err := repo.LLMUsageSummaryForSession(ctx, "session-usage")
+	require.NoError(t, err)
+	assert.Equal(t, 2, summary.Calls)
+	assert.Equal(t, 100, summary.PromptTokens)
+	assert.Equal(t, 20, summary.CompletionTokens)
+	assert.Equal(t, 5, summary.ReasoningTokens)
+	assert.Equal(t, 7, summary.CachedTokens)
+	assert.Equal(t, 120, summary.TotalTokens)
+	assert.InDelta(t, 0.15, summary.CostCredits, 0.000001)
+
+	report, err := repo.ReportLLMUsage(ctx, LLMUsageFilter{SessionID: "session-usage"}, "model")
+	require.NoError(t, err)
+	require.Len(t, report.Groups, 1)
+	assert.Equal(t, "minimax/minimax-m2.7", report.Groups[0].Key)
+	assert.Equal(t, 2, report.Groups[0].Calls)
 
 	db.Close()
 }

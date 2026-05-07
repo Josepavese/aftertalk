@@ -203,6 +203,10 @@ func TestConfigWrite_LLM_MixedProviderProfiles(t *testing.T) {
 				Effort:  "low",
 				Exclude: true,
 			},
+			Budget: instconfig.BudgetEntry{
+				MaxSessionCostCredits: 0.5,
+				MaxDailyCostCredits:   3.0,
+			},
 		},
 	}
 
@@ -228,6 +232,9 @@ func TestConfigWrite_LLM_MixedProviderProfiles(t *testing.T) {
 	assert.Contains(t, yaml, `max_backoff: "30s"`)
 	assert.Contains(t, yaml, `enabled: true`)
 	assert.Contains(t, yaml, `exclude: true`)
+	assert.Contains(t, yaml, `budget:`)
+	assert.Contains(t, yaml, `max_session_cost_credits: 0.5`)
+	assert.Contains(t, yaml, `max_daily_cost_credits: 3`)
 }
 
 // ── Nil / empty map safety ─────────────────────────────────────────────────────

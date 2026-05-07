@@ -11,3 +11,8 @@ improvement backlog items.
 - `closed/2026-05-06-session-error-recovery-and-regeneration.md`
 - `closed/2026-05-06-profile-readiness-healthchecks.md`
 - `closed/2026-05-06-webhook-status-and-replay.md`
+- `closed/2026-05-07-incremental-minutes-finalization-loses-earlier-content.md`
+- `closed/2026-05-07-llm-profile-timeout-retry-ssot.md`
+- `closed/2026-05-07-notify-pull-purge-context-canceled.md`
+- `closed/2026-05-07-centralized-structured-logging-ssot.md`
+- `closed/2026-05-07-openrouter-minimax-cost-attribution.md`

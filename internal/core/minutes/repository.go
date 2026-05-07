@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/core"
 )
 
@@ -29,6 +30,33 @@ type WebhookEvent struct {
 	ErrorMessage  string     `json:"error_message,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	AttemptNumber int        `json:"attempt_number"`
+}
+
+type LLMUsageFilter struct {
+	From      *time.Time
+	To        *time.Time
+	SessionID string
+	MinutesID string
+	Model     string
+	Profile   string
+}
+
+type LLMUsageGroup struct {
+	CostCredits      float64 `json:"cost_credits"`
+	Key              string  `json:"key"`
+	Calls            int     `json:"calls"`
+	PromptTokens     int     `json:"prompt_tokens"`
+	CompletionTokens int     `json:"completion_tokens"`
+	ReasoningTokens  int     `json:"reasoning_tokens"`
+	CachedTokens     int     `json:"cached_tokens"`
+	TotalTokens      int     `json:"total_tokens"`
+}
+
+type LLMUsageReport struct {
+	GeneratedAt time.Time       `json:"generated_at"`
+	GroupBy     string          `json:"group_by"`
+	Total       LLMUsageSummary `json:"total"`
+	Groups      []LLMUsageGroup `json:"groups"`
 }
 
 func NewMinutesRepository(db *sql.DB) *MinutesRepository {
@@ -169,6 +197,173 @@ func (r *MinutesRepository) ReplayWebhookEvent(ctx context.Context, eventID stri
 		return fmt.Errorf("webhook event not found: %s", eventID) //nolint:err113
 	}
 	return nil
+}
+
+func (r *MinutesRepository) InsertLLMUsageEvents(ctx context.Context, events []llm.UsageEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	tx, err := r.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin llm usage insert: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // commit path returns before deferred rollback has effect
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT OR REPLACE INTO llm_usage_events (
+			id, created_at, request_id, workflow_id, session_id, minutes_id, phase, batch_index, batch_total, attempt,
+			provider_profile, provider, model, resolved_provider, resolved_model, generation_id, status, http_status,
+			prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, total_tokens, cost_credits,
+			requested_max_tokens, affordable_retry_max_tokens, duration_ms, error_class, error_message
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare llm usage insert: %w", err)
+	}
+	defer stmt.Close() //nolint:errcheck
+
+	for _, ev := range events {
+		if ev.ID == "" {
+			continue
+		}
+		ts := ev.Timestamp
+		if ts.IsZero() {
+			ts = time.Now().UTC()
+		}
+		if _, err := stmt.ExecContext(ctx,
+			ev.ID, ts.Format(time.RFC3339Nano), ev.RequestID, ev.WorkflowID, ev.SessionID, ev.MinutesID, ev.Phase,
+			ev.BatchIndex, ev.BatchTotal, ev.Attempt, ev.ProviderProfile, ev.Provider, ev.Model, ev.ResolvedProvider,
+			ev.ResolvedModel, ev.GenerationID, ev.Status, ev.HTTPStatus, ev.PromptTokens, ev.CompletionTokens,
+			ev.ReasoningTokens, ev.CachedTokens, ev.TotalTokens, ev.CostCredits, ev.RequestedMaxTokens,
+			ev.AffordableRetryMaxTokens, ev.DurationMs, ev.ErrorClass, ev.ErrorMessage,
+		); err != nil {
+			return fmt.Errorf("insert llm usage event: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit llm usage insert: %w", err)
+	}
+	return nil
+}
+
+func (r *MinutesRepository) SumLLMUsageCostSince(ctx context.Context, since time.Time) (float64, error) {
+	var cost sql.NullFloat64
+	err := r.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(cost_credits), 0)
+		FROM llm_usage_events
+		WHERE created_at >= ?`,
+		since.UTC().Format(time.RFC3339Nano),
+	).Scan(&cost)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table: llm_usage_events") {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("sum llm usage cost: %w", err)
+	}
+	return cost.Float64, nil
+}
+
+func (r *MinutesRepository) LLMUsageSummaryForSession(ctx context.Context, sessionID string) (LLMUsageSummary, error) {
+	filter := LLMUsageFilter{SessionID: sessionID}
+	total, err := r.llmUsageTotal(ctx, filter)
+	if err != nil {
+		return LLMUsageSummary{}, err
+	}
+	return total, nil
+}
+
+func (r *MinutesRepository) ReportLLMUsage(ctx context.Context, filter LLMUsageFilter, groupBy string) (LLMUsageReport, error) {
+	if groupBy == "" {
+		groupBy = "session"
+	}
+	total, err := r.llmUsageTotal(ctx, filter)
+	if err != nil {
+		return LLMUsageReport{}, err
+	}
+	groups, err := r.llmUsageGroups(ctx, filter, groupBy)
+	if err != nil {
+		return LLMUsageReport{}, err
+	}
+	return LLMUsageReport{
+		GeneratedAt: time.Now().UTC(),
+		GroupBy:     groupBy,
+		Total:       total,
+		Groups:      groups,
+	}, nil
+}
+
+func (r *MinutesRepository) llmUsageTotal(ctx context.Context, filter LLMUsageFilter) (LLMUsageSummary, error) {
+	where, args := llmUsageWhere(filter)
+	query := `
+		SELECT COALESCE(SUM(CASE WHEN status NOT IN ('budget_exceeded', 'client_error') THEN 1 ELSE 0 END),0),
+		       COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0),
+		       COALESCE(SUM(reasoning_tokens),0), COALESCE(SUM(cached_tokens),0), COALESCE(SUM(total_tokens),0),
+		       COALESCE(SUM(cost_credits),0)
+		FROM llm_usage_events` + where
+	var summary LLMUsageSummary
+	err := r.QueryRowContext(ctx, query, args...).Scan(
+		&summary.Calls,
+		&summary.PromptTokens,
+		&summary.CompletionTokens,
+		&summary.ReasoningTokens,
+		&summary.CachedTokens,
+		&summary.TotalTokens,
+		&summary.CostCredits,
+	)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table: llm_usage_events") {
+			return LLMUsageSummary{}, nil
+		}
+		return LLMUsageSummary{}, fmt.Errorf("summarize llm usage: %w", err)
+	}
+	return summary, nil
+}
+
+func (r *MinutesRepository) llmUsageGroups(ctx context.Context, filter LLMUsageFilter, groupBy string) ([]LLMUsageGroup, error) {
+	groupExpr, err := llmUsageGroupExpr(groupBy)
+	if err != nil {
+		return nil, err
+	}
+	where, args := llmUsageWhere(filter)
+	query := `
+		SELECT ` + groupExpr + ` AS group_key,
+		       COALESCE(SUM(CASE WHEN status NOT IN ('budget_exceeded', 'client_error') THEN 1 ELSE 0 END),0) AS calls,
+		       COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,
+		       COALESCE(SUM(completion_tokens),0) AS completion_tokens, COALESCE(SUM(reasoning_tokens),0) AS reasoning_tokens,
+		       COALESCE(SUM(cached_tokens),0) AS cached_tokens, COALESCE(SUM(total_tokens),0) AS total_tokens,
+		       COALESCE(SUM(cost_credits),0) AS cost_credits
+		FROM llm_usage_events` + where + `
+		GROUP BY group_key
+		ORDER BY cost_credits DESC, calls DESC`
+	rows, err := r.QueryContext(ctx, query, args...)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table: llm_usage_events") {
+			return []LLMUsageGroup{}, nil
+		}
+		return nil, fmt.Errorf("group llm usage: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	groups := []LLMUsageGroup{}
+	for rows.Next() {
+		var group LLMUsageGroup
+		if err := rows.Scan(
+			&group.Key,
+			&group.Calls,
+			&group.PromptTokens,
+			&group.CompletionTokens,
+			&group.ReasoningTokens,
+			&group.CachedTokens,
+			&group.TotalTokens,
+			&group.CostCredits,
+		); err != nil {
+			return nil, fmt.Errorf("scan llm usage group: %w", err)
+		}
+		groups = append(groups, group)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate llm usage groups: %w", err)
+	}
+	return groups, nil
 }
 
 type webhookEventScanner interface {
@@ -312,4 +507,52 @@ func (r *MinutesRepository) Delete(ctx context.Context, id string) error {
 		}
 	}
 	return nil
+}
+
+func llmUsageWhere(filter LLMUsageFilter) (string, []interface{}) {
+	clauses := []string{}
+	args := []interface{}{}
+	if filter.From != nil {
+		clauses = append(clauses, "created_at >= ?")
+		args = append(args, filter.From.UTC().Format(time.RFC3339Nano))
+	}
+	if filter.To != nil {
+		clauses = append(clauses, "created_at < ?")
+		args = append(args, filter.To.UTC().Format(time.RFC3339Nano))
+	}
+	if filter.SessionID != "" {
+		clauses = append(clauses, "session_id = ?")
+		args = append(args, filter.SessionID)
+	}
+	if filter.MinutesID != "" {
+		clauses = append(clauses, "minutes_id = ?")
+		args = append(args, filter.MinutesID)
+	}
+	if filter.Model != "" {
+		clauses = append(clauses, "model = ?")
+		args = append(args, filter.Model)
+	}
+	if filter.Profile != "" {
+		clauses = append(clauses, "provider_profile = ?")
+		args = append(args, filter.Profile)
+	}
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+func llmUsageGroupExpr(groupBy string) (string, error) {
+	switch groupBy {
+	case "session":
+		return "COALESCE(NULLIF(session_id, ''), '<none>')", nil
+	case "day":
+		return "substr(created_at, 1, 10)", nil
+	case "model":
+		return "COALESCE(NULLIF(model, ''), '<none>')", nil
+	case "profile":
+		return "COALESCE(NULLIF(provider_profile, ''), '<none>')", nil
+	default:
+		return "", fmt.Errorf("unsupported llm usage group: %s", groupBy) //nolint:err113
+	}
 }

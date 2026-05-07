@@ -1,6 +1,9 @@
 package logging
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -283,4 +286,82 @@ func TestLoggerAllLevels(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestInitWithOptions_FileSinkAndRedaction(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "aftertalk.jsonl")
+	err := InitWithOptions(Options{
+		Level:   "info",
+		Format:  "json",
+		Service: "aftertalk-test",
+		Env:     "test",
+		Version: "1.2.3",
+		Release: "v1.2.3",
+		Output: OutputOptions{
+			Stdout: false,
+			File: FileOutputOptions{
+				Enabled: true,
+				Path:    logPath,
+			},
+		},
+		Rotation: RotationOptions{MaxSizeMB: 1, MaxBackups: 1},
+		Redaction: RedactionOptions{
+			Enabled: true,
+			Fields:  []string{"api_key", "authorization"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("InitWithOptions failed: %v", err)
+	}
+	InfoEvent("llm.request.completed", "api_key", "sk-secret", "authorization", "Bearer token", "session_id", "session-1")
+	Sync()
+
+	raw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log file: %v", err)
+	}
+	line := string(raw)
+	if !strings.Contains(line, `"event":"llm.request.completed"`) || !strings.Contains(line, `"service":"aftertalk-test"`) {
+		t.Fatalf("structured event fields missing: %s", line)
+	}
+	if strings.Contains(line, "sk-secret") || strings.Contains(line, "Bearer token") {
+		t.Fatalf("sensitive fields were not redacted: %s", line)
+	}
+	if strings.Count(line, "[REDACTED]") != 2 {
+		t.Fatalf("expected redacted placeholders, got: %s", line)
+	}
+}
+
+func TestStructuredRedactionDoesNotHideOperationalIDsOrTokenCounts(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "aftertalk.jsonl")
+	require.NoError(t, InitWithOptions(Options{
+		Level:  "info",
+		Format: "json",
+		Output: OutputOptions{
+			Stdout: false,
+			File:   FileOutputOptions{Enabled: true, Path: logPath},
+		},
+		Redaction: RedactionOptions{
+			Enabled: true,
+			Fields:  []string{"token", "secret", "minutes"},
+		},
+	}))
+	InfoEvent("llm.request.completed",
+		"minutes_id", "minutes-123",
+		"prompt_tokens", 42,
+		"max_tokens", 128,
+		"access_token", "secret-token",
+		"minutes", "full sensitive payload",
+	)
+	Sync()
+
+	raw, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	line := string(raw)
+	assert.Contains(t, line, `"minutes_id":"minutes-123"`)
+	assert.Contains(t, line, `"prompt_tokens":42`)
+	assert.Contains(t, line, `"max_tokens":128`)
+	assert.NotContains(t, line, "secret-token")
+	assert.NotContains(t, line, "full sensitive payload")
+	assert.Equal(t, 2, strings.Count(line, "[REDACTED]"))
 }

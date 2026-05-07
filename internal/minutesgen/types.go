@@ -87,7 +87,10 @@ type RunRequest struct {
 	Prompt           string
 	RepairPrompt     func(rawResponse string) string
 	DetectedLanguage string
+	Phase            string
 	Config           Config
+	BatchIndex       int
+	BatchTotal       int
 }
 
 type RunResult struct {
@@ -112,7 +115,10 @@ type VerificationRequest struct {
 	Prompt           string
 	RepairPrompt     func(rawResponse string) string
 	DetectedLanguage string
+	Phase            string
 	Config           Config
+	BatchIndex       int
+	BatchTotal       int
 }
 
 type VerificationResult struct {

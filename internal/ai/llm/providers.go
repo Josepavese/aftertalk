@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -59,7 +60,11 @@ func (p *OpenAIProvider) WithReasoning(reasoning ReasoningConfig) *OpenAIProvide
 }
 
 func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, error) {
-	logging.Infof("OpenAI: Generating response with model %s", p.model)
+	logging.InfoEvent("llm.request.started",
+		"provider", "openai",
+		"model", p.model,
+		"phase", RequestMetadataFromContext(ctx).Phase,
+	)
 
 	reqBody := map[string]interface{}{
 		"model": p.model,
@@ -109,25 +114,59 @@ func (p *OpenAIProvider) Generate(ctx context.Context, prompt string) (string, e
 	}
 
 	if err := json.Unmarshal(body, &response); err != nil {
+		p.markLastUsageFailure(ctx, "parse_failure", "chat_response_parse", err)
 		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	if len(response.Choices) == 0 {
+		p.markLastUsageFailure(ctx, "parse_failure", "no_choices", errNoResponseOpenAI)
 		return "", errNoResponseOpenAI
 	}
 
 	msg := response.Choices[0].Message
-	return contentOrReasoningJSON(msg.Content, msg.ReasoningContent, msg.Reasoning)
+	content, err := contentOrReasoningJSON(msg.Content, msg.ReasoningContent, msg.Reasoning)
+	if err != nil {
+		errorClass := "content_parse_failure"
+		status := "parse_failure"
+		if errors.Is(err, errReasoningOnly) {
+			errorClass = "reasoning_only"
+			status = "reasoning_only"
+		}
+		p.markLastUsageFailure(ctx, status, errorClass, err)
+		return "", err
+	}
+	return content, nil
 }
 
 func (p *OpenAIProvider) chatCompletion(ctx context.Context, reqBody map[string]interface{}) ([]byte, int, error) {
+	start := time.Now()
+	event := p.newUsageEvent(ctx, reqBody)
+	if err := CheckUsageBudget(ctx); err != nil {
+		event.Status = "budget_exceeded"
+		event.ErrorClass = "budget_exceeded"
+		event.ErrorMessage = logging.SanitizeError(err)
+		event.DurationMs = time.Since(start).Milliseconds()
+		p.recordUsageEvent(ctx, event)
+		return nil, 0, err
+	}
+
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
+		event.Status = "client_error"
+		event.ErrorClass = "marshal_request"
+		event.ErrorMessage = logging.SanitizeError(err)
+		event.DurationMs = time.Since(start).Milliseconds()
+		p.recordUsageEvent(ctx, event)
 		return nil, 0, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/v1/chat/completions", bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openAICompatibleEndpointURL(p.baseURL, "chat/completions"), bytes.NewBuffer(jsonBody))
 	if err != nil {
+		event.Status = "client_error"
+		event.ErrorClass = "create_request"
+		event.ErrorMessage = logging.SanitizeError(err)
+		event.DurationMs = time.Since(start).Milliseconds()
+		p.recordUsageEvent(ctx, event)
 		return nil, 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -141,14 +180,43 @@ func (p *OpenAIProvider) chatCompletion(ctx context.Context, reqBody map[string]
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
 	if err != nil {
+		event.Status = "transport_error"
+		event.ErrorClass = classifyTransportError(ctx, err)
+		event.ErrorMessage = logging.SanitizeError(err)
+		event.DurationMs = time.Since(start).Milliseconds()
+		p.recordUsageEvent(ctx, event)
 		return nil, 0, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		event.Status = "read_error"
+		event.HTTPStatus = resp.StatusCode
+		event.ErrorClass = "read_response"
+		event.ErrorMessage = logging.SanitizeError(err)
+		event.DurationMs = time.Since(start).Milliseconds()
+		p.recordUsageEvent(ctx, event)
 		return nil, 0, fmt.Errorf("failed to read response: %w", err)
 	}
+
+	event.HTTPStatus = resp.StatusCode
+	event.DurationMs = time.Since(start).Milliseconds()
+	event.populateFromOpenAIResponse(body)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		p.backfillOpenRouterGenerationUsage(ctx, &event)
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		event.Status = "success"
+	} else {
+		event.Status = "http_error"
+		event.ErrorClass = fmt.Sprintf("http_%d", resp.StatusCode)
+		event.ErrorMessage = sanitizeProviderError(body)
+		if retryMaxTokens, ok := affordableRetryMaxTokens(body); ok {
+			event.AffordableRetryMaxTokens = retryMaxTokens
+		}
+	}
+	p.recordUsageEvent(ctx, event)
 
 	return body, resp.StatusCode, nil
 }
@@ -581,4 +649,316 @@ func isTimeoutLike(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded")
+}
+
+func (p *OpenAIProvider) newUsageEvent(ctx context.Context, reqBody map[string]interface{}) UsageEvent {
+	meta := RequestMetadataFromContext(ctx)
+	requestedMaxTokens, _ := requestMaxTokens(reqBody)
+	model, _ := reqBody["model"].(string)
+	if model == "" {
+		model = p.model
+	}
+	provider := meta.Provider
+	if provider == "" {
+		provider = "openai"
+	}
+	return UsageEvent{
+		RequestID:          meta.RequestID,
+		WorkflowID:         meta.WorkflowID,
+		SessionID:          meta.SessionID,
+		MinutesID:          meta.MinutesID,
+		ProviderProfile:    meta.ProviderProfile,
+		Phase:              meta.Phase,
+		BatchIndex:         meta.BatchIndex,
+		BatchTotal:         meta.BatchTotal,
+		Attempt:            meta.Attempt,
+		Provider:           provider,
+		Model:              model,
+		RequestedMaxTokens: requestedMaxTokens,
+	}
+}
+
+func (p *OpenAIProvider) recordUsageEvent(ctx context.Context, event UsageEvent) {
+	if event.Provider == "" {
+		event.Provider = "openai"
+	}
+	if event.Model == "" {
+		event.Model = p.model
+	}
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now().UTC()
+	}
+	_ = RecordUsage(ctx, event) // recorder failures must not mask provider behavior
+
+	fields := []interface{}{
+		"status", event.Status,
+		"provider", event.Provider,
+		"model", event.Model,
+		"resolved_provider", event.ResolvedProvider,
+		"resolved_model", event.ResolvedModel,
+		"generation_id", event.GenerationID,
+		"provider_profile", event.ProviderProfile,
+		"session_id", event.SessionID,
+		"minutes_id", event.MinutesID,
+		"phase", event.Phase,
+		"attempt", event.Attempt,
+		"http_status", event.HTTPStatus,
+		"prompt_tokens", event.PromptTokens,
+		"completion_tokens", event.CompletionTokens,
+		"reasoning_tokens", event.ReasoningTokens,
+		"cached_tokens", event.CachedTokens,
+		"total_tokens", event.TotalTokens,
+		"cost_credits", event.CostCredits,
+		"requested_max_tokens", event.RequestedMaxTokens,
+		"affordable_retry_max_tokens", event.AffordableRetryMaxTokens,
+		"duration_ms", event.DurationMs,
+	}
+	if event.ErrorMessage != "" {
+		fields = append(fields, "error_class", event.ErrorClass, "error", event.ErrorMessage)
+	}
+	switch event.Status {
+	case "success":
+		logging.InfoEvent("llm.request.completed", fields...)
+	case "budget_exceeded":
+		logging.WarnEvent("llm.provider_budget_rejected", fields...)
+	default:
+		logging.WarnEvent("llm.request.failed", fields...)
+	}
+}
+
+func (p *OpenAIProvider) markLastUsageFailure(ctx context.Context, status, errorClass string, err error) {
+	patch := UsageEventPatch{
+		Status:       status,
+		ErrorClass:   errorClass,
+		ErrorMessage: logging.SanitizeError(err),
+	}
+	UpdateLastUsage(ctx, patch)
+	logging.WarnEvent("llm.response.invalid",
+		"status", status,
+		"error_class", errorClass,
+		"provider", "openai",
+		"model", p.model,
+		"phase", RequestMetadataFromContext(ctx).Phase,
+		"error", err,
+	)
+}
+
+func (p *OpenAIProvider) backfillOpenRouterGenerationUsage(ctx context.Context, event *UsageEvent) {
+	if event == nil || event.GenerationID == "" || !isOpenRouterBaseURL(p.baseURL) || eventHasUsage(*event) {
+		return
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openAICompatibleEndpointURL(p.baseURL, "generation")+"?id="+url.QueryEscape(event.GenerationID), nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	timeout := p.timeout
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		logging.WarnEvent("llm.usage.backfill_failed",
+			"provider", "openrouter",
+			"generation_id", event.GenerationID,
+			"error", err,
+		)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logging.WarnEvent("llm.usage.backfill_failed",
+			"provider", "openrouter",
+			"generation_id", event.GenerationID,
+			"error", err,
+		)
+		return
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		logging.WarnEvent("llm.usage.backfill_failed",
+			"provider", "openrouter",
+			"generation_id", event.GenerationID,
+			"http_status", resp.StatusCode,
+			"error", sanitizeProviderError(body),
+		)
+		return
+	}
+	event.populateFromOpenAIResponse(body)
+}
+
+func (e *UsageEvent) populateFromOpenAIResponse(body []byte) {
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return
+	}
+	e.GenerationID = firstString(payload["id"], e.GenerationID)
+	e.ResolvedModel = firstString(payload["model"], e.ResolvedModel)
+	e.ResolvedProvider = firstString(payload["provider"], payload["provider_name"], e.ResolvedProvider)
+	if usage, ok := mapValue(payload["usage"]); ok {
+		e.PromptTokens = firstInt(usage["prompt_tokens"], usage["input_tokens"], usage["prompt"], usage["tokens_prompt"])
+		e.CompletionTokens = firstInt(usage["completion_tokens"], usage["output_tokens"], usage["completion"], usage["tokens_completion"])
+		e.TotalTokens = firstInt(usage["total_tokens"], usage["total"])
+		e.ReasoningTokens = firstInt(usage["reasoning_tokens"])
+		e.CachedTokens = firstInt(usage["cached_tokens"])
+		e.CostCredits = firstFloat(usage["cost"], usage["total_cost"], usage["credits"], usage["usage"])
+		if details, ok := mapValue(usage["completion_tokens_details"]); ok && e.ReasoningTokens == 0 {
+			e.ReasoningTokens = firstInt(details["reasoning_tokens"])
+		}
+		if details, ok := mapValue(usage["prompt_tokens_details"]); ok && e.CachedTokens == 0 {
+			e.CachedTokens = firstInt(details["cached_tokens"])
+		}
+	}
+	if e.TotalTokens == 0 {
+		e.TotalTokens = e.PromptTokens + e.CompletionTokens
+	}
+	if e.CostCredits == 0 {
+		e.CostCredits = firstFloat(payload["cost"], payload["total_cost"], payload["usage_cost"])
+	}
+	if data, ok := mapValue(payload["data"]); ok {
+		e.GenerationID = firstString(data["id"], e.GenerationID)
+		e.ResolvedModel = firstString(data["model"], e.ResolvedModel)
+		e.ResolvedProvider = firstString(data["provider"], data["provider_name"], e.ResolvedProvider)
+		if e.PromptTokens == 0 {
+			e.PromptTokens = firstInt(data["prompt_tokens"], data["input_tokens"], data["tokens_prompt"])
+		}
+		if e.CompletionTokens == 0 {
+			e.CompletionTokens = firstInt(data["completion_tokens"], data["output_tokens"], data["tokens_completion"])
+		}
+		if e.TotalTokens == 0 {
+			e.TotalTokens = firstInt(data["total_tokens"], data["total"])
+		}
+		if e.ReasoningTokens == 0 {
+			e.ReasoningTokens = firstInt(data["reasoning_tokens"], data["tokens_reasoning"])
+		}
+		if e.CachedTokens == 0 {
+			e.CachedTokens = firstInt(data["cached_tokens"], data["tokens_cached"])
+		}
+		if e.CostCredits == 0 {
+			e.CostCredits = firstFloat(data["cost"], data["total_cost"], data["usage"], data["credits"])
+		}
+	}
+	if e.TotalTokens == 0 {
+		e.TotalTokens = e.PromptTokens + e.CompletionTokens
+	}
+}
+
+func isOpenRouterBaseURL(baseURL string) bool {
+	return strings.Contains(strings.ToLower(baseURL), "openrouter.ai")
+}
+
+func openAICompatibleEndpointURL(baseURL, endpoint string) string {
+	base := strings.TrimRight(baseURL, "/")
+	endpoint = strings.TrimLeft(endpoint, "/")
+	if strings.HasSuffix(base, "/v1") {
+		return base + "/" + endpoint
+	}
+	return base + "/v1/" + endpoint
+}
+
+func eventHasUsage(event UsageEvent) bool {
+	return event.PromptTokens > 0 ||
+		event.CompletionTokens > 0 ||
+		event.ReasoningTokens > 0 ||
+		event.CachedTokens > 0 ||
+		event.TotalTokens > 0 ||
+		event.CostCredits > 0
+}
+
+func sanitizeProviderError(body []byte) string {
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+			Code    any    `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil && payload.Error.Message != "" {
+		return logging.SanitizeMessage(payload.Error.Message)
+	}
+	return logging.SanitizeMessage(string(body))
+}
+
+func classifyTransportError(ctx context.Context, err error) string {
+	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled) {
+		return "context_canceled"
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) || isTimeoutLike(err) {
+		return "timeout"
+	}
+	return "transport_error"
+}
+
+func mapValue(value interface{}) (map[string]interface{}, bool) {
+	m, ok := value.(map[string]interface{})
+	return m, ok
+}
+
+func firstString(values ...interface{}) string {
+	for _, value := range values {
+		if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func firstInt(values ...interface{}) int {
+	for _, value := range values {
+		switch v := value.(type) {
+		case int:
+			if v != 0 {
+				return v
+			}
+		case int64:
+			if v != 0 {
+				return int(v)
+			}
+		case float64:
+			if v != 0 {
+				return int(v)
+			}
+		case json.Number:
+			if i, err := v.Int64(); err == nil && i != 0 {
+				return int(i)
+			}
+		case string:
+			if i, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && i != 0 {
+				return i
+			}
+		}
+	}
+	return 0
+}
+
+func firstFloat(values ...interface{}) float64 {
+	for _, value := range values {
+		switch v := value.(type) {
+		case float64:
+			if v != 0 {
+				return v
+			}
+		case float32:
+			if v != 0 {
+				return float64(v)
+			}
+		case int:
+			if v != 0 {
+				return float64(v)
+			}
+		case int64:
+			if v != 0 {
+				return float64(v)
+			}
+		case json.Number:
+			if f, err := v.Float64(); err == nil && f != 0 {
+				return f
+			}
+		case string:
+			if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil && f != 0 {
+				return f
+			}
+		}
+	}
+	return 0
 }
