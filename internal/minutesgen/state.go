@@ -81,6 +81,10 @@ func (DefaultReducer) Merge(previous, candidate *llm.DynamicMinutesResponse, tmp
 	return mergeDynamicMinutes(previous, candidate, tmpl, cfg)
 }
 
+func (DefaultReducer) Finalize(previous, candidate *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg Config) *llm.DynamicMinutesResponse {
+	return finalizeDynamicMinutes(previous, candidate, tmpl, cfg)
+}
+
 type DefaultQualityGuard struct{}
 
 func (DefaultQualityGuard) Evaluate(transcript string, batchCount int, state *llm.DynamicMinutesResponse) []string {
@@ -129,12 +133,77 @@ func mergeDynamicMinutes(previous, candidate *llm.DynamicMinutesResponse, tmpl c
 	merged := &llm.DynamicMinutesResponse{
 		Summary: llm.Summary{
 			Overview: overview,
-			Phases:   append(append([]llm.Phase{}, prev.Summary.Phases...), next.Summary.Phases...),
+			Phases:   mergedPhases(prev.Summary.Phases, next.Summary.Phases),
 		},
 		Sections:  mergeSections(prev.Sections, next.Sections, tmpl),
 		Citations: append(append([]llm.Citation{}, prev.Citations...), next.Citations...),
 	}
 	return normalizeDynamicMinutes(merged, tmpl, cfg)
+}
+
+func finalizeDynamicMinutes(previous, candidate *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg Config) *llm.DynamicMinutesResponse {
+	prev := normalizeDynamicMinutes(cloneDynamicMinutes(previous), tmpl, cfg)
+	next := normalizeDynamicMinutes(cloneDynamicMinutes(candidate), tmpl, cfg)
+	if !hasDynamicStateContent(prev) {
+		return next
+	}
+	if !hasDynamicStateContent(next) {
+		return prev
+	}
+	if !candidateCoversPreviousPhases(prev.Summary.Phases, next.Summary.Phases) {
+		return mergeDynamicMinutes(prev, next, tmpl, cfg)
+	}
+
+	final := &llm.DynamicMinutesResponse{
+		Summary:   finalizedSummary(prev.Summary, next.Summary),
+		Sections:  finalizedSections(prev.Sections, next.Sections, tmpl),
+		Citations: finalizedCitations(prev.Citations, next.Citations),
+	}
+	return normalizeDynamicMinutes(final, tmpl, cfg)
+}
+
+func finalizedSummary(previous, candidate llm.Summary) llm.Summary {
+	out := previous
+	if strings.TrimSpace(candidate.Overview) != "" {
+		out.Overview = candidate.Overview
+	}
+	if len(candidate.Phases) > 0 {
+		out.Phases = append([]llm.Phase{}, candidate.Phases...)
+	}
+	return out
+}
+
+func finalizedSections(previous, candidate map[string]json.RawMessage, tmpl config.TemplateConfig) map[string]json.RawMessage {
+	out := make(map[string]json.RawMessage, len(previous)+len(candidate))
+	for key, raw := range previous {
+		out[key] = cloneRawMessage(raw)
+	}
+	for key, raw := range candidate {
+		if isEmptyJSONValue(raw) {
+			continue
+		}
+		out[key] = cloneRawMessage(raw)
+	}
+	for _, section := range tmpl.Sections {
+		if _, ok := out[section.Key]; !ok {
+			out[section.Key] = emptySectionValue(section.Type)
+		}
+	}
+	return out
+}
+
+func finalizedCitations(previous, candidate []llm.Citation) []llm.Citation {
+	if len(candidate) > 0 {
+		return append(append([]llm.Citation{}, previous...), candidate...)
+	}
+	return append([]llm.Citation{}, previous...)
+}
+
+func mergedPhases(previous, candidate []llm.Phase) []llm.Phase {
+	if candidateCoversPreviousPhases(previous, candidate) {
+		return append([]llm.Phase{}, candidate...)
+	}
+	return append(append([]llm.Phase{}, previous...), candidate...)
 }
 
 func mergedOverview(previous, candidate *llm.DynamicMinutesResponse) string {
@@ -145,17 +214,6 @@ func mergedOverview(previous, candidate *llm.DynamicMinutesResponse) string {
 	}
 	if next == "" {
 		return prev
-	}
-	prevLower := strings.ToLower(prev)
-	nextLower := strings.ToLower(next)
-	if strings.Contains(prevLower, nextLower) {
-		return prev
-	}
-	if strings.Contains(nextLower, prevLower) {
-		return next
-	}
-	if candidateCoversPreviousPhases(previous.Summary.Phases, candidate.Summary.Phases) {
-		return next
 	}
 	if len(candidate.Summary.Phases) > 0 {
 		return prev + " " + next
@@ -367,12 +425,12 @@ func normalizePhases(phases []llm.Phase, limit int) []llm.Phase {
 	indexByWindow := make(map[string]int, len(filtered))
 	seen := make(map[string]struct{}, len(filtered))
 	for _, phase := range filtered {
-		key := fmt.Sprintf("%s|%s|%d|%d", strings.ToLower(phase.Title), strings.ToLower(phase.Summary), phase.StartMs, phase.EndMs)
+		key := fmt.Sprintf("%s|%s|%d|%d", phase.Title, phase.Summary, phase.StartMs, phase.EndMs)
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		seen[key] = struct{}{}
-		windowKey := fmt.Sprintf("%s|%d|%d", strings.ToLower(phase.Title), phase.StartMs, phase.EndMs)
+		windowKey := fmt.Sprintf("%d|%d", phase.StartMs, phase.EndMs)
 		if idx, ok := indexByWindow[windowKey]; ok {
 			deduped[idx] = phase
 			continue
@@ -401,7 +459,7 @@ func normalizeCitations(citations []llm.Citation, limit int) []llm.Citation {
 		if citation.TimestampMs < 0 {
 			citation.TimestampMs = 0
 		}
-		key := fmt.Sprintf("%s|%s|%d", strings.ToLower(citation.Role), strings.ToLower(citation.Text), citation.TimestampMs)
+		key := fmt.Sprintf("%s|%s|%d", citation.Role, citation.Text, citation.TimestampMs)
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -420,6 +478,68 @@ func normalizeCitations(citations []llm.Citation, limit int) []llm.Citation {
 		filtered = selectDistributedCitations(filtered, limit)
 	}
 	return filtered
+}
+
+func normalizeStateCitationsAgainstTranscript(state *llm.DynamicMinutesResponse, transcriptionText string, tmpl config.TemplateConfig, cfg Config) *llm.DynamicMinutesResponse {
+	normalized := normalizeDynamicMinutes(cloneDynamicMinutes(state), tmpl, cfg)
+	citationTextByKey := transcriptCitationTextByKey(transcriptionText)
+	if len(citationTextByKey) == 0 {
+		return normalized
+	}
+	for i := range normalized.Citations {
+		key := transcriptCitationKey(normalized.Citations[i].TimestampMs, normalized.Citations[i].Role)
+		if text, ok := citationTextByKey[key]; ok {
+			normalized.Citations[i].Text = text
+		}
+	}
+	normalized.Citations = normalizeCitations(normalized.Citations, cfg.MaxCitations)
+	return normalized
+}
+
+func transcriptCitationTextByKey(transcriptionText string) map[string]string {
+	lines := strings.Split(strings.ReplaceAll(transcriptionText, "\r\n", "\n"), "\n")
+	out := make(map[string]string, len(lines))
+	for _, line := range lines {
+		timestampMs, role, text, ok := parseTranscriptCitationLine(line)
+		if !ok {
+			continue
+		}
+		out[transcriptCitationKey(timestampMs, role)] = text
+	}
+	return out
+}
+
+func transcriptCitationKey(timestampMs int, role string) string {
+	return fmt.Sprintf("%d|%s", timestampMs, strings.TrimSpace(role))
+}
+
+func parseTranscriptCitationLine(line string) (int, string, string, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "[") {
+		return 0, "", "", false
+	}
+	closeIdx := strings.Index(line, "]:")
+	if closeIdx < 0 {
+		return 0, "", "", false
+	}
+	header := line[1:closeIdx]
+	text := strings.TrimSpace(line[closeIdx+2:])
+	if text == "" {
+		return 0, "", "", false
+	}
+	msIdx := strings.Index(header, "ms")
+	if msIdx <= 0 {
+		return 0, "", "", false
+	}
+	timestampMs, err := strconv.Atoi(strings.TrimSpace(header[:msIdx]))
+	if err != nil {
+		return 0, "", "", false
+	}
+	role := strings.TrimSpace(header[msIdx+len("ms"):])
+	if role == "" {
+		return 0, "", "", false
+	}
+	return timestampMs, role, text, true
 }
 
 func selectDistributedPhases(phases []llm.Phase, limit int) []llm.Phase {

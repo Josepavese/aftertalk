@@ -116,6 +116,7 @@ func TestConfigStructs(t *testing.T) {
 			MinutesBatchMaxChars:            6000,
 			MinutesMaxSummaryPhases:         8,
 			MinutesMaxCitations:             12,
+			MinutesVerifyFinal:              true,
 		}
 		assert.Equal(t, 10, cfg.MaxConcurrentTranscriptions)
 		assert.Equal(t, 5, cfg.MaxConcurrentMinutesGenerations)
@@ -123,6 +124,7 @@ func TestConfigStructs(t *testing.T) {
 		assert.Equal(t, 5*time.Minute, cfg.MinutesGenerationTimeout)
 		assert.True(t, cfg.MinutesIncremental)
 		assert.Equal(t, 24, cfg.MinutesBatchMaxSegments)
+		assert.True(t, cfg.MinutesVerifyFinal)
 	})
 
 	t.Run("SessionConfig", func(t *testing.T) {
@@ -173,6 +175,7 @@ func TestConfig_Default(t *testing.T) {
 	assert.Equal(t, 10, cfg.Processing.MaxConcurrentTranscriptions)
 	assert.True(t, cfg.Processing.MinutesIncremental)
 	assert.Equal(t, 24, cfg.Processing.MinutesBatchMaxSegments)
+	assert.True(t, cfg.Processing.MinutesVerifyFinal)
 	assert.Equal(t, 2*time.Hour, cfg.Session.MaxDuration)
 	assert.Equal(t, 90, cfg.Retention.TranscriptionDays)
 	assert.False(t, cfg.Performance.EnableProfiling)

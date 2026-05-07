@@ -234,8 +234,25 @@ func TestSync(t *testing.T) {
 }
 
 func TestSyncWhenLoggerNil(t *testing.T) {
+	Logger = nil
 	assert.NotPanics(t, func() {
 		Sync()
+	})
+}
+
+func TestLoggingWhenLoggerNil(t *testing.T) {
+	Logger = nil
+
+	assert.NotPanics(t, func() {
+		Debug("debug message")
+		Info("info message")
+		Warn("warn message")
+		Error("error message")
+		Debugf("debug %s", "message")
+		Infof("info %s", "message")
+		Warnf("warn %s", "message")
+		Errorf("error %s", "message")
+		assert.NotNil(t, With("key", "value"))
 	})
 }
 

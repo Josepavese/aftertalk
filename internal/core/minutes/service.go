@@ -180,6 +180,9 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 	m.Sections = parsed.Sections
 	m.Citations = convertCitations(parsed.Citations)
 	m.QualityWarnings = result.QualityWarnings
+	if len(result.VerificationIssues) > 0 {
+		logging.Infof("Minutes verification notes for session %s: %s", sessionID, strings.Join(result.VerificationIssues, ", "))
+	}
 	if len(m.QualityWarnings) > 0 {
 		logging.Warnf("Minutes quality warnings for session %s: %s", sessionID, strings.Join(m.QualityWarnings, ", "))
 	}

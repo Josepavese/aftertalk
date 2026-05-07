@@ -266,6 +266,23 @@ For high-latency cloud/reasoning models, start with `request_timeout: 300s`,
 `generation_timeout: 15m` to `30m`, `retry.max_attempts: 4`,
 `retry.initial_backoff: 2s`, and `retry.max_backoff: 30s`.
 
+### LLM timeout budget cookbook
+
+The SSOT for model-specific runtime behavior is the selected LLM profile under
+`llm.profiles.<name>`. Use the global `processing.*` values only as defaults for
+profiles that do not declare their own budget.
+
+| Scenario | Profile fields | Notes |
+|---|---|---|
+| Local Ollama, small/medium model | omit profile timeout fields | Uses global `processing.minutes_generation_timeout`; keep local defaults unless the model is very slow. |
+| OpenRouter MiniMax M2.7 | `request_timeout: 300s`, `generation_timeout: 20m`, retry `4 / 2s / 30s` | Recommended starting point for real sessions with reasoning latency. |
+| Reasoning-heavy cloud model | `request_timeout: 300s` to `600s`, `generation_timeout: 30m`, retry `4` or higher | Prefer larger end-to-end budget over falling back to another provider. |
+| Fast cloud model | `request_timeout: 120s`, `generation_timeout: 10m` | Good baseline for non-reasoning OpenAI-compatible models. |
+
+Operational rule: `request_timeout` is per LLM HTTP request; incremental minutes
+can make multiple requests for one session, so `generation_timeout` must cover all
+batches, retries, repairs, and finalization for that session.
+
 ### Session creation with profile selection
 ```json
 POST /v1/sessions
@@ -316,6 +333,7 @@ processing:
   minutes_batch_max_chars: 6000
   minutes_max_summary_phases: 8
   minutes_max_citations: 12
+  minutes_verify_final: true
 ```
 
 `chunk_size_ms` controls how many ms of accumulated audio triggers a transcription. VAD (Voice Activity Detection) may trigger earlier on extended silence.
@@ -333,6 +351,7 @@ one LLM request.
 | `processing.minutes_batch_max_chars` | `6000` | Max transcript characters per LLM batch |
 | `processing.minutes_max_summary_phases` | `8` | Max entries in `summary.phases` after normalization |
 | `processing.minutes_max_citations` | `12` | Max citations kept in the final state |
+| `processing.minutes_verify_final` | `true` | Runs a final LLM text-quality verification/edit pass without local language heuristics |
 
 The generated minutes include a top-level `summary` object:
 

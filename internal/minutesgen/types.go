@@ -23,11 +23,12 @@ type Orchestrator interface {
 }
 
 type Config struct {
-	Incremental      bool
-	BatchMaxSegments int
-	BatchMaxChars    int
-	MaxSummaryPhases int
-	MaxCitations     int
+	Incremental              bool
+	DisableFinalVerification bool
+	BatchMaxSegments         int
+	BatchMaxChars            int
+	MaxSummaryPhases         int
+	MaxCitations             int
 }
 
 func DefaultConfig() Config {
@@ -56,9 +57,10 @@ type Input struct {
 }
 
 type Result struct {
-	State           *llm.DynamicMinutesResponse
-	QualityWarnings []string
-	Metrics         Metrics
+	State              *llm.DynamicMinutesResponse
+	QualityWarnings    []string
+	VerificationIssues []string
+	Metrics            Metrics
 }
 
 type Metrics struct {
@@ -69,6 +71,8 @@ type Metrics struct {
 type PromptBuilder interface {
 	Incremental(existing *llm.DynamicMinutesResponse, transcriptChunk string, tmpl config.TemplateConfig, detectedLanguage string, finalPass bool) string
 	Finalize(existing *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, detectedLanguage string) string
+	Verify(candidate *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, detectedLanguage string) string
+	VerifyRepair(rawResponse string, tmpl config.TemplateConfig, detectedLanguage string) string
 	Repair(rawResponse string, tmpl config.TemplateConfig, detectedLanguage string) string
 }
 
@@ -94,6 +98,27 @@ type RunResult struct {
 type Reducer interface {
 	Normalize(state *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg Config) *llm.DynamicMinutesResponse
 	Merge(previous, candidate *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg Config) *llm.DynamicMinutesResponse
+	Finalize(previous, candidate *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg Config) *llm.DynamicMinutesResponse
+}
+
+type Verifier interface {
+	Verify(ctx context.Context, req VerificationRequest) (*VerificationResult, error)
+}
+
+type VerificationRequest struct {
+	Provider         Provider
+	Template         config.TemplateConfig
+	Retry            RetryConfig
+	Prompt           string
+	RepairPrompt     func(rawResponse string) string
+	DetectedLanguage string
+	Config           Config
+}
+
+type VerificationResult struct {
+	State  *llm.DynamicMinutesResponse
+	Issues []string
+	Calls  int
 }
 
 type QualityGuard interface {
