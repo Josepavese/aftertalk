@@ -2,6 +2,7 @@ package minutes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/minutesgen"
 	"github.com/Josepavese/aftertalk/pkg/webhook"
 )
 
@@ -23,6 +25,24 @@ func init() { //nolint:gochecknoinits // test logger setup
 type scriptedLLMProvider struct {
 	prompts   []string
 	responses []string
+}
+
+type fakeOrchestrator struct {
+	input  minutesgen.Input
+	called bool
+}
+
+func (o *fakeOrchestrator) Generate(_ context.Context, input minutesgen.Input) (*minutesgen.Result, error) {
+	o.called = true
+	o.input = input
+	return &minutesgen.Result{
+		State: &llm.DynamicMinutesResponse{
+			Summary:  llm.Summary{Overview: "orchestrated", Phases: []llm.Phase{}},
+			Sections: map[string]json.RawMessage{"themes": json.RawMessage(`["orchestration"]`)},
+		},
+		QualityWarnings: []string{"test_quality_warning"},
+		Metrics:         minutesgen.Metrics{BatchCount: 1, LLMCalls: 1},
+	}, nil
 }
 
 type runtimeTunedLLMProvider struct {
@@ -72,25 +92,6 @@ func (p *scriptedLLMProvider) Name() string {
 
 func (p *scriptedLLMProvider) IsAvailable() bool {
 	return true
-}
-
-func TestSplitTranscriptBatches(t *testing.T) {
-	transcript := strings.Join([]string{
-		"[0ms therapist]: Buongiorno",
-		"[1000ms patient]: Buongiorno",
-		"[2000ms therapist]: Come sta andando?",
-		"[3000ms patient]: Meglio di ieri",
-	}, "\n")
-
-	batches := splitTranscriptBatches(transcript, GenerationConfig{
-		Incremental:      true,
-		BatchMaxSegments: 2,
-		BatchMaxChars:    120,
-	})
-
-	require.Len(t, batches, 2)
-	assert.Contains(t, batches[0], "[0ms therapist]")
-	assert.Contains(t, batches[1], "[3000ms patient]")
 }
 
 func TestGenerateMinutes_IncrementalFlow(t *testing.T) {
@@ -222,6 +223,24 @@ func TestGenerateMinutes_EmptyTranscript(t *testing.T) {
 	assert.Equal(t, MinutesStatusReady, mins.Status)
 	assert.Empty(t, mins.Summary.Overview)
 	assert.Empty(t, mins.Citations)
+}
+
+func TestGenerateMinutes_DelegatesToGenerationOrchestrator(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	orchestrator := &fakeOrchestrator{}
+	service := NewService(repo).WithGenerationOrchestrator(orchestrator)
+	provider := &scriptedLLMProvider{}
+
+	mins, err := service.GenerateMinutes(context.Background(), "session-orchestrator", "[0ms therapist]: Ciao", config.DefaultTemplates()[0], webhook.SessionContext{}, "it", provider)
+	require.NoError(t, err)
+
+	assert.True(t, orchestrator.called)
+	assert.Equal(t, "it", orchestrator.input.DetectedLanguage)
+	assert.Equal(t, provider, orchestrator.input.Provider)
+	assert.Equal(t, "orchestrated", mins.Summary.Overview)
+	assert.Equal(t, []string{"test_quality_warning"}, mins.QualityWarnings)
+	assert.Contains(t, string(mins.Sections["themes"]), "orchestration")
 }
 
 func TestGenerateMinutes_ReturnsExistingReadyMinutes(t *testing.T) {
