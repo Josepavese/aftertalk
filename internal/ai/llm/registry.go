@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -151,6 +152,9 @@ func NewLLMRegistry(cfg *config.LLMConfig) (*LLMRegistry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("llm profile %q: %w", name, err)
 		}
+		if runtime := runtimeConfigFromProfile(pcfg); !runtime.IsZero() {
+			p = &profileProvider{inner: p, runtime: runtime}
+		}
 		r.providers[name] = p
 		logging.Infof("LLM registry: profile=%s provider=%s", name, p.Name())
 	}
@@ -241,4 +245,43 @@ func convertReasoning(in config.ReasoningConfig) ReasoningConfig {
 		Effort:  in.Effort,
 		Exclude: in.Exclude,
 	}
+}
+
+type profileProvider struct {
+	inner   LLMProvider
+	runtime RuntimeConfig
+}
+
+func (p *profileProvider) Generate(ctx context.Context, prompt string) (string, error) {
+	return p.inner.Generate(ctx, prompt)
+}
+
+func (p *profileProvider) Name() string {
+	return p.inner.Name()
+}
+
+func (p *profileProvider) IsAvailable() bool {
+	return p.inner.IsAvailable()
+}
+
+func (p *profileProvider) RuntimeConfig() RuntimeConfig {
+	return p.runtime
+}
+
+func runtimeConfigFromProfile(p config.LLMProfileConfig) RuntimeConfig {
+	return RuntimeConfig{
+		GenerationTimeout: p.GenerationTimeout,
+		Retry: RetryConfig{
+			MaxAttempts:    p.Retry.MaxAttempts,
+			InitialBackoff: p.Retry.InitialBackoff,
+			MaxBackoff:     p.Retry.MaxBackoff,
+		},
+	}
+}
+
+func (c RuntimeConfig) IsZero() bool {
+	return c.GenerationTimeout == 0 &&
+		c.Retry.MaxAttempts == 0 &&
+		c.Retry.InitialBackoff == 0 &&
+		c.Retry.MaxBackoff == 0
 }

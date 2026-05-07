@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
@@ -468,5 +469,48 @@ func TestMinutesHandler_ReplayWebhookEvent(t *testing.T) {
 	handler.ReplayWebhookEvent(rec, req)
 
 	assert.Equal(t, http.StatusAccepted, rec.Code)
+	mockService.AssertExpectations(t)
+}
+
+func TestPullMinutes_PurgeUsesBoundedBackgroundContext(t *testing.T) {
+	mockService := new(MockMinutesService)
+	handler := NewMinutesHandlerWithConfig(mockService, true)
+	mins := minutes.NewMinutes("minutes-1", "session-1", "therapy")
+	mins.MarkReady()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/minutes/pull/token-1", nil)
+	reqCtx, cancelReq := context.WithCancel(req.Context())
+	req = addChiContext(req.WithContext(reqCtx), "token", "token-1")
+	rec := httptest.NewRecorder()
+	type purgeCtxState struct {
+		err         error
+		hasDeadline bool
+	}
+	purgeCtxCh := make(chan purgeCtxState, 1)
+
+	mockService.On("ConsumeRetrievalToken", mock.Anything, "token-1").
+		Return(&minutes.RetrievalToken{ID: "token-1", MinutesID: "minutes-1"}, nil)
+	mockService.On("GetMinutesByID", mock.Anything, "minutes-1").
+		Run(func(_ mock.Arguments) {
+			cancelReq()
+		}).
+		Return(mins, nil)
+	mockService.On("PurgeMinutes", mock.Anything, "minutes-1").
+		Run(func(args mock.Arguments) {
+			purgeCtx := args.Get(0).(context.Context) //nolint:forcetypeassert
+			_, hasDeadline := purgeCtx.Deadline()
+			purgeCtxCh <- purgeCtxState{err: purgeCtx.Err(), hasDeadline: hasDeadline}
+		})
+
+	handler.PullMinutes(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	select {
+	case purgeCtx := <-purgeCtxCh:
+		assert.NoError(t, purgeCtx.err)
+		assert.True(t, purgeCtx.hasDeadline)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for purge")
+	}
 	mockService.AssertExpectations(t)
 }

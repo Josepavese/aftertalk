@@ -159,16 +159,18 @@ type WhisperLocalSTTConfig struct {
 // LLMProfileConfig selects a provider and optionally overrides the model for a
 // named tier. Credentials are inherited from the parent LLMConfig section.
 type LLMProfileConfig struct {
-	Provider       string          `koanf:"provider"` // openai | anthropic | azure | ollama | stub
-	Model          string          `koanf:"model"`    // optional model override
-	APIKey         string          `koanf:"api_key"`
-	BaseURL        string          `koanf:"base_url"`
-	Endpoint       string          `koanf:"endpoint"`
-	Deployment     string          `koanf:"deployment"`
-	RequestTimeout time.Duration   `koanf:"request_timeout"`
-	MaxTokens      int             `koanf:"max_tokens"`
-	Reasoning      ReasoningConfig `koanf:"reasoning"`
-	Think          *bool           `koanf:"think"`
+	Provider          string            `koanf:"provider"` // openai | anthropic | azure | ollama | stub
+	Model             string            `koanf:"model"`    // optional model override
+	APIKey            string            `koanf:"api_key"`
+	BaseURL           string            `koanf:"base_url"`
+	Endpoint          string            `koanf:"endpoint"`
+	Deployment        string            `koanf:"deployment"`
+	RequestTimeout    time.Duration     `koanf:"request_timeout"`
+	MaxTokens         int               `koanf:"max_tokens"`
+	GenerationTimeout time.Duration     `koanf:"generation_timeout"`
+	Retry             RetryPolicyConfig `koanf:"retry"`
+	Reasoning         ReasoningConfig   `koanf:"reasoning"`
+	Think             *bool             `koanf:"think"`
 }
 
 type LLMConfig struct {
@@ -216,6 +218,12 @@ type ReasoningConfig struct {
 	Enabled *bool  `koanf:"enabled"`
 	Effort  string `koanf:"effort"`
 	Exclude bool   `koanf:"exclude"`
+}
+
+type RetryPolicyConfig struct {
+	MaxAttempts    int           `koanf:"max_attempts"`
+	InitialBackoff time.Duration `koanf:"initial_backoff"`
+	MaxBackoff     time.Duration `koanf:"max_backoff"`
 }
 
 // WebhookConfig controls how generated minutes are delivered to the caller's system.

@@ -8,16 +8,24 @@ import "time"
 
 // LLMProfileEntry is a named provider profile (provider + optional model override).
 type LLMProfileEntry struct {
-	Provider       string         `json:"provider"`
-	Model          string         `json:"model,omitempty"`
-	APIKey         string         `json:"api_key,omitempty"`
-	BaseURL        string         `json:"base_url,omitempty"`
-	Endpoint       string         `json:"endpoint,omitempty"`
-	Deployment     string         `json:"deployment,omitempty"`
-	RequestTimeout string         `json:"request_timeout,omitempty"`
-	MaxTokens      int            `json:"max_tokens,omitempty"`
-	Reasoning      ReasoningEntry `json:"reasoning,omitempty"`
-	Think          *bool          `json:"think,omitempty"`
+	Provider          string         `json:"provider"`
+	Model             string         `json:"model,omitempty"`
+	APIKey            string         `json:"api_key,omitempty"`
+	BaseURL           string         `json:"base_url,omitempty"`
+	Endpoint          string         `json:"endpoint,omitempty"`
+	Deployment        string         `json:"deployment,omitempty"`
+	RequestTimeout    string         `json:"request_timeout,omitempty"`
+	GenerationTimeout string         `json:"generation_timeout,omitempty"`
+	MaxTokens         int            `json:"max_tokens,omitempty"`
+	Retry             RetryEntry     `json:"retry,omitempty"`
+	Reasoning         ReasoningEntry `json:"reasoning,omitempty"`
+	Think             *bool          `json:"think,omitempty"`
+}
+
+type RetryEntry struct {
+	MaxAttempts    int    `json:"max_attempts,omitempty"`
+	InitialBackoff string `json:"initial_backoff,omitempty"`
+	MaxBackoff     string `json:"max_backoff,omitempty"`
 }
 
 type ReasoningEntry struct {

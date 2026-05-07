@@ -74,3 +74,64 @@ func TestLLMRegistry_ProfileOverridesProviderConfig(t *testing.T) {
 		t.Fatalf("Generate failed: %v", err)
 	}
 }
+
+func TestLLMRegistry_ProfileRuntimeTuning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(25 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]interface{}{"content": `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	registry, err := llm.NewLLMRegistry(&config.LLMConfig{
+		Provider:       "stub",
+		DefaultProfile: "local",
+		OpenAI: config.OpenAIConfig{
+			APIKey:         "sk-global",
+			Model:          "gpt-4o",
+			BaseURL:        server.URL,
+			RequestTimeout: time.Millisecond,
+		},
+		Profiles: map[string]config.LLMProfileConfig{
+			"local": {Provider: "stub"},
+			"cloud": {
+				Provider:          "openai",
+				Model:             "openrouter/minimax/minimax-m2.7",
+				RequestTimeout:    200 * time.Millisecond,
+				GenerationTimeout: 20 * time.Minute,
+				Retry: config.RetryPolicyConfig{
+					MaxAttempts:    4,
+					InitialBackoff: 2 * time.Second,
+					MaxBackoff:     30 * time.Second,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewLLMRegistry failed: %v", err)
+	}
+
+	cloud := registry.Get("cloud")
+	runtimeProvider, ok := cloud.(llm.RuntimeConfigProvider)
+	if !ok {
+		t.Fatal("expected cloud provider to expose runtime config")
+	}
+	runtime := runtimeProvider.RuntimeConfig()
+	if runtime.GenerationTimeout != 20*time.Minute {
+		t.Fatalf("unexpected generation timeout: %v", runtime.GenerationTimeout)
+	}
+	if runtime.Retry.MaxAttempts != 4 || runtime.Retry.InitialBackoff != 2*time.Second || runtime.Retry.MaxBackoff != 30*time.Second {
+		t.Fatalf("unexpected retry runtime config: %#v", runtime.Retry)
+	}
+	if _, err := cloud.Generate(context.Background(), "test prompt"); err != nil {
+		t.Fatalf("profile request_timeout was not applied: %v", err)
+	}
+
+	if _, ok := registry.Get("local").(llm.RuntimeConfigProvider); ok {
+		t.Fatal("local profile should not expose runtime config when none is configured")
+	}
+}
