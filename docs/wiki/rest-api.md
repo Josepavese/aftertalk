@@ -217,9 +217,15 @@ Response (sections structure depends on the template):
   "citations": [
     {"timestamp_ms": 1200, "text": "I can't sleep", "role": "patient"}
   ],
+  "quality_warnings": [],
   "generated_at": "2026-03-13T12:00:00Z"
 }
 ```
+
+`quality_warnings` is omitted or empty for normal output. For long incremental
+sessions it may contain machine-readable warnings such as
+`summary.phases_missing_early_coverage` when the JSON is valid but chronological
+coverage looks degraded.
 
 ### GET /v1/minutes/{id}
 ```bash

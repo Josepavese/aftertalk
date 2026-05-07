@@ -352,6 +352,12 @@ The generated minutes include a top-level `summary` object:
 }
 ```
 
+For long incremental sessions, Aftertalk also runs deterministic coverage
+guards. If a valid JSON result appears to cover only one part of the timeline,
+the minutes remain retrievable but include `quality_warnings` such as
+`summary.phases_missing_early_coverage` or
+`citations_not_distributed_across_long_session` for downstream review.
+
 ---
 
 ## WebRTC / ICE

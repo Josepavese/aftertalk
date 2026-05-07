@@ -45,6 +45,7 @@ Content-Type: application/json
     "status": "ready",
     "sections": { ... },
     "citations": [ ... ],
+    "quality_warnings": [],
     "generated_at": "2026-03-13T12:00:00Z"
   },
   "timestamp": "2026-03-13T12:00:00Z"

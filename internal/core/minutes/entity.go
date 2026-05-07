@@ -20,17 +20,18 @@ const (
 // (e.g. "themes", "contents_reported") to the raw JSON value for that section.
 // Citations are always present as a typed slice.
 type Minutes struct {
-	GeneratedAt time.Time                  `json:"generated_at"`
-	Sections    map[string]json.RawMessage `json:"sections"`
-	DeliveredAt *time.Time                 `json:"delivered_at,omitempty"`
-	ID          string                     `json:"id"`
-	SessionID   string                     `json:"session_id"`
-	TemplateID  string                     `json:"template_id"`
-	Status      MinutesStatus              `json:"status"`
-	Provider    string                     `json:"provider"`
-	Summary     Summary                    `json:"summary"`
-	Citations   []Citation                 `json:"citations"`
-	Version     int                        `json:"version"`
+	GeneratedAt     time.Time                  `json:"generated_at"`
+	Sections        map[string]json.RawMessage `json:"sections"`
+	DeliveredAt     *time.Time                 `json:"delivered_at,omitempty"`
+	ID              string                     `json:"id"`
+	SessionID       string                     `json:"session_id"`
+	TemplateID      string                     `json:"template_id"`
+	Status          MinutesStatus              `json:"status"`
+	Provider        string                     `json:"provider"`
+	Summary         Summary                    `json:"summary"`
+	Citations       []Citation                 `json:"citations"`
+	QualityWarnings []string                   `json:"quality_warnings,omitempty"`
+	Version         int                        `json:"version"`
 }
 
 // Summary is the high-level synopsis of the whole conversation.
@@ -60,9 +61,10 @@ type Citation struct {
 
 // contentBlob is the JSON structure stored in the DB content column.
 type contentBlob struct {
-	Summary   Summary                    `json:"summary"`
-	Sections  map[string]json.RawMessage `json:"sections"`
-	Citations []Citation                 `json:"citations"`
+	Summary         Summary                    `json:"summary"`
+	Sections        map[string]json.RawMessage `json:"sections"`
+	Citations       []Citation                 `json:"citations"`
+	QualityWarnings []string                   `json:"quality_warnings,omitempty"`
 }
 
 func NewMinutes(id, sessionID, templateID string) *Minutes {
@@ -100,9 +102,10 @@ func (m *Minutes) MarkError() {
 // MarshalContent serializes Sections+Citations into a single JSON blob for DB storage.
 func (m *Minutes) MarshalContent() (string, error) {
 	blob := contentBlob{
-		Summary:   m.Summary,
-		Sections:  m.Sections,
-		Citations: m.Citations,
+		Summary:         m.Summary,
+		Sections:        m.Sections,
+		Citations:       m.Citations,
+		QualityWarnings: m.QualityWarnings,
 	}
 	b, err := json.Marshal(blob)
 	if err != nil {
@@ -126,9 +129,13 @@ func (m *Minutes) UnmarshalContent(raw string) error {
 	if blob.Citations == nil {
 		blob.Citations = []Citation{}
 	}
+	if blob.QualityWarnings == nil {
+		blob.QualityWarnings = []string{}
+	}
 	m.Summary = blob.Summary
 	m.Sections = blob.Sections
 	m.Citations = blob.Citations
+	m.QualityWarnings = blob.QualityWarnings
 	return nil
 }
 

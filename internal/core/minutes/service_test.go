@@ -142,8 +142,74 @@ func TestGenerateMinutes_IncrementalFlow(t *testing.T) {
 	assert.Len(t, mins.Summary.Phases, 2)
 	assert.Equal(t, MinutesStatusReady, mins.Status)
 	assert.Equal(t, "scripted", mins.Provider)
-	assert.Len(t, mins.Citations, 1)
+	assert.Len(t, mins.Citations, 2)
 	assert.Contains(t, string(mins.Sections["themes"]), "stato emotivo")
+}
+
+func TestGenerateMinutes_IncrementalMergePreservesEarlierContentWhenFinalizationCollapses(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	service := NewService(repo).WithGenerationConfig(GenerationConfig{
+		Incremental:      true,
+		BatchMaxSegments: 2,
+		BatchMaxChars:    400,
+		MaxSummaryPhases: 8,
+		MaxCitations:     6,
+	})
+
+	provider := &scriptedLLMProvider{
+		responses: []string{
+			`{
+				"summary":{"overview":"Apertura con ansia e contesto personale.","phases":[{"title":"Apertura","summary":"Emergono ansia e contesto personale iniziale.","start_ms":0,"end_ms":120000}]},
+				"sections":{"themes":["ansia"],"contents_reported":[{"text":"Il paziente introduce ansia e situazione personale.","timestamp":0}],"professional_interventions":[],"progress_issues":{"progress":[],"issues":["ansia"]},"next_steps":[]},
+				"citations":[{"timestamp_ms":0,"text":"Mi sento in ansia","role":"patient"}]
+			}`,
+			`{
+				"summary":{"overview":"Parte centrale su lavoro e incertezza.","phases":[{"title":"Approfondimento","summary":"Si approfondiscono lavoro e incertezza professionale.","start_ms":300000,"end_ms":420000}]},
+				"sections":{"themes":["lavoro"],"contents_reported":[{"text":"Il paziente descrive incertezza professionale.","timestamp":300000}],"professional_interventions":[{"text":"Il terapeuta riformula la complessità.","timestamp":360000}],"progress_issues":{"progress":[],"issues":["incertezza professionale"]},"next_steps":[]},
+				"citations":[{"timestamp_ms":300000,"text":"Non so come muovermi col lavoro","role":"patient"}]
+			}`,
+			`{
+				"summary":{"overview":"Chiusura con sintesi e prossimi passi espliciti.","phases":[{"title":"Chiusura","summary":"La conversazione si chiude con riepilogo e saluti.","start_ms":600000,"end_ms":720000}]},
+				"sections":{"themes":["chiusura"],"contents_reported":[],"professional_interventions":[{"text":"Il terapeuta riepiloga il percorso.","timestamp":600000}],"progress_issues":{"progress":["maggiore chiarezza"],"issues":[]},"next_steps":["Riflettere sui punti emersi"]},
+				"citations":[{"timestamp_ms":700000,"text":"Ci aggiorniamo al prossimo incontro","role":"therapist"}]
+			}`,
+			`{
+				"summary":{"overview":"Solo saluti finali.","phases":[{"title":"Saluti","summary":"La sessione termina con saluti.","start_ms":700000,"end_ms":720000}]},
+				"sections":{"themes":["saluti"],"contents_reported":[],"professional_interventions":[],"progress_issues":{"progress":[],"issues":[]},"next_steps":[]},
+				"citations":[{"timestamp_ms":700000,"text":"Ci aggiorniamo al prossimo incontro","role":"therapist"}]
+			}`,
+		},
+	}
+
+	transcript := strings.Join([]string{
+		"[0ms patient]: Mi sento in ansia",
+		"[120000ms therapist]: Partiamo da questo",
+		"[300000ms patient]: Non so come muovermi col lavoro",
+		"[420000ms therapist]: Proviamo a ordinare la complessità",
+		"[600000ms therapist]: Riepiloghiamo quanto emerso",
+		"[720000ms patient]: Va bene, grazie",
+	}, "\n")
+
+	mins, err := service.GenerateMinutes(context.Background(), "session-merge-coverage", transcript, config.DefaultTemplates()[0], webhook.SessionContext{}, "it", provider)
+	require.NoError(t, err)
+
+	require.Len(t, provider.prompts, 4)
+	assert.Contains(t, mins.Summary.Overview, "ansia")
+	assert.Contains(t, mins.Summary.Overview, "lavoro")
+	assert.Contains(t, mins.Summary.Overview, "Chiusura")
+	require.GreaterOrEqual(t, len(mins.Summary.Phases), 3)
+	phaseTitles := make([]string, 0, len(mins.Summary.Phases))
+	for _, phase := range mins.Summary.Phases {
+		phaseTitles = append(phaseTitles, phase.Title)
+	}
+	assert.Contains(t, phaseTitles, "Apertura")
+	assert.Contains(t, phaseTitles, "Approfondimento")
+	assert.Contains(t, phaseTitles, "Chiusura")
+	assert.Contains(t, string(mins.Sections["themes"]), "ansia")
+	assert.Contains(t, string(mins.Sections["themes"]), "lavoro")
+	assert.Contains(t, string(mins.Sections["themes"]), "chiusura")
+	assert.Empty(t, mins.QualityWarnings)
 }
 
 func TestGenerateMinutes_EmptyTranscript(t *testing.T) {
