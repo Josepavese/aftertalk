@@ -1,4 +1,4 @@
-package minutes
+package minutesgen
 
 import (
 	"encoding/json"
@@ -9,6 +9,25 @@ import (
 
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
 )
+
+func TestSplitTranscriptBatches(t *testing.T) {
+	transcript := strings.Join([]string{
+		"[0ms therapist]: Buongiorno",
+		"[1000ms patient]: Buongiorno",
+		"[2000ms therapist]: Come sta andando?",
+		"[3000ms patient]: Meglio di ieri",
+	}, "\n")
+
+	batches := SplitTranscriptBatches(transcript, Config{
+		Incremental:      true,
+		BatchMaxSegments: 2,
+		BatchMaxChars:    120,
+	})
+
+	assert.Len(t, batches, 2)
+	assert.Contains(t, batches[0], "[0ms therapist]")
+	assert.Contains(t, batches[1], "[3000ms patient]")
+}
 
 func TestNormalizePhases_DistributesWhenOverLimit(t *testing.T) {
 	phases := make([]llm.Phase, 10)

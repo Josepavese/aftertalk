@@ -13,6 +13,7 @@ import (
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
+	"github.com/Josepavese/aftertalk/internal/minutesgen"
 	"github.com/Josepavese/aftertalk/pkg/webhook"
 )
 
@@ -37,22 +38,10 @@ type WebhookConfig struct {
 	DeleteOnPull bool
 }
 
-type GenerationConfig struct {
-	Incremental      bool
-	BatchMaxSegments int
-	BatchMaxChars    int
-	MaxSummaryPhases int
-	MaxCitations     int
-}
+type GenerationConfig = minutesgen.Config
 
 func DefaultGenerationConfig() GenerationConfig {
-	return GenerationConfig{
-		Incremental:      true,
-		BatchMaxSegments: 24,
-		BatchMaxChars:    6000,
-		MaxSummaryPhases: 8,
-		MaxCitations:     12,
-	}
+	return minutesgen.DefaultConfig()
 }
 
 type Service struct {
@@ -61,6 +50,7 @@ type Service struct {
 	webhookClient  *webhook.Client
 	webhookConfig  *WebhookConfig
 	webhookRetrier *webhook.Retrier
+	orchestrator   minutesgen.Orchestrator
 	generation     GenerationConfig
 }
 
@@ -72,15 +62,17 @@ func NewService(repo *MinutesRepository) *Service {
 			InitialBackoff: 1 * time.Second,
 			MaxBackoff:     10 * time.Second,
 		},
-		generation: DefaultGenerationConfig(),
+		orchestrator: minutesgen.NewDefaultOrchestrator(),
+		generation:   DefaultGenerationConfig(),
 	}
 }
 
 func NewServiceWithDeps(repo *MinutesRepository, retryConfig *RetryConfig, webhookConfig *WebhookConfig) *Service {
 	s := &Service{
-		repo:        repo,
-		retryConfig: retryConfig,
-		generation:  DefaultGenerationConfig(),
+		repo:         repo,
+		retryConfig:  retryConfig,
+		orchestrator: minutesgen.NewDefaultOrchestrator(),
+		generation:   DefaultGenerationConfig(),
 	}
 	if webhookConfig != nil && webhookConfig.URL != "" {
 		timeout := webhookConfig.Timeout
@@ -113,6 +105,16 @@ func (s *Service) WithGenerationConfig(cfg GenerationConfig) *Service {
 		cfg.MaxCitations = defaults.MaxCitations
 	}
 	s.generation = cfg
+	return s
+}
+
+// WithGenerationOrchestrator swaps the generation engine without changing
+// persistence, session, or webhook behavior. Intended for tests and future
+// adapters to external orchestration backends.
+func (s *Service) WithGenerationOrchestrator(orchestrator minutesgen.Orchestrator) *Service {
+	if orchestrator != nil {
+		s.orchestrator = orchestrator
+	}
 	return s
 }
 
@@ -160,16 +162,24 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 		defer cancel()
 	}
 
-	parsed, err := s.generateStructuredMinutes(generationCtx, transcriptionText, tmpl, detectedLanguage, provider)
+	result, err := s.generationOrchestrator().Generate(generationCtx, minutesgen.Input{
+		Provider:         provider,
+		Template:         tmpl,
+		Config:           s.generation,
+		Retry:            convertRetryConfig(s.retryConfigForProvider(provider)),
+		Transcript:       transcriptionText,
+		DetectedLanguage: detectedLanguage,
+	})
 	if err != nil {
 		s.markMinutesError(sessionID, m, sessCtx, err)
 		return nil, fmt.Errorf("failed to generate minutes: %w", err)
 	}
+	parsed := result.State
 
 	m.Summary = convertSummary(parsed.Summary)
 	m.Sections = parsed.Sections
 	m.Citations = convertCitations(parsed.Citations)
-	m.QualityWarnings = qualityWarningsForState(transcriptionText, len(splitTranscriptBatches(transcriptionText, s.generation)), parsed)
+	m.QualityWarnings = result.QualityWarnings
 	if len(m.QualityWarnings) > 0 {
 		logging.Warnf("Minutes quality warnings for session %s: %s", sessionID, strings.Join(m.QualityWarnings, ", "))
 	}
@@ -183,6 +193,13 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 	s.deliverWebhook(sessionID, m, sessCtx)
 
 	return m, nil
+}
+
+func (s *Service) generationOrchestrator() minutesgen.Orchestrator {
+	if s.orchestrator != nil {
+		return s.orchestrator
+	}
+	return minutesgen.NewDefaultOrchestrator()
 }
 
 func (s *Service) MarkSessionError(ctx context.Context, sessionID, templateID, providerName string, sessCtx webhook.SessionContext, cause error) error {
@@ -255,85 +272,6 @@ func (s *Service) ensureWebhookDelivery(ctx context.Context, sessionID string, m
 	s.deliverWebhook(sessionID, m, sessCtx)
 }
 
-func (s *Service) generateStructuredMinutes(ctx context.Context, transcriptionText string, tmpl config.TemplateConfig, detectedLanguage string, provider llm.LLMProvider) (*llm.DynamicMinutesResponse, error) {
-	batches := splitTranscriptBatches(transcriptionText, s.generation)
-	if len(batches) == 0 {
-		batches = []string{transcriptionText}
-	}
-
-	state := &llm.DynamicMinutesResponse{}
-	for i, batch := range batches {
-		logging.Infof("Generating minutes batch %d/%d", i+1, len(batches))
-		prompt := llm.GenerateIncrementalMinutesPrompt(state, batch, tmpl, detectedLanguage, len(batches) == 1)
-		updated, err := s.generateLLMState(ctx, provider, prompt, tmpl, detectedLanguage)
-		if err != nil {
-			return nil, fmt.Errorf("batch %d/%d: %w", i+1, len(batches), err)
-		}
-		state = mergeDynamicMinutes(state, updated, tmpl, s.generation)
-	}
-
-	if len(batches) > 1 {
-		logging.Infof("Finalizing minutes after %d incremental batches", len(batches))
-		prompt := llm.GenerateMinutesFinalizePrompt(state, tmpl, detectedLanguage)
-		finalized, err := s.generateLLMState(ctx, provider, prompt, tmpl, detectedLanguage)
-		if err != nil {
-			return nil, fmt.Errorf("finalize minutes: %w", err)
-		}
-		state = mergeDynamicMinutes(state, finalized, tmpl, s.generation)
-	}
-
-	return state, nil
-}
-
-func (s *Service) generateLLMState(ctx context.Context, provider llm.LLMProvider, prompt string, tmpl config.TemplateConfig, detectedLanguage string) (*llm.DynamicMinutesResponse, error) {
-	var err error
-	retryConfig := s.retryConfigForProvider(provider)
-	for attempt := 0; attempt <= retryConfig.MaxRetries; attempt++ {
-		if attempt > 0 {
-			backoff := retryConfig.InitialBackoff * time.Duration(1<<uint(attempt-1))
-			if backoff > retryConfig.MaxBackoff {
-				backoff = retryConfig.MaxBackoff
-			}
-			logging.Warnf("LLM request failed, retrying in %v (attempt %d/%d)", backoff, attempt, retryConfig.MaxRetries)
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(backoff):
-			}
-		}
-
-		response, genErr := provider.Generate(ctx, prompt)
-		if genErr != nil {
-			err = genErr
-			logging.Errorf("LLM request failed (attempt %d): %v", attempt+1, genErr)
-			continue
-		}
-
-		parsed, parseErr := llm.ParseMinutesDynamic(response)
-		if parseErr == nil {
-			return normalizeDynamicMinutes(parsed, tmpl, s.generation), nil
-		}
-
-		repairPrompt := llm.GenerateMinutesRepairPrompt(response, tmpl, detectedLanguage)
-		repairResponse, repairErr := provider.Generate(ctx, repairPrompt)
-		if repairErr == nil {
-			repaired, repairedErr := llm.ParseMinutesDynamic(repairResponse)
-			if repairedErr == nil {
-				return normalizeDynamicMinutes(repaired, tmpl, s.generation), nil
-			}
-			parseErr = repairedErr
-		} else {
-			logging.Errorf("LLM repair failed (attempt %d): %v", attempt+1, repairErr)
-		}
-
-		err = fmt.Errorf("failed to parse LLM response: %w", parseErr)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate minutes after %d retries: %w", retryConfig.MaxRetries+1, err)
-	}
-	return nil, fmt.Errorf("failed to generate minutes after %d retries", retryConfig.MaxRetries+1)
-}
-
 func (s *Service) retryConfigForProvider(provider llm.LLMProvider) RetryConfig {
 	cfg := s.effectiveDefaultRetryConfig()
 	runtimeProvider, ok := provider.(llm.RuntimeConfigProvider)
@@ -378,6 +316,14 @@ func normalizeRetryConfig(cfg RetryConfig) RetryConfig {
 		cfg.MaxBackoff = cfg.InitialBackoff
 	}
 	return cfg
+}
+
+func convertRetryConfig(cfg RetryConfig) minutesgen.RetryConfig {
+	return minutesgen.RetryConfig{
+		MaxRetries:     cfg.MaxRetries,
+		InitialBackoff: cfg.InitialBackoff,
+		MaxBackoff:     cfg.MaxBackoff,
+	}
 }
 
 func generationTimeoutForProvider(provider llm.LLMProvider) time.Duration {

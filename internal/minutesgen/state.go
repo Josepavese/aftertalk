@@ -1,4 +1,4 @@
-package minutes
+package minutesgen
 
 import (
 	"encoding/json"
@@ -15,7 +15,7 @@ type transcriptEntry struct {
 	Raw string
 }
 
-func splitTranscriptBatches(transcriptionText string, cfg GenerationConfig) []string {
+func SplitTranscriptBatches(transcriptionText string, cfg Config) []string {
 	lines := strings.Split(strings.ReplaceAll(transcriptionText, "\r\n", "\n"), "\n")
 	entries := make([]transcriptEntry, 0, len(lines))
 	for _, line := range lines {
@@ -34,11 +34,11 @@ func splitTranscriptBatches(transcriptionText string, cfg GenerationConfig) []st
 
 	maxSegments := cfg.BatchMaxSegments
 	if maxSegments <= 0 {
-		maxSegments = DefaultGenerationConfig().BatchMaxSegments
+		maxSegments = DefaultConfig().BatchMaxSegments
 	}
 	maxChars := cfg.BatchMaxChars
 	if maxChars <= 0 {
-		maxChars = DefaultGenerationConfig().BatchMaxChars
+		maxChars = DefaultConfig().BatchMaxChars
 	}
 
 	var batches []string
@@ -71,7 +71,23 @@ func joinTranscriptEntries(entries []transcriptEntry) string {
 	return strings.Join(lines, "\n")
 }
 
-func normalizeDynamicMinutes(state *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg GenerationConfig) *llm.DynamicMinutesResponse {
+type DefaultReducer struct{}
+
+func (DefaultReducer) Normalize(state *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg Config) *llm.DynamicMinutesResponse {
+	return normalizeDynamicMinutes(state, tmpl, cfg)
+}
+
+func (DefaultReducer) Merge(previous, candidate *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg Config) *llm.DynamicMinutesResponse {
+	return mergeDynamicMinutes(previous, candidate, tmpl, cfg)
+}
+
+type DefaultQualityGuard struct{}
+
+func (DefaultQualityGuard) Evaluate(transcript string, batchCount int, state *llm.DynamicMinutesResponse) []string {
+	return qualityWarningsForState(transcript, batchCount, state)
+}
+
+func normalizeDynamicMinutes(state *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg Config) *llm.DynamicMinutesResponse {
 	if state == nil {
 		state = &llm.DynamicMinutesResponse{}
 	}
@@ -99,7 +115,7 @@ func normalizeDynamicMinutes(state *llm.DynamicMinutesResponse, tmpl config.Temp
 	return state
 }
 
-func mergeDynamicMinutes(previous, candidate *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg GenerationConfig) *llm.DynamicMinutesResponse {
+func mergeDynamicMinutes(previous, candidate *llm.DynamicMinutesResponse, tmpl config.TemplateConfig, cfg Config) *llm.DynamicMinutesResponse {
 	prev := normalizeDynamicMinutes(cloneDynamicMinutes(previous), tmpl, cfg)
 	next := normalizeDynamicMinutes(cloneDynamicMinutes(candidate), tmpl, cfg)
 	if !hasDynamicStateContent(prev) {
@@ -322,7 +338,7 @@ func emptySectionValue(sectionType string) json.RawMessage {
 
 func normalizePhases(phases []llm.Phase, limit int) []llm.Phase {
 	if limit <= 0 {
-		limit = DefaultGenerationConfig().MaxSummaryPhases
+		limit = DefaultConfig().MaxSummaryPhases
 	}
 	filtered := make([]llm.Phase, 0, len(phases))
 	for _, phase := range phases {
@@ -372,7 +388,7 @@ func normalizePhases(phases []llm.Phase, limit int) []llm.Phase {
 
 func normalizeCitations(citations []llm.Citation, limit int) []llm.Citation {
 	if limit <= 0 {
-		limit = DefaultGenerationConfig().MaxCitations
+		limit = DefaultConfig().MaxCitations
 	}
 	filtered := make([]llm.Citation, 0, len(citations))
 	seen := make(map[string]struct{}, len(citations))
