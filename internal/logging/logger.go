@@ -90,7 +90,7 @@ func InitWithOptions(opts Options) error {
 }
 
 func buildLogger(opts Options) (*zap.Logger, error) {
-	level := zap.NewAtomicLevelAt(zap.InfoLevel)
+	var level zap.AtomicLevel
 	switch opts.Level {
 	case "debug":
 		level = zap.NewAtomicLevelAt(zap.DebugLevel)

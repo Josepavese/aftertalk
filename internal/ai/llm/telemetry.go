@@ -99,8 +99,10 @@ type CollectingUsageRecorder struct {
 	budget UsageBudget
 }
 
-type metadataContextKey struct{}
-type usageRecorderContextKey struct{}
+type (
+	metadataContextKey      struct{}
+	usageRecorderContextKey struct{}
+)
 
 func NewCollectingUsageRecorder(budget UsageBudget) *CollectingUsageRecorder {
 	return &CollectingUsageRecorder{budget: budget}
