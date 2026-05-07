@@ -169,6 +169,10 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 	m.Summary = convertSummary(parsed.Summary)
 	m.Sections = parsed.Sections
 	m.Citations = convertCitations(parsed.Citations)
+	m.QualityWarnings = qualityWarningsForState(transcriptionText, len(splitTranscriptBatches(transcriptionText, s.generation)), parsed)
+	if len(m.QualityWarnings) > 0 {
+		logging.Warnf("Minutes quality warnings for session %s: %s", sessionID, strings.Join(m.QualityWarnings, ", "))
+	}
 	m.MarkReady()
 
 	if err := s.repo.Update(ctx, m); err != nil {
@@ -265,7 +269,7 @@ func (s *Service) generateStructuredMinutes(ctx context.Context, transcriptionTe
 		if err != nil {
 			return nil, fmt.Errorf("batch %d/%d: %w", i+1, len(batches), err)
 		}
-		state = normalizeDynamicMinutes(updated, tmpl, s.generation)
+		state = mergeDynamicMinutes(state, updated, tmpl, s.generation)
 	}
 
 	if len(batches) > 1 {
@@ -275,7 +279,7 @@ func (s *Service) generateStructuredMinutes(ctx context.Context, transcriptionTe
 		if err != nil {
 			return nil, fmt.Errorf("finalize minutes: %w", err)
 		}
-		state = normalizeDynamicMinutes(finalized, tmpl, s.generation)
+		state = mergeDynamicMinutes(state, finalized, tmpl, s.generation)
 	}
 
 	return state, nil
