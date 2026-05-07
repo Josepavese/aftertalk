@@ -2,6 +2,7 @@ package llm
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
@@ -13,6 +14,13 @@ import (
 type LLMRegistry struct {
 	providers      map[string]LLMProvider
 	defaultProfile string
+}
+
+type ProfileStatus struct {
+	Name      string `json:"name"`
+	Provider  string `json:"provider"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 // NewLLMRegistry builds a registry from the top-level LLMConfig.
@@ -30,19 +38,32 @@ func NewLLMRegistry(cfg *config.LLMConfig) (*LLMRegistry, error) {
 			Model:          cfg.OpenAI.Model,
 			BaseURL:        cfg.OpenAI.BaseURL,
 			RequestTimeout: cfg.OpenAI.RequestTimeout,
+			MaxTokens:      cfg.OpenAI.MaxTokens,
+			Reasoning: ReasoningConfig{
+				Enabled: cfg.OpenAI.Reasoning.Enabled,
+				Effort:  cfg.OpenAI.Reasoning.Effort,
+				Exclude: cfg.OpenAI.Reasoning.Exclude,
+			},
 		},
 		Anthropic: AnthropicConfig{
 			APIKey:         cfg.Anthropic.APIKey,
 			Model:          cfg.Anthropic.Model,
 			RequestTimeout: cfg.Anthropic.RequestTimeout,
+			MaxTokens:      cfg.Anthropic.MaxTokens,
 		},
 		Azure: AzureLLMConfig{
 			APIKey:         cfg.Azure.APIKey,
 			Endpoint:       cfg.Azure.Endpoint,
 			Deployment:     cfg.Azure.Deployment,
 			RequestTimeout: cfg.Azure.RequestTimeout,
+			MaxTokens:      cfg.Azure.MaxTokens,
+			Reasoning: ReasoningConfig{
+				Enabled: cfg.Azure.Reasoning.Enabled,
+				Effort:  cfg.Azure.Reasoning.Effort,
+				Exclude: cfg.Azure.Reasoning.Exclude,
+			},
 		},
-		Ollama: OllamaConfig{BaseURL: cfg.Ollama.BaseURL, Model: cfg.Ollama.Model},
+		Ollama: OllamaConfig{BaseURL: cfg.Ollama.BaseURL, Model: cfg.Ollama.Model, Think: cfg.Ollama.Think},
 	}
 
 	if len(cfg.Profiles) == 0 {
@@ -72,6 +93,58 @@ func NewLLMRegistry(cfg *config.LLMConfig) (*LLMRegistry, error) {
 				profileBase.Anthropic.Model = pcfg.Model
 			case "ollama":
 				profileBase.Ollama.Model = pcfg.Model
+			}
+		}
+		if pcfg.RequestTimeout > 0 {
+			switch pcfg.Provider {
+			case "openai":
+				profileBase.OpenAI.RequestTimeout = pcfg.RequestTimeout
+			case "anthropic":
+				profileBase.Anthropic.RequestTimeout = pcfg.RequestTimeout
+			case "azure":
+				profileBase.Azure.RequestTimeout = pcfg.RequestTimeout
+			}
+		}
+		if pcfg.MaxTokens > 0 {
+			switch pcfg.Provider {
+			case "openai":
+				profileBase.OpenAI.MaxTokens = pcfg.MaxTokens
+			case "anthropic":
+				profileBase.Anthropic.MaxTokens = pcfg.MaxTokens
+			case "azure":
+				profileBase.Azure.MaxTokens = pcfg.MaxTokens
+			}
+		}
+		switch pcfg.Provider {
+		case "openai":
+			if pcfg.APIKey != "" {
+				profileBase.OpenAI.APIKey = pcfg.APIKey
+			}
+			if pcfg.BaseURL != "" {
+				profileBase.OpenAI.BaseURL = pcfg.BaseURL
+			}
+			profileBase.OpenAI.Reasoning = mergeReasoning(profileBase.OpenAI.Reasoning, convertReasoning(pcfg.Reasoning))
+		case "anthropic":
+			if pcfg.APIKey != "" {
+				profileBase.Anthropic.APIKey = pcfg.APIKey
+			}
+		case "azure":
+			if pcfg.APIKey != "" {
+				profileBase.Azure.APIKey = pcfg.APIKey
+			}
+			if pcfg.Endpoint != "" {
+				profileBase.Azure.Endpoint = pcfg.Endpoint
+			}
+			if pcfg.Deployment != "" {
+				profileBase.Azure.Deployment = pcfg.Deployment
+			}
+			profileBase.Azure.Reasoning = mergeReasoning(profileBase.Azure.Reasoning, convertReasoning(pcfg.Reasoning))
+		case "ollama":
+			if pcfg.BaseURL != "" {
+				profileBase.Ollama.BaseURL = pcfg.BaseURL
+			}
+			if pcfg.Think != nil {
+				profileBase.Ollama.Think = pcfg.Think
 			}
 		}
 		p, err := NewProvider(&profileBase)
@@ -120,6 +193,25 @@ func (r *LLMRegistry) ProfileNames() []string {
 	return names
 }
 
+func (r *LLMRegistry) Readiness() []ProfileStatus {
+	names := r.ProfileNames()
+	sort.Strings(names)
+	statuses := make([]ProfileStatus, 0, len(names))
+	for _, name := range names {
+		p := r.providers[name]
+		available := p != nil && p.IsAvailable()
+		st := ProfileStatus{Name: name, Available: available}
+		if p != nil {
+			st.Provider = p.Name()
+		}
+		if !available {
+			st.Reason = "provider configuration incomplete or endpoint unavailable"
+		}
+		statuses = append(statuses, st)
+	}
+	return statuses
+}
+
 // NewLLMRegistryFromProvider wraps a single LLMProvider in a registry under the
 // "default" profile. Intended for use in tests that need a *LLMRegistry but
 // already have a concrete provider.
@@ -127,5 +219,26 @@ func NewLLMRegistryFromProvider(p LLMProvider) *LLMRegistry {
 	return &LLMRegistry{
 		providers:      map[string]LLMProvider{"default": p},
 		defaultProfile: "default",
+	}
+}
+
+func mergeReasoning(base, override ReasoningConfig) ReasoningConfig {
+	if override.Enabled != nil {
+		base.Enabled = override.Enabled
+	}
+	if override.Effort != "" {
+		base.Effort = override.Effort
+	}
+	if override.Exclude {
+		base.Exclude = true
+	}
+	return base
+}
+
+func convertReasoning(in config.ReasoningConfig) ReasoningConfig {
+	return ReasoningConfig{
+		Enabled: in.Enabled,
+		Effort:  in.Effort,
+		Exclude: in.Exclude,
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"text/template"
 
 	instconfig "github.com/Josepavese/aftertalk/cmd/installer/config"
@@ -42,17 +43,17 @@ jwt:
 stt:
   provider: "{{ .STTProvider }}"
 {{ if .STTDefaultProfile }}  default_profile: "{{ .STTDefaultProfile }}"
-{{ end }}{{ if eq .STTProvider "whisper-local" }}  whisper_local:
+{{ end }}{{ if usesSTTProvider . "whisper-local" }}  whisper_local:
     url:      "{{ .WhisperURL }}"
     model:    "{{ .WhisperModel }}"
     language: "{{ .WhisperLanguage }}"
-{{ end }}{{ if eq .STTProvider "google" }}  google:
+{{ end }}{{ if usesSTTProvider . "google" }}  google:
     credentials_path: "{{ index .STTConfig "GOOGLE_APPLICATION_CREDENTIALS" }}"
-{{ end }}{{ if eq .STTProvider "aws" }}  aws:
+{{ end }}{{ if usesSTTProvider . "aws" }}  aws:
     access_key_id:     "{{ index .STTConfig "AWS_ACCESS_KEY_ID" }}"
     secret_access_key: "{{ index .STTConfig "AWS_SECRET_ACCESS_KEY" }}"
     region:            "{{ index .STTConfig "AWS_REGION" }}"
-{{ end }}{{ if eq .STTProvider "azure" }}  azure:
+{{ end }}{{ if usesSTTProvider . "azure" }}  azure:
     key:    "{{ index .STTConfig "AZURE_SPEECH_KEY" }}"
     region: "{{ index .STTConfig "AZURE_SPEECH_REGION" }}"
 {{ end }}{{ if .STTProfiles }}  profiles:
@@ -65,25 +66,52 @@ stt:
 llm:
   provider: "{{ .LLMProvider }}"
 {{ if .LLMDefaultProfile }}  default_profile: "{{ .LLMDefaultProfile }}"
-{{ end }}{{ if eq .LLMProvider "ollama" }}  ollama:
+{{ end }}{{ if usesLLMProvider . "ollama" }}  ollama:
     base_url: "{{ .OllamaURL }}"
     model:    "{{ .OllamaModel }}"
-{{ end }}{{ if eq .LLMProvider "openai" }}  openai:
-    api_key: "{{ index .LLMConfig "LLM_API_KEY" }}"
+{{ if index .LLMConfig "OLLAMA_THINK" }}    think: {{ index .LLMConfig "OLLAMA_THINK" }}
+{{ end }}{{ end }}{{ if usesLLMProvider . "openai" }}  openai:
+    api_key: "{{ cfgValue .LLMConfig "LLM_API_KEY" "OPENAI_API_KEY" }}"
 {{ if index .LLMConfig "LLM_MODEL" }}    model:   "{{ index .LLMConfig "LLM_MODEL" }}"
 {{ end }}{{ if index .LLMConfig "LLM_BASE_URL" }}    base_url: "{{ index .LLMConfig "LLM_BASE_URL" }}"
-{{ end }}{{ end }}{{ if eq .LLMProvider "anthropic" }}  anthropic:
-    api_key: "{{ index .LLMConfig "LLM_API_KEY" }}"
+{{ end }}{{ if index .LLMConfig "LLM_REQUEST_TIMEOUT" }}    request_timeout: "{{ index .LLMConfig "LLM_REQUEST_TIMEOUT" }}"
+{{ end }}{{ if index .LLMConfig "LLM_MAX_TOKENS" }}    max_tokens: {{ index .LLMConfig "LLM_MAX_TOKENS" }}
+{{ end }}{{ if hasReasoning .LLMConfig }}    reasoning:
+{{ if index .LLMConfig "LLM_REASONING_ENABLED" }}      enabled: {{ index .LLMConfig "LLM_REASONING_ENABLED" }}
+{{ end }}{{ if index .LLMConfig "LLM_REASONING_EFFORT" }}      effort: "{{ index .LLMConfig "LLM_REASONING_EFFORT" }}"
+{{ end }}{{ if index .LLMConfig "LLM_REASONING_EXCLUDE" }}      exclude: {{ index .LLMConfig "LLM_REASONING_EXCLUDE" }}
+{{ end }}{{ end }}{{ end }}{{ if usesLLMProvider . "anthropic" }}  anthropic:
+    api_key: "{{ cfgValue .LLMConfig "LLM_API_KEY" "ANTHROPIC_API_KEY" }}"
     model:   "{{ index .LLMConfig "LLM_MODEL" }}"
-{{ end }}{{ if eq .LLMProvider "azure" }}  azure:
-    api_key:  "{{ index .LLMConfig "LLM_API_KEY" }}"
+{{ if index .LLMConfig "LLM_REQUEST_TIMEOUT" }}    request_timeout: "{{ index .LLMConfig "LLM_REQUEST_TIMEOUT" }}"
+{{ end }}{{ if index .LLMConfig "LLM_MAX_TOKENS" }}    max_tokens: {{ index .LLMConfig "LLM_MAX_TOKENS" }}
+{{ end }}{{ end }}{{ if usesLLMProvider . "azure" }}  azure:
+    api_key:  "{{ cfgValue .LLMConfig "LLM_API_KEY" "AZURE_OPENAI_API_KEY" }}"
     endpoint: "{{ index .LLMConfig "AZURE_OPENAI_ENDPOINT" }}"
     model:    "{{ index .LLMConfig "LLM_MODEL" }}"
+{{ if index .LLMConfig "LLM_REQUEST_TIMEOUT" }}    request_timeout: "{{ index .LLMConfig "LLM_REQUEST_TIMEOUT" }}"
+{{ end }}{{ if index .LLMConfig "LLM_MAX_TOKENS" }}    max_tokens: {{ index .LLMConfig "LLM_MAX_TOKENS" }}
+{{ end }}{{ if hasReasoning .LLMConfig }}    reasoning:
+{{ if index .LLMConfig "LLM_REASONING_ENABLED" }}      enabled: {{ index .LLMConfig "LLM_REASONING_ENABLED" }}
+{{ end }}{{ if index .LLMConfig "LLM_REASONING_EFFORT" }}      effort: "{{ index .LLMConfig "LLM_REASONING_EFFORT" }}"
+{{ end }}{{ if index .LLMConfig "LLM_REASONING_EXCLUDE" }}      exclude: {{ index .LLMConfig "LLM_REASONING_EXCLUDE" }}
+{{ end }}{{ end }}
 {{ end }}{{ if .LLMProfiles }}  profiles:
 {{ range $name, $p := .LLMProfiles }}    {{ $name }}:
       provider: "{{ $p.Provider }}"
 {{ if $p.Model }}      model: "{{ $p.Model }}"
-{{ end }}{{ end }}{{ end }}
+{{ end }}{{ if $p.APIKey }}      api_key: "{{ $p.APIKey }}"
+{{ end }}{{ if $p.BaseURL }}      base_url: "{{ $p.BaseURL }}"
+{{ end }}{{ if $p.Endpoint }}      endpoint: "{{ $p.Endpoint }}"
+{{ end }}{{ if $p.Deployment }}      deployment: "{{ $p.Deployment }}"
+{{ end }}{{ if $p.RequestTimeout }}      request_timeout: "{{ $p.RequestTimeout }}"
+{{ end }}{{ if $p.MaxTokens }}      max_tokens: {{ $p.MaxTokens }}
+{{ end }}{{ if $p.Think }}      think: {{ boolPtr $p.Think }}
+{{ end }}{{ if profileReasoning $p }}      reasoning:
+{{ if $p.Reasoning.Enabled }}        enabled: {{ boolPtr $p.Reasoning.Enabled }}
+{{ end }}{{ if $p.Reasoning.Effort }}        effort: "{{ $p.Reasoning.Effort }}"
+{{ end }}{{ if $p.Reasoning.Exclude }}        exclude: true
+{{ end }}{{ end }}{{ end }}{{ end }}
 webhook:
   url:           "{{ .WebhookURL }}"
   mode:          "{{ .WebhookMode }}"
@@ -124,7 +152,14 @@ func runConfigWrite(_ context.Context, cfg *instconfig.InstallConfig, log Logger
 	cfgPath := filepath.Join(cfg.ServiceRoot, "aftertalk.yaml")
 
 	// Render main template
-	t, err := template.New("yaml").Parse(yamlTemplate)
+	t, err := template.New("yaml").Funcs(template.FuncMap{
+		"usesSTTProvider":  usesSTTProvider,
+		"usesLLMProvider":  usesLLMProvider,
+		"cfgValue":         cfgValue,
+		"hasReasoning":     hasReasoning,
+		"profileReasoning": profileReasoning,
+		"boolPtr":          boolPtr,
+	}).Parse(yamlTemplate)
 	if err != nil {
 		return fmt.Errorf("parse yaml template: %w", err)
 	}
@@ -182,4 +217,49 @@ func runConfigWrite(_ context.Context, cfg *instconfig.InstallConfig, log Logger
 	}
 
 	return nil
+}
+
+func usesSTTProvider(cfg *instconfig.InstallConfig, provider string) bool {
+	if cfg.STTProvider == provider {
+		return true
+	}
+	for _, profile := range cfg.STTProfiles {
+		if profile.Provider == provider {
+			return true
+		}
+	}
+	return false
+}
+
+func usesLLMProvider(cfg *instconfig.InstallConfig, provider string) bool {
+	if cfg.LLMProvider == provider {
+		return true
+	}
+	for _, profile := range cfg.LLMProfiles {
+		if profile.Provider == provider {
+			return true
+		}
+	}
+	return false
+}
+
+func cfgValue(values map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if v := strings.TrimSpace(values[key]); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func hasReasoning(values map[string]string) bool {
+	return cfgValue(values, "LLM_REASONING_ENABLED", "LLM_REASONING_EFFORT", "LLM_REASONING_EXCLUDE") != ""
+}
+
+func profileReasoning(profile instconfig.LLMProfileEntry) bool {
+	return profile.Reasoning.Enabled != nil || profile.Reasoning.Effort != "" || profile.Reasoning.Exclude
+}
+
+func boolPtr(v *bool) bool {
+	return v != nil && *v
 }

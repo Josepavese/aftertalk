@@ -20,6 +20,8 @@ type MinutesService interface {
 	UpdateMinutes(ctx context.Context, id string, updatedMinutes *minutes.Minutes, editedBy string) (*minutes.Minutes, error)
 	GetMinutesHistory(ctx context.Context, minutesID string) ([]*minutes.MinutesHistory, error)
 	DeleteMinutes(ctx context.Context, id string) error
+	ListWebhookEvents(ctx context.Context, sessionID, minutesID string) ([]minutes.WebhookEvent, error)
+	ReplayWebhookEvent(ctx context.Context, eventID string) error
 	// ConsumeRetrievalToken validates and atomically marks a pull token as used.
 	// Returns a generic error (not distinguishing invalid/expired/used) to prevent oracle attacks.
 	ConsumeRetrievalToken(ctx context.Context, tokenID string) (*minutes.RetrievalToken, error)
@@ -162,6 +164,37 @@ func (h *MinutesHandler) GetMinutesHistory(w http.ResponseWriter, r *http.Reques
 		history = []*minutes.MinutesHistory{}
 	}
 	render.JSON(w, r, history)
+}
+
+func (h *MinutesHandler) ListWebhookEvents(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session_id")
+	minutesID := r.URL.Query().Get("minutes_id")
+
+	events, err := h.service.ListWebhookEvents(r.Context(), sessionID, minutesID)
+	if err != nil {
+		logging.Errorf("Failed to list webhook events: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if events == nil {
+		events = []minutes.WebhookEvent{}
+	}
+	render.JSON(w, r, events)
+}
+
+func (h *MinutesHandler) ReplayWebhookEvent(w http.ResponseWriter, r *http.Request) {
+	eventID := chi.URLParam(r, "id")
+	if eventID == "" {
+		writeError(w, http.StatusBadRequest, "Webhook event ID required")
+		return
+	}
+
+	if err := h.service.ReplayWebhookEvent(r.Context(), eventID); err != nil {
+		logging.Errorf("Failed to replay webhook event: %v", err)
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // PullMinutes handles GET /v1/minutes/pull/{token}.

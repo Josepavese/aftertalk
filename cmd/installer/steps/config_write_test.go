@@ -161,6 +161,63 @@ func TestConfigWrite_LLM_AzureOpenAI(t *testing.T) {
 	assert.NotContains(t, yaml, "anthropic:")
 }
 
+func TestConfigWrite_LLM_MixedProviderProfiles(t *testing.T) {
+	think := false
+	reasoningEnabled := true
+	cfg := instconfig.Default()
+	cfg.LLMProvider = "ollama"
+	cfg.OllamaURL = "http://localhost:11434"
+	cfg.OllamaModel = "gemma3:4b"
+	cfg.LLMDefaultProfile = "local"
+	cfg.LLMConfig = map[string]string{
+		"OPENAI_API_KEY":        "sk-profile-default",
+		"LLM_BASE_URL":          "https://openrouter.ai/api",
+		"LLM_MAX_TOKENS":        "4096",
+		"LLM_REASONING_EFFORT":  "low",
+		"LLM_REASONING_EXCLUDE": "true",
+		"LLM_REASONING_ENABLED": "true",
+		"LLM_REQUEST_TIMEOUT":   "90s",
+		"OLLAMA_THINK":          "false",
+	}
+	cfg.LLMProfiles = map[string]instconfig.LLMProfileEntry{
+		"local": {
+			Provider: "ollama",
+			Model:    "gemma3:4b",
+			Think:    &think,
+		},
+		"cloud": {
+			Provider:       "openai",
+			Model:          "openrouter/minimax/minimax-m2.7",
+			APIKey:         "sk-cloud",
+			BaseURL:        "https://openrouter.ai/api",
+			RequestTimeout: "120s",
+			MaxTokens:      2048,
+			Reasoning: instconfig.ReasoningEntry{
+				Enabled: &reasoningEnabled,
+				Effort:  "low",
+				Exclude: true,
+			},
+		},
+	}
+
+	yaml := renderYAML(t, cfg)
+	assert.Contains(t, yaml, `provider: "ollama"`)
+	assert.Contains(t, yaml, `default_profile: "local"`)
+	assert.Contains(t, yaml, `ollama:`)
+	assert.Contains(t, yaml, `think: false`)
+	assert.Contains(t, yaml, `openai:`)
+	assert.Contains(t, yaml, `api_key: "sk-profile-default"`)
+	assert.Contains(t, yaml, `base_url: "https://openrouter.ai/api"`)
+	assert.Contains(t, yaml, `max_tokens: 4096`)
+	assert.Contains(t, yaml, `profiles:`)
+	assert.Contains(t, yaml, `cloud:`)
+	assert.Contains(t, yaml, `api_key: "sk-cloud"`)
+	assert.Contains(t, yaml, `model: "openrouter/minimax/minimax-m2.7"`)
+	assert.Contains(t, yaml, `max_tokens: 2048`)
+	assert.Contains(t, yaml, `enabled: true`)
+	assert.Contains(t, yaml, `exclude: true`)
+}
+
 // ── Nil / empty map safety ─────────────────────────────────────────────────────
 
 func TestConfigWrite_NilMaps_DoNotPanic(t *testing.T) {

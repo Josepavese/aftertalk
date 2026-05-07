@@ -17,6 +17,7 @@ type SessionService interface {
 	CreateSession(ctx context.Context, req *session.CreateSessionRequest) (*session.CreateSessionResponse, error)
 	GetSession(ctx context.Context, sessionID string) (*session.Session, error)
 	EndSession(ctx context.Context, sessionID string) error
+	RegenerateSession(ctx context.Context, sessionID string) error
 	ValidateParticipant(ctx context.Context, jti string) (*session.Participant, error)
 	ConnectParticipant(ctx context.Context, participantID string) error
 	ListSessions(ctx context.Context, status string, limit, offset int) ([]*session.Session, int, error)
@@ -38,6 +39,7 @@ func (h *SessionHandler) Routes() chi.Router {
 	r.Get("/{id}", h.GetSession)
 	r.Get("/{id}/status", h.GetSessionStatus)
 	r.Post("/{id}/end", h.EndSession)
+	r.Post("/{id}/regenerate", h.RegenerateSession)
 	r.Delete("/{id}", h.DeleteSession)
 	return r
 }
@@ -167,6 +169,22 @@ func (h *SessionHandler) EndSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *SessionHandler) RegenerateSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "Session ID required")
+		return
+	}
+
+	if err := h.service.RegenerateSession(r.Context(), sessionID); err != nil {
+		logging.Errorf("Failed to regenerate session: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to regenerate session: "+err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *SessionHandler) ListSessions(w http.ResponseWriter, r *http.Request) {

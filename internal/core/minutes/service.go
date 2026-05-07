@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -86,7 +87,7 @@ func NewServiceWithDeps(repo *MinutesRepository, retryConfig *RetryConfig, webho
 		if timeout == 0 {
 			timeout = 30 * time.Second
 		}
-		if webhookConfig.Mode == webhookModeNotifyPull && webhookConfig.Secret != "" {
+		if webhookConfig.Secret != "" {
 			s.webhookClient = webhook.NewClientWithSecret(webhookConfig.URL, webhookConfig.Secret, timeout)
 		} else {
 			s.webhookClient = webhook.NewClient(webhookConfig.URL, timeout)
@@ -154,10 +155,7 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 
 	parsed, err := s.generateStructuredMinutes(ctx, transcriptionText, tmpl, detectedLanguage, provider)
 	if err != nil {
-		m.MarkError()
-		if updateErr := s.repo.Update(ctx, m); updateErr != nil {
-			logging.Errorf("Failed to update minutes: %v", updateErr)
-		}
+		s.markMinutesError(sessionID, m, sessCtx, err)
 		return nil, fmt.Errorf("failed to generate minutes: %w", err)
 	}
 
@@ -174,6 +172,25 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 	s.deliverWebhook(sessionID, m, sessCtx)
 
 	return m, nil
+}
+
+func (s *Service) MarkSessionError(ctx context.Context, sessionID, templateID, providerName string, sessCtx webhook.SessionContext, cause error) error {
+	m, err := s.prepareMinutesRecord(ctx, sessionID, templateID, providerName)
+	if err != nil {
+		return err
+	}
+	s.markMinutesError(sessionID, m, sessCtx, cause)
+	return nil
+}
+
+func (s *Service) markMinutesError(sessionID string, m *Minutes, sessCtx webhook.SessionContext, cause error) {
+	m.MarkError()
+	updateCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if updateErr := s.repo.Update(updateCtx, m); updateErr != nil {
+		logging.Errorf("Failed to update minutes error state for session=%s minutes=%s: %v", sessionID, m.ID, updateErr)
+	}
+	s.deliverErrorWebhook(sessionID, m, sessCtx, cause)
 }
 
 func (s *Service) prepareMinutesRecord(ctx context.Context, sessionID, templateID, providerName string) (*Minutes, error) {
@@ -403,6 +420,68 @@ func (s *Service) deliverNotification(sessionID string, m *Minutes, sessCtx webh
 	}
 }
 
+func (s *Service) deliverErrorWebhook(sessionID string, m *Minutes, sessCtx webhook.SessionContext, cause error) {
+	if s.webhookClient == nil {
+		return
+	}
+	payload := &webhook.ErrorPayload{
+		SessionID:       sessionID,
+		MinutesID:       m.ID,
+		Status:          string(MinutesStatusError),
+		ErrorCode:       classifyGenerationError(cause),
+		ErrorMessage:    safeErrorMessage(cause),
+		Timestamp:       time.Now(),
+		SessionMetadata: sessCtx.Metadata,
+		Participants:    sessCtx.Participants,
+	}
+	if s.webhookRetrier != nil {
+		ctx := context.Background()
+		if err := s.webhookRetrier.EnqueueError(ctx, m.ID, s.webhookClient.URL(), payload); err != nil {
+			logging.Errorf("webhook retrier: enqueue error failed for session %s: %v", sessionID, err)
+		}
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := s.webhookClient.SendError(ctx, payload); err != nil {
+		logging.Errorf("Failed to deliver error webhook for session %s: %v", sessionID, err)
+	}
+}
+
+func classifyGenerationError(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case errors.Is(err, context.Canceled), strings.Contains(msg, "stuck processing exceeded"), strings.Contains(msg, "generation deadline"):
+		return "internal_timeout"
+	case errors.Is(err, context.DeadlineExceeded), strings.Contains(msg, "timeout"), strings.Contains(msg, "deadline exceeded"):
+		return "provider_timeout"
+	case strings.Contains(msg, "401"), strings.Contains(msg, "403"), strings.Contains(msg, "unauthorized"), strings.Contains(msg, "forbidden"), strings.Contains(msg, "api_key"):
+		return "provider_auth"
+	case strings.Contains(msg, "402"), strings.Contains(msg, "quota"), strings.Contains(msg, "credit"), strings.Contains(msg, "budget"), strings.Contains(msg, "max_tokens"):
+		return "provider_quota_or_budget"
+	case strings.Contains(msg, "parse"), strings.Contains(msg, "json"), strings.Contains(msg, "reasoning/thinking"):
+		return "parse_error"
+	case strings.Contains(msg, fmt.Sprintf("http %d", http.StatusInternalServerError)):
+		return "provider_timeout"
+	default:
+		return "unknown"
+	}
+}
+
+func safeErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if len(msg) > 500 {
+		msg = msg[:500]
+	}
+	return msg
+}
+
 // ConsumeRetrievalToken validates and atomically consumes a pull token.
 // Returns the token (with MinutesID) on success. Any failure returns a generic
 // error — the caller should respond with 404 to prevent oracle attacks.
@@ -490,6 +569,14 @@ func (s *Service) GetMinutesHistory(ctx context.Context, minutesID string) ([]*M
 		return nil, fmt.Errorf("failed to get history: %w", err)
 	}
 	return history, nil
+}
+
+func (s *Service) ListWebhookEvents(ctx context.Context, sessionID, minutesID string) ([]WebhookEvent, error) {
+	return s.repo.ListWebhookEvents(ctx, sessionID, minutesID)
+}
+
+func (s *Service) ReplayWebhookEvent(ctx context.Context, eventID string) error {
+	return s.repo.ReplayWebhookEvent(ctx, eventID)
 }
 
 func (s *Service) DeleteMinutes(ctx context.Context, id string) error {

@@ -8,8 +8,22 @@ import "time"
 
 // LLMProfileEntry is a named provider profile (provider + optional model override).
 type LLMProfileEntry struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model,omitempty"`
+	Provider       string         `json:"provider"`
+	Model          string         `json:"model,omitempty"`
+	APIKey         string         `json:"api_key,omitempty"`
+	BaseURL        string         `json:"base_url,omitempty"`
+	Endpoint       string         `json:"endpoint,omitempty"`
+	Deployment     string         `json:"deployment,omitempty"`
+	RequestTimeout string         `json:"request_timeout,omitempty"`
+	MaxTokens      int            `json:"max_tokens,omitempty"`
+	Reasoning      ReasoningEntry `json:"reasoning,omitempty"`
+	Think          *bool          `json:"think,omitempty"`
+}
+
+type ReasoningEntry struct {
+	Enabled *bool  `json:"enabled,omitempty"`
+	Effort  string `json:"effort,omitempty"`
+	Exclude bool   `json:"exclude,omitempty"`
 }
 
 // STTProfileEntry is a named STT provider profile.
@@ -85,11 +99,13 @@ type InstallConfig struct {
 	ApacheVhostConf string // absolute path to SSL vhost file
 
 	// Installation behavior flags
-	SkipFirewall   bool
-	SkipApache     bool // true when ApacheVhostConf is empty
-	DryRun         bool
-	ExpectedTag    string // optional runtime build tag verification after restart
-	ExpectedCommit string // optional runtime build commit verification after restart
+	SkipFirewall        bool
+	SkipApache          bool // true when ApacheVhostConf is empty
+	DryRun              bool
+	ExpectedTag         string // optional runtime build tag verification after restart
+	ExpectedCommit      string // optional runtime build commit verification after restart
+	RequiredSTTProfiles []string
+	RequiredLLMProfiles []string
 }
 
 // Default returns a config with sensible defaults for a fresh install.

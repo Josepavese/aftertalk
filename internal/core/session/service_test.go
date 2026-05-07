@@ -270,6 +270,22 @@ func TestService_EndSession_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
+func TestService_RegenerateSession_RejectsActiveSession(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewSessionRepository(db)
+	ctx := context.Background()
+	sessionID := uuid.New().String()
+	sess := NewSession(sessionID, 2, "", "", "")
+	require.NoError(t, repo.Create(ctx, sess))
+
+	service := NewService(repo, nil, cache.NewSessionCache(), cache.NewTokenCache(), nil, nil, nil, 0,
+		config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
+
+	err := service.RegenerateSession(ctx, sessionID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot regenerate active session")
+}
+
 func TestTranscriptionTrackerWaitsPerSession(t *testing.T) {
 	tracker := newTranscriptionTracker()
 	tracker.Add("session-a")
@@ -300,6 +316,37 @@ func TestTranscriptionTrackerWaitsPerSession(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("session-a wait did not return after session-a completed")
 	}
+}
+
+func TestServiceAcquireMinutesLockSerializesSameSession(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewSessionRepository(db)
+	service := NewService(repo, nil, cache.NewSessionCache(), cache.NewTokenCache(), nil, nil, nil, 0,
+		config.ProcessingConfig{TranscriptionQueueSize: 10, ChunkSizeMs: 15000}, nil, config.SessionConfig{})
+
+	unlockFirst := service.acquireMinutesLock("session-a")
+	acquiredSecond := make(chan struct{})
+	releaseSecond := make(chan struct{})
+	go func() {
+		unlockSecond := service.acquireMinutesLock("session-a")
+		close(acquiredSecond)
+		<-releaseSecond
+		unlockSecond()
+	}()
+
+	select {
+	case <-acquiredSecond:
+		t.Fatal("second generation acquired lock before first released it")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	unlockFirst()
+	select {
+	case <-acquiredSecond:
+	case <-time.After(time.Second):
+		t.Fatal("second generation did not acquire lock after first released it")
+	}
+	close(releaseSecond)
 }
 
 func TestService_EndSession_DBError(t *testing.T) {

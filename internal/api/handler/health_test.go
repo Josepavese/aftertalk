@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Josepavese/aftertalk/internal/ai/llm"
+	"github.com/Josepavese/aftertalk/internal/ai/stt"
 	"github.com/Josepavese/aftertalk/internal/version"
 )
 
@@ -60,4 +62,35 @@ func TestReadyCheck(t *testing.T) {
 	err := json.Unmarshal(rec.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Equal(t, "ready", response["status"])
+}
+
+func TestNewReadyCheck_DetailsReady(t *testing.T) {
+	sttRegistry := stt.NewSTTRegistryFromProvider(stt.NewStubProvider())
+	llmRegistry := llm.NewLLMRegistryFromProvider(llm.NewStubProvider())
+	req := httptest.NewRequest("GET", "/ready?details=1", nil)
+	rec := httptest.NewRecorder()
+
+	NewReadyCheck(sttRegistry, llmRegistry)(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var response map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	assert.Equal(t, "ready", response["status"])
+	profiles := response["profiles"].(map[string]interface{})
+	assert.Len(t, profiles["stt"], 1)
+	assert.Len(t, profiles["llm"], 1)
+}
+
+func TestNewReadyCheck_DetailsDegraded(t *testing.T) {
+	sttRegistry := stt.NewSTTRegistryFromProvider(stt.NewStubProvider())
+	llmRegistry := llm.NewLLMRegistryFromProvider(llm.NewOpenAIProvider("", "gpt-4"))
+	req := httptest.NewRequest("GET", "/ready?details=1", nil)
+	rec := httptest.NewRecorder()
+
+	NewReadyCheck(sttRegistry, llmRegistry)(rec, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	var response map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+	assert.Equal(t, "degraded", response["status"])
 }

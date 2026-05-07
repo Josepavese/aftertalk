@@ -24,6 +24,9 @@ func runVerify(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) e
 	if err := waitAftertalkHealthy(ctx, cfg, log); err != nil {
 		return err
 	}
+	if err := verifyRequiredProfiles(ctx, cfg, log); err != nil {
+		return err
+	}
 	checkDependencies(ctx, cfg, log)
 	return nil
 }
@@ -93,6 +96,72 @@ func verifyExpectedBuildIdentity(cfg *instconfig.InstallConfig, build version.Bu
 	}
 	if cfg.ExpectedCommit != "" && build.Commit != cfg.ExpectedCommit {
 		return fmt.Errorf("runtime commit mismatch: expected %q, got %q", cfg.ExpectedCommit, build.Commit)
+	}
+	return nil
+}
+
+func verifyRequiredProfiles(ctx context.Context, cfg *instconfig.InstallConfig, log Logger) error {
+	if len(cfg.RequiredSTTProfiles) == 0 && len(cfg.RequiredLLMProfiles) == 0 {
+		return nil
+	}
+	readyURL := fmt.Sprintf("http://127.0.0.1:%d/v1/ready?details=1", cfg.HTTPPort)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, readyURL, nil)
+	if err != nil {
+		return fmt.Errorf("build readiness request: %w", err)
+	}
+	if cfg.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	}
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("profile readiness request: %w", err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if readErr != nil {
+		return fmt.Errorf("read readiness response: %w", readErr)
+	}
+
+	var parsed struct {
+		Status   string `json:"status"`
+		Profiles struct {
+			STT []profileReadiness `json:"stt"`
+			LLM []profileReadiness `json:"llm"`
+		} `json:"profiles"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return fmt.Errorf("parse readiness response: %w", err)
+	}
+	if err := requireProfiles("stt", cfg.RequiredSTTProfiles, parsed.Profiles.STT); err != nil {
+		return err
+	}
+	if err := requireProfiles("llm", cfg.RequiredLLMProfiles, parsed.Profiles.LLM); err != nil {
+		return err
+	}
+	log.Info("required provider profiles healthy ✓")
+	return nil
+}
+
+type profileReadiness struct {
+	Name      string `json:"name"`
+	Provider  string `json:"provider"`
+	Reason    string `json:"reason"`
+	Available bool   `json:"available"`
+}
+
+func requireProfiles(kind string, required []string, statuses []profileReadiness) error {
+	byName := make(map[string]profileReadiness, len(statuses))
+	for _, status := range statuses {
+		byName[status.Name] = status
+	}
+	for _, name := range required {
+		status, ok := byName[name]
+		if !ok {
+			return fmt.Errorf("required %s profile %q is not configured", kind, name)
+		}
+		if !status.Available {
+			return fmt.Errorf("required %s profile %q (%s) is unhealthy: %s", kind, name, status.Provider, status.Reason)
+		}
 	}
 	return nil
 }

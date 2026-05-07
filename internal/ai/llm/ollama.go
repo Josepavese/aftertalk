@@ -18,6 +18,7 @@ import (
 type OllamaProvider struct {
 	client *ollamaapi.Client
 	model  string
+	think  *bool
 }
 
 func NewOllamaProvider(cfg OllamaConfig) (*OllamaProvider, error) {
@@ -35,9 +36,14 @@ func NewOllamaProvider(cfg OllamaConfig) (*OllamaProvider, error) {
 	if model == "" {
 		model = "llama3.2:3b"
 	}
+	think := cfg.Think
+	if think == nil && isThinkingModelDefaultOff(model) {
+		disabled := false
+		think = &disabled
+	}
 
 	client := ollamaapi.NewClient(u, http.DefaultClient)
-	return &OllamaProvider{client: client, model: model}, nil
+	return &OllamaProvider{client: client, model: model, think: think}, nil
 }
 
 func (p *OllamaProvider) Generate(ctx context.Context, prompt string) (string, error) {
@@ -53,9 +59,14 @@ func (p *OllamaProvider) Generate(ctx context.Context, prompt string) (string, e
 		Stream: &stream,
 		Format: jsonFormat,
 	}
+	if p.think != nil {
+		req.Think = &ollamaapi.ThinkValue{Value: *p.think}
+	}
 
+	var thinking strings.Builder
 	err := p.client.Generate(ctx, req, func(resp ollamaapi.GenerateResponse) error {
 		sb.WriteString(resp.Response)
+		thinking.WriteString(resp.Thinking)
 		return nil
 	})
 	if err != nil {
@@ -63,6 +74,10 @@ func (p *OllamaProvider) Generate(ctx context.Context, prompt string) (string, e
 	}
 
 	result := strings.TrimSpace(sb.String())
+	thinkingText := strings.TrimSpace(thinking.String())
+	if result == "" && thinkingText != "" {
+		return "", fmt.Errorf("ollama: %w (model=%s, think=%v)", errReasoningOnly, p.model, p.thinkValueForLog())
+	}
 	logging.Infof("Ollama: response length=%d", len(result))
 	return result, nil
 }
@@ -74,4 +89,16 @@ func (p *OllamaProvider) IsAvailable() bool {
 	defer cancel()
 	_, err := p.client.Version(ctx)
 	return err == nil
+}
+
+func isThinkingModelDefaultOff(model string) bool {
+	name := strings.ToLower(model)
+	return strings.Contains(name, "qwen3.5") || strings.Contains(name, "qwq")
+}
+
+func (p *OllamaProvider) thinkValueForLog() interface{} {
+	if p.think == nil {
+		return nil
+	}
+	return *p.think
 }

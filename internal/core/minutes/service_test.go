@@ -2,6 +2,7 @@ package minutes
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -171,4 +172,24 @@ func TestGenerateMinutes_ReusesExistingErrorMinutes(t *testing.T) {
 	bySession, err := repo.GetBySession(context.Background(), "session-retry")
 	require.NoError(t, err)
 	assert.Equal(t, "retry-minutes", bySession.ID)
+}
+
+func TestClassifyGenerationError(t *testing.T) {
+	tests := []struct {
+		err  error
+		want string
+	}{
+		{err: context.Canceled, want: "internal_timeout"},
+		{err: errors.New("stuck processing exceeded timeout 5m0s"), want: "internal_timeout"},
+		{err: context.DeadlineExceeded, want: "provider_timeout"},
+		{err: errors.New("OpenAI API error: 401 unauthorized"), want: "provider_auth"},
+		{err: errors.New("OpenAI API error: 402 insufficient credits"), want: "provider_quota_or_budget"},
+		{err: errors.New("failed to parse LLM response: invalid JSON"), want: "parse_error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			assert.Equal(t, tt.want, classifyGenerationError(tt.err))
+		})
+	}
 }

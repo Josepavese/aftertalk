@@ -58,3 +58,8 @@ func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcr
 func (a *MinutesAdapter) GetMinutes(ctx context.Context, sessionID string) (interface{}, error) {
 	return a.Svc.GetMinutes(ctx, sessionID)
 }
+
+func (a *MinutesAdapter) MarkSessionError(ctx context.Context, sessionID, templateID, llmProfile string, sessCtx webhook.SessionContext, cause error) error {
+	provider := a.LLMRegistry.Get(llmProfile)
+	return a.Svc.MarkSessionError(ctx, sessionID, templateID, provider.Name(), sessCtx, cause)
+}

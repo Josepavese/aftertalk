@@ -324,6 +324,28 @@ func TestMinutesRepositoryVersionIncrement(t *testing.T) {
 	db.Close()
 }
 
+func TestMinutesRepositoryUpdatePersistsProviderAndTemplate(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	ctx := context.Background()
+
+	m := NewMinutes("provider-update", "session-provider-update", "therapy")
+	m.Provider = "ollama"
+	require.NoError(t, repo.Create(ctx, m))
+
+	m.TemplateID = "premium"
+	m.Provider = "openai"
+	m.MarkReady()
+	require.NoError(t, repo.Update(ctx, m))
+
+	retrieved, err := repo.GetByID(ctx, "provider-update")
+	require.NoError(t, err)
+	assert.Equal(t, "premium", retrieved.TemplateID)
+	assert.Equal(t, "openai", retrieved.Provider)
+
+	db.Close()
+}
+
 func TestMinutesRepositoryHasWebhookEvent(t *testing.T) {
 	db := setupTestDB(t)
 	repo := NewMinutesRepository(db)
@@ -345,6 +367,57 @@ func TestMinutesRepositoryHasWebhookEvent(t *testing.T) {
 	hasEvent, err = repo.HasWebhookEvent(ctx, "minutes-1")
 	require.NoError(t, err)
 	assert.True(t, hasEvent)
+
+	db.Close()
+}
+
+func TestMinutesRepositoryListAndReplayWebhookEvents(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	ctx := context.Background()
+
+	m := NewMinutes("minutes-1", "session-1", "tmpl-1")
+	require.NoError(t, repo.Create(ctx, m))
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE webhook_events (
+			id TEXT PRIMARY KEY,
+			minutes_id TEXT NOT NULL,
+			webhook_url TEXT NOT NULL,
+			payload_type TEXT NOT NULL DEFAULT 'minutes',
+			attempt_number INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL DEFAULT 'pending',
+			delivered_at TEXT,
+			error_message TEXT,
+			next_retry_at TEXT,
+			created_at TEXT NOT NULL
+		);
+		INSERT INTO webhook_events
+			(id, minutes_id, webhook_url, payload_type, attempt_number, status, delivered_at, error_message, next_retry_at, created_at)
+		VALUES
+			('event-1', 'minutes-1', 'https://example.test/hook', 'error', 5, 'failed', '2026-05-06T10:01:00Z', 'boom', '2099-01-01T00:00:00Z', '2026-05-06T10:00:00Z');
+	`)
+	require.NoError(t, err)
+
+	events, err := repo.ListWebhookEvents(ctx, "session-1", "")
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "event-1", events[0].ID)
+	assert.Equal(t, "error", events[0].PayloadType)
+	assert.Equal(t, "failed", events[0].Status)
+	assert.Equal(t, 5, events[0].AttemptNumber)
+	assert.Equal(t, "boom", events[0].ErrorMessage)
+
+	require.NoError(t, repo.ReplayWebhookEvent(ctx, "event-1"))
+	var status string
+	var errorMessage sql.NullString
+	var deliveredAt sql.NullString
+	var attemptNumber int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT status, attempt_number, delivered_at, error_message FROM webhook_events WHERE id='event-1'`).Scan(&status, &attemptNumber, &deliveredAt, &errorMessage))
+	assert.Equal(t, "pending", status)
+	assert.Equal(t, 0, attemptNumber)
+	assert.False(t, deliveredAt.Valid)
+	assert.False(t, errorMessage.Valid)
 
 	db.Close()
 }

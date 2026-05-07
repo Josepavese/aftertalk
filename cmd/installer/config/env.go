@@ -95,6 +95,8 @@ func FromEnvMap(m map[string]string) *InstallConfig {
 	cfg.SkipFirewall = getBool("SKIP_FIREWALL")
 	cfg.ExpectedTag = get("AFTERTALK_EXPECTED_TAG", "")
 	cfg.ExpectedCommit = get("AFTERTALK_EXPECTED_COMMIT", "")
+	cfg.RequiredSTTProfiles = splitCSV(get("AFTERTALK_REQUIRED_STT_PROFILES", ""))
+	cfg.RequiredLLMProfiles = splitCSV(get("AFTERTALK_REQUIRED_LLM_PROFILES", ""))
 
 	// STT provider-specific keys
 	cfg.STTConfig = make(map[string]string)
@@ -112,6 +114,8 @@ func FromEnvMap(m map[string]string) *InstallConfig {
 	cfg.LLMConfig = make(map[string]string)
 	for _, k := range []string{
 		"LLM_API_KEY", "LLM_MODEL", "LLM_MAX_TOKENS", "LLM_BASE_URL",
+		"LLM_REQUEST_TIMEOUT", "LLM_REASONING_EFFORT", "LLM_REASONING_ENABLED", "LLM_REASONING_EXCLUDE",
+		"OLLAMA_THINK",
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY",
 		"AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT",
 	} {
@@ -175,6 +179,12 @@ func WriteEnvFile(path string, cfg *InstallConfig) error {
 	writeln("APACHE_VHOST_CONF", cfg.ApacheVhostConf)
 	writeln("AFTERTALK_EXPECTED_TAG", cfg.ExpectedTag)
 	writeln("AFTERTALK_EXPECTED_COMMIT", cfg.ExpectedCommit)
+	if len(cfg.RequiredSTTProfiles) > 0 {
+		writeln("AFTERTALK_REQUIRED_STT_PROFILES", strings.Join(cfg.RequiredSTTProfiles, ","))
+	}
+	if len(cfg.RequiredLLMProfiles) > 0 {
+		writeln("AFTERTALK_REQUIRED_LLM_PROFILES", strings.Join(cfg.RequiredLLMProfiles, ","))
+	}
 	if cfg.SkipFirewall {
 		writeln("SKIP_FIREWALL", "1")
 	}
@@ -186,4 +196,18 @@ func WriteEnvFile(path string, cfg *InstallConfig) error {
 	}
 
 	return w.Flush()
+}
+
+func splitCSV(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
