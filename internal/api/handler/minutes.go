@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -235,6 +236,12 @@ func (h *MinutesHandler) PullMinutes(w http.ResponseWriter, r *http.Request) {
 
 	// Purge after responding so the client receives the data even if purge fails.
 	if h.deleteOnPull {
-		go h.service.PurgeMinutes(r.Context(), tok.MinutesID)
+		go func(minutesID string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			h.service.PurgeMinutes(ctx, minutesID)
+		}(tok.MinutesID)
+	} else {
+		logging.Infof("PullMinutes: delete_on_pull disabled; minutes %s retained", tok.MinutesID)
 	}
 }

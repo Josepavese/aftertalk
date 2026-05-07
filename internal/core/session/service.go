@@ -68,6 +68,10 @@ type MinutesServiceInterface interface {
 	MarkSessionError(ctx context.Context, sessionID, templateID, llmProfile string, sessCtx webhook.SessionContext, cause error) error
 }
 
+type minutesRuntimeConfigProvider interface {
+	GenerationTimeout(llmProfile string) time.Duration
+}
+
 // defaultInactivityTimeout is the fallback when SessionConfig.InactivityTimeout is 0.
 const defaultInactivityTimeout = 10 * time.Minute
 
@@ -328,8 +332,9 @@ func (s *Service) RecoverProcessingSessions(ctx context.Context) {
 	for _, sess := range sessions {
 		id := sess.ID
 		if s.isProcessingExpired(sess) {
+			timeout := s.effectiveMinutesTimeout(sess.LLMProfile)
 			logging.Errorf("RecoverProcessingSessions: session %s exceeded minutes timeout; marking error", id)
-			s.failSessionWithCause(sess, fmt.Errorf("stuck processing exceeded timeout %s", s.minutesTimeout))
+			s.failSessionWithCause(sess, fmt.Errorf("stuck processing exceeded timeout %s", timeout))
 			continue
 		}
 		go func() {
@@ -340,14 +345,28 @@ func (s *Service) RecoverProcessingSessions(ctx context.Context) {
 }
 
 func (s *Service) isProcessingExpired(sess *Session) bool {
-	if s.minutesTimeout <= 0 {
+	timeout := s.effectiveMinutesTimeout(sess.LLMProfile)
+	if timeout <= 0 {
 		return false
 	}
 	start := sess.CreatedAt
 	if sess.EndedAt != nil {
 		start = *sess.EndedAt
 	}
-	return time.Since(start) > s.minutesTimeout
+	return time.Since(start) > timeout
+}
+
+func (s *Service) effectiveMinutesTimeout(llmProfile string) time.Duration {
+	timeout := s.minutesTimeout
+	if runtime, ok := s.minutes.(minutesRuntimeConfigProvider); ok {
+		if profileTimeout := runtime.GenerationTimeout(llmProfile); profileTimeout > 0 {
+			timeout = profileTimeout
+		}
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	return timeout
 }
 
 // reaperSweepInterval is how often the reaper checks for expired sessions.
@@ -744,8 +763,11 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 	// strict sequencing for the session being finalized.
 	s.transcribeTracker.Wait(sessionID)
 
-	ctx, cancel := context.WithTimeout(context.Background(), s.minutesTimeout)
-	defer cancel()
+	initialTimeout := s.effectiveMinutesTimeout("")
+	ctx, cancel := context.WithTimeout(context.Background(), initialTimeout)
+	defer func() {
+		cancel()
+	}()
 
 	var transcriptionText string
 	var detectedLanguage string
@@ -753,6 +775,12 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 	if err != nil {
 		logging.Errorf("Failed to get session for minutes=%s: %v", sessionID, err)
 		return
+	}
+	if profileTimeout := s.effectiveMinutesTimeout(session.LLMProfile); profileTimeout != initialTimeout {
+		cancel()
+		profileCtx, profileCancel := context.WithTimeout(context.Background(), profileTimeout)
+		defer profileCancel()
+		ctx = profileCtx
 	}
 
 	if s.transcription != nil {

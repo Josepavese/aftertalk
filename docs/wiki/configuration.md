@@ -234,6 +234,38 @@ llm:
       model: gpt-4o             # optional model override
 ```
 
+Cloud and local profiles can also carry independent runtime budgets. This keeps
+high-latency OpenRouter or reasoning models from inheriting local Ollama limits.
+
+```yaml
+llm:
+  default_profile: local
+  profiles:
+    local:
+      provider: ollama
+      model: gemma3:4b
+    cloud:
+      provider: openai
+      model: minimax/minimax-m2.7
+      base_url: https://openrouter.ai/api
+      request_timeout: 300s
+      generation_timeout: 20m
+      retry:
+        max_attempts: 4
+        initial_backoff: 2s
+        max_backoff: 30s
+```
+
+`request_timeout` applies to each provider HTTP request. `generation_timeout`
+overrides `processing.minutes_generation_timeout` for sessions using that LLM
+profile. If profile retry fields are omitted, Aftertalk uses the global
+`processing.llm_max_retries`, `processing.llm_initial_backoff`, and
+`processing.llm_max_backoff` values.
+
+For high-latency cloud/reasoning models, start with `request_timeout: 300s`,
+`generation_timeout: 15m` to `30m`, `retry.max_attempts: 4`,
+`retry.initial_backoff: 2s`, and `retry.max_backoff: 30s`.
+
 ### Session creation with profile selection
 ```json
 POST /v1/sessions

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"time"
 
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
@@ -53,6 +54,17 @@ type MinutesAdapter struct {
 func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage, llmProfile string) (interface{}, error) {
 	provider := a.LLMRegistry.Get(llmProfile)
 	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage, provider)
+}
+
+// GenerationTimeout exposes provider/profile runtime tuning to the session
+// orchestrator, which owns the outer generation context.
+func (a *MinutesAdapter) GenerationTimeout(llmProfile string) time.Duration {
+	provider := a.LLMRegistry.Get(llmProfile)
+	runtimeProvider, ok := provider.(llm.RuntimeConfigProvider)
+	if !ok {
+		return 0
+	}
+	return runtimeProvider.RuntimeConfig().GenerationTimeout
 }
 
 func (a *MinutesAdapter) GetMinutes(ctx context.Context, sessionID string) (interface{}, error) {

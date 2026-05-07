@@ -14,6 +14,21 @@ type LLMProvider interface {
 	IsAvailable() bool
 }
 
+type RuntimeConfigProvider interface {
+	RuntimeConfig() RuntimeConfig
+}
+
+type RuntimeConfig struct {
+	GenerationTimeout time.Duration
+	Retry             RetryConfig
+}
+
+type RetryConfig struct {
+	MaxAttempts    int
+	InitialBackoff time.Duration
+	MaxBackoff     time.Duration
+}
+
 type LLMConfig struct {
 	Provider  string
 	OpenAI    OpenAIConfig

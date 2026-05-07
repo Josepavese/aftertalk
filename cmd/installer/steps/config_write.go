@@ -105,9 +105,14 @@ llm:
 {{ end }}{{ if $p.Endpoint }}      endpoint: "{{ $p.Endpoint }}"
 {{ end }}{{ if $p.Deployment }}      deployment: "{{ $p.Deployment }}"
 {{ end }}{{ if $p.RequestTimeout }}      request_timeout: "{{ $p.RequestTimeout }}"
+{{ end }}{{ if $p.GenerationTimeout }}      generation_timeout: "{{ $p.GenerationTimeout }}"
 {{ end }}{{ if $p.MaxTokens }}      max_tokens: {{ $p.MaxTokens }}
 {{ end }}{{ if $p.Think }}      think: {{ boolPtr $p.Think }}
-{{ end }}{{ if profileReasoning $p }}      reasoning:
+{{ end }}{{ if profileRetry $p }}      retry:
+{{ if $p.Retry.MaxAttempts }}        max_attempts: {{ $p.Retry.MaxAttempts }}
+{{ end }}{{ if $p.Retry.InitialBackoff }}        initial_backoff: "{{ $p.Retry.InitialBackoff }}"
+{{ end }}{{ if $p.Retry.MaxBackoff }}        max_backoff: "{{ $p.Retry.MaxBackoff }}"
+{{ end }}{{ end }}{{ if profileReasoning $p }}      reasoning:
 {{ if $p.Reasoning.Enabled }}        enabled: {{ boolPtr $p.Reasoning.Enabled }}
 {{ end }}{{ if $p.Reasoning.Effort }}        effort: "{{ $p.Reasoning.Effort }}"
 {{ end }}{{ if $p.Reasoning.Exclude }}        exclude: true
@@ -158,6 +163,7 @@ func runConfigWrite(_ context.Context, cfg *instconfig.InstallConfig, log Logger
 		"cfgValue":         cfgValue,
 		"hasReasoning":     hasReasoning,
 		"profileReasoning": profileReasoning,
+		"profileRetry":     profileRetry,
 		"boolPtr":          boolPtr,
 	}).Parse(yamlTemplate)
 	if err != nil {
@@ -258,6 +264,10 @@ func hasReasoning(values map[string]string) bool {
 
 func profileReasoning(profile instconfig.LLMProfileEntry) bool {
 	return profile.Reasoning.Enabled != nil || profile.Reasoning.Effort != "" || profile.Reasoning.Exclude
+}
+
+func profileRetry(profile instconfig.LLMProfileEntry) bool {
+	return profile.Retry.MaxAttempts > 0 || profile.Retry.InitialBackoff != "" || profile.Retry.MaxBackoff != ""
 }
 
 func boolPtr(v *bool) bool {

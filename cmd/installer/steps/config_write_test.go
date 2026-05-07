@@ -186,12 +186,18 @@ func TestConfigWrite_LLM_MixedProviderProfiles(t *testing.T) {
 			Think:    &think,
 		},
 		"cloud": {
-			Provider:       "openai",
-			Model:          "openrouter/minimax/minimax-m2.7",
-			APIKey:         "sk-cloud",
-			BaseURL:        "https://openrouter.ai/api",
-			RequestTimeout: "120s",
-			MaxTokens:      2048,
+			Provider:          "openai",
+			Model:             "openrouter/minimax/minimax-m2.7",
+			APIKey:            "sk-cloud",
+			BaseURL:           "https://openrouter.ai/api",
+			RequestTimeout:    "120s",
+			GenerationTimeout: "20m",
+			MaxTokens:         2048,
+			Retry: instconfig.RetryEntry{
+				MaxAttempts:    4,
+				InitialBackoff: "2s",
+				MaxBackoff:     "30s",
+			},
 			Reasoning: instconfig.ReasoningEntry{
 				Enabled: &reasoningEnabled,
 				Effort:  "low",
@@ -213,7 +219,13 @@ func TestConfigWrite_LLM_MixedProviderProfiles(t *testing.T) {
 	assert.Contains(t, yaml, `cloud:`)
 	assert.Contains(t, yaml, `api_key: "sk-cloud"`)
 	assert.Contains(t, yaml, `model: "openrouter/minimax/minimax-m2.7"`)
+	assert.Contains(t, yaml, `request_timeout: "120s"`)
+	assert.Contains(t, yaml, `generation_timeout: "20m"`)
 	assert.Contains(t, yaml, `max_tokens: 2048`)
+	assert.Contains(t, yaml, `retry:`)
+	assert.Contains(t, yaml, `max_attempts: 4`)
+	assert.Contains(t, yaml, `initial_backoff: "2s"`)
+	assert.Contains(t, yaml, `max_backoff: "30s"`)
 	assert.Contains(t, yaml, `enabled: true`)
 	assert.Contains(t, yaml, `exclude: true`)
 }

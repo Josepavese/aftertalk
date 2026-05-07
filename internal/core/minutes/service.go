@@ -153,7 +153,14 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 		return m, nil
 	}
 
-	parsed, err := s.generateStructuredMinutes(ctx, transcriptionText, tmpl, detectedLanguage, provider)
+	generationCtx := ctx
+	if timeout := generationTimeoutForProvider(provider); timeout > 0 {
+		var cancel context.CancelFunc
+		generationCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	parsed, err := s.generateStructuredMinutes(generationCtx, transcriptionText, tmpl, detectedLanguage, provider)
 	if err != nil {
 		s.markMinutesError(sessionID, m, sessCtx, err)
 		return nil, fmt.Errorf("failed to generate minutes: %w", err)
@@ -276,13 +283,14 @@ func (s *Service) generateStructuredMinutes(ctx context.Context, transcriptionTe
 
 func (s *Service) generateLLMState(ctx context.Context, provider llm.LLMProvider, prompt string, tmpl config.TemplateConfig, detectedLanguage string) (*llm.DynamicMinutesResponse, error) {
 	var err error
-	for attempt := 0; attempt <= s.retryConfig.MaxRetries; attempt++ {
+	retryConfig := s.retryConfigForProvider(provider)
+	for attempt := 0; attempt <= retryConfig.MaxRetries; attempt++ {
 		if attempt > 0 {
-			backoff := s.retryConfig.InitialBackoff * time.Duration(1<<uint(attempt-1))
-			if backoff > s.retryConfig.MaxBackoff {
-				backoff = s.retryConfig.MaxBackoff
+			backoff := retryConfig.InitialBackoff * time.Duration(1<<uint(attempt-1))
+			if backoff > retryConfig.MaxBackoff {
+				backoff = retryConfig.MaxBackoff
 			}
-			logging.Warnf("LLM request failed, retrying in %v (attempt %d/%d)", backoff, attempt, s.retryConfig.MaxRetries)
+			logging.Warnf("LLM request failed, retrying in %v (attempt %d/%d)", backoff, attempt, retryConfig.MaxRetries)
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -317,9 +325,63 @@ func (s *Service) generateLLMState(ctx context.Context, provider llm.LLMProvider
 		err = fmt.Errorf("failed to parse LLM response: %w", parseErr)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate minutes after %d retries: %w", s.retryConfig.MaxRetries+1, err)
+		return nil, fmt.Errorf("failed to generate minutes after %d retries: %w", retryConfig.MaxRetries+1, err)
 	}
-	return nil, fmt.Errorf("failed to generate minutes after %d retries", s.retryConfig.MaxRetries+1)
+	return nil, fmt.Errorf("failed to generate minutes after %d retries", retryConfig.MaxRetries+1)
+}
+
+func (s *Service) retryConfigForProvider(provider llm.LLMProvider) RetryConfig {
+	cfg := s.effectiveDefaultRetryConfig()
+	runtimeProvider, ok := provider.(llm.RuntimeConfigProvider)
+	if !ok {
+		return cfg
+	}
+	runtime := runtimeProvider.RuntimeConfig()
+	if runtime.Retry.MaxAttempts > 0 {
+		cfg.MaxRetries = runtime.Retry.MaxAttempts - 1
+	}
+	if runtime.Retry.InitialBackoff > 0 {
+		cfg.InitialBackoff = runtime.Retry.InitialBackoff
+	}
+	if runtime.Retry.MaxBackoff > 0 {
+		cfg.MaxBackoff = runtime.Retry.MaxBackoff
+	}
+	return normalizeRetryConfig(cfg)
+}
+
+func (s *Service) effectiveDefaultRetryConfig() RetryConfig {
+	if s.retryConfig == nil {
+		return normalizeRetryConfig(RetryConfig{
+			MaxRetries:     3,
+			InitialBackoff: time.Second,
+			MaxBackoff:     10 * time.Second,
+		})
+	}
+	return normalizeRetryConfig(*s.retryConfig)
+}
+
+func normalizeRetryConfig(cfg RetryConfig) RetryConfig {
+	if cfg.MaxRetries < 0 {
+		cfg.MaxRetries = 0
+	}
+	if cfg.InitialBackoff <= 0 {
+		cfg.InitialBackoff = time.Second
+	}
+	if cfg.MaxBackoff <= 0 {
+		cfg.MaxBackoff = cfg.InitialBackoff
+	}
+	if cfg.MaxBackoff < cfg.InitialBackoff {
+		cfg.MaxBackoff = cfg.InitialBackoff
+	}
+	return cfg
+}
+
+func generationTimeoutForProvider(provider llm.LLMProvider) time.Duration {
+	runtimeProvider, ok := provider.(llm.RuntimeConfigProvider)
+	if !ok {
+		return 0
+	}
+	return runtimeProvider.RuntimeConfig().GenerationTimeout
 }
 
 // deliverWebhook dispatches the minutes notification based on the configured mode.
@@ -494,26 +556,38 @@ func (s *Service) ConsumeRetrievalToken(ctx context.Context, tokenID string) (*R
 // delete_on_pull is enabled — Aftertalk becomes a pure processing pipeline,
 // not a long-term archive of sensitive session data.
 func (s *Service) PurgeMinutes(ctx context.Context, minutesID string) {
+	if err := ctx.Err(); err != nil {
+		logging.Warnf("PurgeMinutes: cleanup skipped for minutes %s: context already done: %v", minutesID, err)
+		return
+	}
 	// Retrieve session_id so we can also clean up transcriptions.
 	m, err := s.repo.GetByID(ctx, minutesID)
 	if err != nil {
-		logging.Errorf("PurgeMinutes: get minutes %s: %v", minutesID, err)
+		logPurgeError("get minutes", minutesID, err)
 		return
 	}
 
 	// Delete transcriptions for the session (they contain the full STT text).
 	if _, err := s.repo.ExecContext(ctx,
 		"DELETE FROM transcriptions WHERE session_id = ?", m.SessionID); err != nil {
-		logging.Errorf("PurgeMinutes: delete transcriptions for session %s: %v", m.SessionID, err)
+		logPurgeError("delete transcriptions for session", m.SessionID, err)
 	}
 
 	// Delete the minutes record (cascades to minutes_history and retrieval_tokens).
 	if err := s.repo.Delete(ctx, minutesID); err != nil {
-		logging.Errorf("PurgeMinutes: delete minutes %s: %v", minutesID, err)
+		logPurgeError("delete minutes", minutesID, err)
 		return
 	}
 
 	logging.Infof("PurgeMinutes: session %s purged after pull", m.SessionID)
+}
+
+func logPurgeError(action, id string, err error) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		logging.Warnf("PurgeMinutes: cleanup %s %s stopped by context: %v", action, id, err)
+		return
+	}
+	logging.Errorf("PurgeMinutes: cleanup %s %s failed: %v", action, id, err)
 }
 
 func (s *Service) GetMinutes(ctx context.Context, sessionID string) (*Minutes, error) {

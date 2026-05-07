@@ -5,10 +5,12 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/pkg/webhook"
@@ -21,6 +23,37 @@ func init() { //nolint:gochecknoinits // test logger setup
 type scriptedLLMProvider struct {
 	prompts   []string
 	responses []string
+}
+
+type runtimeTunedLLMProvider struct {
+	failures          int
+	calls             int
+	runtime           llm.RuntimeConfig
+	blockUntilContext bool
+}
+
+func (p *runtimeTunedLLMProvider) Generate(ctx context.Context, _ string) (string, error) {
+	p.calls++
+	if p.blockUntilContext {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	if p.calls <= p.failures {
+		return "", errors.New("temporary provider error")
+	}
+	return `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`, nil
+}
+
+func (p *runtimeTunedLLMProvider) Name() string {
+	return "runtime-tuned"
+}
+
+func (p *runtimeTunedLLMProvider) IsAvailable() bool {
+	return true
+}
+
+func (p *runtimeTunedLLMProvider) RuntimeConfig() llm.RuntimeConfig {
+	return p.runtime
 }
 
 func (p *scriptedLLMProvider) Generate(_ context.Context, prompt string) (string, error) {
@@ -172,6 +205,45 @@ func TestGenerateMinutes_ReusesExistingErrorMinutes(t *testing.T) {
 	bySession, err := repo.GetBySession(context.Background(), "session-retry")
 	require.NoError(t, err)
 	assert.Equal(t, "retry-minutes", bySession.ID)
+}
+
+func TestGenerateMinutes_UsesProviderScopedRetryPolicy(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	service := NewServiceWithDeps(repo, &RetryConfig{
+		MaxRetries:     0,
+		InitialBackoff: time.Hour,
+		MaxBackoff:     time.Hour,
+	}, nil)
+	provider := &runtimeTunedLLMProvider{
+		failures: 1,
+		runtime: llm.RuntimeConfig{
+			Retry: llm.RetryConfig{
+				MaxAttempts:    2,
+				InitialBackoff: time.Millisecond,
+				MaxBackoff:     time.Millisecond,
+			},
+		},
+	}
+
+	mins, err := service.GenerateMinutes(context.Background(), "session-profile-retry", "[0ms therapist]: Ciao", config.DefaultTemplates()[0], webhook.SessionContext{}, "it", provider)
+	require.NoError(t, err)
+	assert.Equal(t, MinutesStatusReady, mins.Status)
+	assert.Equal(t, 2, provider.calls)
+}
+
+func TestGenerateMinutes_UsesProviderScopedGenerationTimeout(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	service := NewService(repo)
+	provider := &runtimeTunedLLMProvider{
+		blockUntilContext: true,
+		runtime:           llm.RuntimeConfig{GenerationTimeout: time.Nanosecond},
+	}
+
+	_, err := service.GenerateMinutes(context.Background(), "session-profile-timeout", "[0ms therapist]: Ciao", config.DefaultTemplates()[0], webhook.SessionContext{}, "it", provider)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "context deadline exceeded")
 }
 
 func TestClassifyGenerationError(t *testing.T) {

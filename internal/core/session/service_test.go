@@ -14,7 +14,52 @@ import (
 	"github.com/Josepavese/aftertalk/internal/logging"
 	"github.com/Josepavese/aftertalk/internal/storage/cache"
 	"github.com/Josepavese/aftertalk/pkg/jwt"
+	"github.com/Josepavese/aftertalk/pkg/webhook"
 )
+
+type timeoutAwareMinutesService struct {
+	called             chan struct{}
+	generationTimeout  time.Duration
+	observedCtxErr     error
+	observedLLMProfile string
+}
+
+func (m *timeoutAwareMinutesService) GenerateMinutes(
+	ctx context.Context,
+	_ string,
+	_ string,
+	_ config.TemplateConfig,
+	_ webhook.SessionContext,
+	_ string,
+	llmProfile string,
+) (interface{}, error) {
+	m.observedLLMProfile = llmProfile
+	select {
+	case <-time.After(30 * time.Millisecond):
+		m.observedCtxErr = ctx.Err()
+		close(m.called)
+		return nil, nil
+	case <-ctx.Done():
+		m.observedCtxErr = ctx.Err()
+		close(m.called)
+		return nil, ctx.Err()
+	}
+}
+
+func (m *timeoutAwareMinutesService) GetMinutes(context.Context, string) (interface{}, error) {
+	return nil, nil
+}
+
+func (m *timeoutAwareMinutesService) MarkSessionError(context.Context, string, string, string, webhook.SessionContext, error) error {
+	return nil
+}
+
+func (m *timeoutAwareMinutesService) GenerationTimeout(llmProfile string) time.Duration {
+	if llmProfile == "cloud" {
+		return m.generationTimeout
+	}
+	return 0
+}
 
 func TestMain(m *testing.M) {
 	logging.Init("info", "console") //nolint:errcheck
@@ -347,6 +392,44 @@ func TestServiceAcquireMinutesLockSerializesSameSession(t *testing.T) {
 		t.Fatal("second generation did not acquire lock after first released it")
 	}
 	close(releaseSecond)
+}
+
+func TestGenerateMinutesForSession_UsesProfileGenerationTimeout(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewSessionRepository(db)
+	ctx := context.Background()
+	tmpl := config.DefaultTemplates()[0]
+	sessionID := uuid.New().String()
+	sess := NewSession(sessionID, 2, tmpl.ID, "", "cloud")
+	sess.StartProcessing()
+	require.NoError(t, repo.Create(ctx, sess))
+
+	minutesSvc := &timeoutAwareMinutesService{
+		called:            make(chan struct{}),
+		generationTimeout: 200 * time.Millisecond,
+	}
+	service := NewService(repo, nil, cache.NewSessionCache(), cache.NewTokenCache(), nil, nil, minutesSvc, 0,
+		config.ProcessingConfig{
+			TranscriptionQueueSize:          10,
+			ChunkSizeMs:                     15000,
+			MinutesGenerationTimeout:        10 * time.Millisecond,
+			MaxConcurrentMinutesGenerations: 1,
+		},
+		config.DefaultTemplates(), config.SessionConfig{})
+
+	service.generateMinutesForSession(sessionID)
+
+	select {
+	case <-minutesSvc.called:
+	case <-time.After(time.Second):
+		t.Fatal("minutes generation was not called")
+	}
+	assert.Equal(t, "cloud", minutesSvc.observedLLMProfile)
+	assert.NoError(t, minutesSvc.observedCtxErr)
+
+	updated, err := repo.GetByID(ctx, sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, StatusCompleted, updated.Status)
 }
 
 func TestService_EndSession_DBError(t *testing.T) {

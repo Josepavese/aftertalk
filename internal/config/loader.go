@@ -140,6 +140,21 @@ func validate(cfg *Config) error { //nolint:gocyclo // validation function needs
 }
 
 func validateLLMProfile(name string, profile LLMProfileConfig, llm LLMConfig) error {
+	if profile.RequestTimeout < 0 {
+		return fmt.Errorf("llm.profiles.%s.request_timeout must be non-negative", name)
+	}
+	if profile.GenerationTimeout < 0 {
+		return fmt.Errorf("llm.profiles.%s.generation_timeout must be non-negative", name)
+	}
+	if profile.Retry.MaxAttempts < 0 {
+		return fmt.Errorf("llm.profiles.%s.retry.max_attempts must be non-negative", name)
+	}
+	if profile.Retry.InitialBackoff < 0 {
+		return fmt.Errorf("llm.profiles.%s.retry.initial_backoff must be non-negative", name)
+	}
+	if profile.Retry.MaxBackoff < 0 {
+		return fmt.Errorf("llm.profiles.%s.retry.max_backoff must be non-negative", name)
+	}
 	switch profile.Provider {
 	case "openai":
 		apiKey := firstNonEmpty(profile.APIKey, llm.OpenAI.APIKey)
