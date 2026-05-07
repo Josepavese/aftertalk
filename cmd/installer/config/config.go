@@ -19,6 +19,7 @@ type LLMProfileEntry struct {
 	MaxTokens         int            `json:"max_tokens,omitempty"`
 	Retry             RetryEntry     `json:"retry,omitempty"`
 	Reasoning         ReasoningEntry `json:"reasoning,omitempty"`
+	Budget            BudgetEntry    `json:"budget,omitempty"`
 	Think             *bool          `json:"think,omitempty"`
 }
 
@@ -32,6 +33,12 @@ type ReasoningEntry struct {
 	Enabled *bool  `json:"enabled,omitempty"`
 	Effort  string `json:"effort,omitempty"`
 	Exclude bool   `json:"exclude,omitempty"`
+}
+
+type BudgetEntry struct {
+	MaxSessionCostCredits float64 `json:"max_session_cost_credits,omitempty"`
+	MaxDailyCostCredits   float64 `json:"max_daily_cost_credits,omitempty"`
+	AllowLocalFallback    bool    `json:"allow_local_fallback,omitempty"`
 }
 
 // STTProfileEntry is a named STT provider profile.

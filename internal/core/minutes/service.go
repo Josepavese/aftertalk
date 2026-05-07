@@ -134,7 +134,13 @@ func (s *Service) WithWebhookRetrier(r *webhook.Retrier) {
 // Provider resolution (profile → concrete provider) is the caller's responsibility
 // and must happen in the Middleware/Adapter layer, not here.
 func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage string, provider llm.LLMProvider) (*Minutes, error) {
-	logging.Infof("Generating minutes for session %s (template=%s)", sessionID, tmpl.ID)
+	profileName := providerProfileName(provider)
+	logging.InfoEvent("minutes.generation.started",
+		"session_id", sessionID,
+		"template_id", tmpl.ID,
+		"provider", provider.Name(),
+		"provider_profile", profileName,
+	)
 
 	m, err := s.prepareMinutesRecord(ctx, sessionID, tmpl.ID, provider.Name())
 	if err != nil {
@@ -161,6 +167,14 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 		generationCtx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
+	recorder := s.newUsageRecorder(ctx, provider)
+	generationCtx = llm.WithUsageRecorder(generationCtx, recorder)
+	generationCtx = llm.WithRequestMetadata(generationCtx, llm.RequestMetadata{
+		SessionID:       sessionID,
+		MinutesID:       m.ID,
+		ProviderProfile: profileName,
+		Provider:        provider.Name(),
+	})
 
 	result, err := s.generationOrchestrator().Generate(generationCtx, minutesgen.Input{
 		Provider:         provider,
@@ -171,6 +185,7 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 		DetectedLanguage: detectedLanguage,
 	})
 	if err != nil {
+		s.persistLLMUsage(context.Background(), m, recorder)
 		s.markMinutesError(sessionID, m, sessCtx, err)
 		return nil, fmt.Errorf("failed to generate minutes: %w", err)
 	}
@@ -180,6 +195,7 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 	m.Sections = parsed.Sections
 	m.Citations = convertCitations(parsed.Citations)
 	m.QualityWarnings = result.QualityWarnings
+	s.persistLLMUsage(ctx, m, recorder)
 	if len(result.VerificationIssues) > 0 {
 		logging.Infof("Minutes verification notes for session %s: %s", sessionID, strings.Join(result.VerificationIssues, ", "))
 	}
@@ -192,10 +208,53 @@ func (s *Service) GenerateMinutes(ctx context.Context, sessionID, transcriptionT
 		return nil, fmt.Errorf("failed to update minutes: %w", err)
 	}
 
-	logging.Infof("Minutes generated successfully for session %s", sessionID)
+	logging.InfoEvent("minutes.generation.completed",
+		"session_id", sessionID,
+		"minutes_id", m.ID,
+		"provider", provider.Name(),
+		"provider_profile", profileName,
+		"llm_calls", m.LLMUsage.Calls,
+		"llm_cost_credits", m.LLMUsage.CostCredits,
+	)
 	s.deliverWebhook(sessionID, m, sessCtx)
 
 	return m, nil
+}
+
+func (s *Service) newUsageRecorder(ctx context.Context, provider llm.LLMProvider) *llm.CollectingUsageRecorder {
+	budget := llm.UsageBudget{}
+	if runtimeProvider, ok := provider.(llm.RuntimeConfigProvider); ok {
+		budget = runtimeProvider.RuntimeConfig().Budget
+	}
+	if budget.MaxDailyCostCredits > 0 {
+		startOfDay := time.Now().UTC().Truncate(24 * time.Hour)
+		baseCost, err := s.repo.SumLLMUsageCostSince(ctx, startOfDay)
+		if err != nil {
+			logging.WarnEvent("llm.usage.daily_budget_baseline_failed", "error", err)
+		} else {
+			budget.BaseDailyCostCredits = baseCost
+		}
+	}
+	return llm.NewCollectingUsageRecorder(budget)
+}
+
+func (s *Service) persistLLMUsage(ctx context.Context, m *Minutes, recorder *llm.CollectingUsageRecorder) {
+	if recorder == nil {
+		return
+	}
+	events := recorder.Events()
+	if len(events) == 0 {
+		return
+	}
+	summary := recorder.Summary()
+	m.LLMUsage = convertLLMUsageSummary(summary)
+	if err := s.repo.InsertLLMUsageEvents(ctx, events); err != nil {
+		logging.ErrorEvent("llm.usage.persist_failed",
+			"session_id", m.SessionID,
+			"minutes_id", m.ID,
+			"error", err,
+		)
+	}
 }
 
 func (s *Service) generationOrchestrator() minutesgen.Orchestrator {
@@ -335,6 +394,14 @@ func generationTimeoutForProvider(provider llm.LLMProvider) time.Duration {
 		return 0
 	}
 	return runtimeProvider.RuntimeConfig().GenerationTimeout
+}
+
+func providerProfileName(provider llm.LLMProvider) string {
+	profileProvider, ok := provider.(llm.ProfileNameProvider)
+	if !ok {
+		return ""
+	}
+	return profileProvider.ProfileName()
 }
 
 // deliverWebhook dispatches the minutes notification based on the configured mode.
@@ -634,5 +701,17 @@ func convertSummary(summary llm.Summary) Summary {
 	return Summary{
 		Overview: summary.Overview,
 		Phases:   phases,
+	}
+}
+
+func convertLLMUsageSummary(summary llm.UsageSummary) LLMUsageSummary {
+	return LLMUsageSummary{
+		Calls:            summary.Calls,
+		PromptTokens:     summary.PromptTokens,
+		CompletionTokens: summary.CompletionTokens,
+		ReasoningTokens:  summary.ReasoningTokens,
+		CachedTokens:     summary.CachedTokens,
+		TotalTokens:      summary.TotalTokens,
+		CostCredits:      summary.CostCredits,
 	}
 }

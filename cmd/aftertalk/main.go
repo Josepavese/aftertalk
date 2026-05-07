@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -62,7 +65,37 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = logging.Init(cfg.Logging.Level, cfg.Logging.Format); err != nil {
+	buildInfo := version.Info()
+	if err = logging.InitWithOptions(logging.Options{
+		Level:   cfg.Logging.Level,
+		Format:  cfg.Logging.Format,
+		Service: "aftertalk",
+		Env:     firstNonEmpty(os.Getenv("AFTERTALK_ENV"), "development"),
+		Version: buildInfo.Version,
+		Release: buildInfo.Tag,
+		Output: logging.OutputOptions{
+			Stdout: cfg.Logging.Output.Stdout,
+			File: logging.FileOutputOptions{
+				Enabled:   cfg.Logging.Output.File.Enabled,
+				Path:      cfg.Logging.Output.File.Path,
+				Mandatory: cfg.Logging.Output.File.Mandatory,
+			},
+		},
+		Rotation: logging.RotationOptions{
+			MaxSizeMB:  cfg.Logging.Rotation.MaxSizeMB,
+			MaxAgeDays: cfg.Logging.Rotation.MaxAgeDays,
+			MaxBackups: cfg.Logging.Rotation.MaxBackups,
+			Compress:   cfg.Logging.Rotation.Compress,
+		},
+		Retention: logging.RetentionOptions{
+			DeleteAfterDays:       cfg.Logging.Retention.DeleteAfterDays,
+			EmergencyCutoffSizeMB: cfg.Logging.Retention.EmergencyCutoffSizeMB,
+		},
+		Redaction: logging.RedactionOptions{
+			Enabled: cfg.Logging.Redaction.Enabled,
+			Fields:  cfg.Logging.Redaction.Fields,
+		},
+	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize logging: %v\n", err)
 		os.Exit(1)
 	}
@@ -95,7 +128,17 @@ func main() {
 	migrateWebhookPayloadType(ctx, db)    // idempotent: adds payload_type column to webhook_events
 	migrateTranscriptionLanguage(ctx, db) // idempotent: adds language column to transcriptions
 	migrateSessionProfiles(ctx, db)       // idempotent: adds stt_profile + llm_profile columns to sessions
+	migrateLLMUsageEvents(ctx, db)        // idempotent: records cloud LLM usage/cost telemetry
 	logger.Info("Migrations completed")
+
+	if handled, utilityErr := handleUtilityCommand(ctx, db.DB, os.Args[1:]); handled {
+		if utilityErr != nil {
+			logger.Errorf("Utility command failed: %v", utilityErr)
+			fmt.Fprintf(os.Stderr, "error: %v\n", utilityErr)
+			os.Exit(1)
+		}
+		return
+	}
 
 	sessionCache := cache.NewSessionCache()
 	tokenCache := cache.NewTokenCache()
@@ -356,6 +399,42 @@ func runMigrations(ctx context.Context, db *sqlite.DB) error {
 		);
 		
 		CREATE INDEX IF NOT EXISTS idx_webhook_status ON webhook_events(status, created_at);
+
+		CREATE TABLE IF NOT EXISTS llm_usage_events (
+			id TEXT PRIMARY KEY,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			request_id TEXT NOT NULL DEFAULT '',
+			workflow_id TEXT NOT NULL DEFAULT '',
+			session_id TEXT NOT NULL DEFAULT '',
+			minutes_id TEXT NOT NULL DEFAULT '',
+			phase TEXT NOT NULL DEFAULT '',
+			batch_index INTEGER NOT NULL DEFAULT 0,
+			batch_total INTEGER NOT NULL DEFAULT 0,
+			attempt INTEGER NOT NULL DEFAULT 0,
+			provider_profile TEXT NOT NULL DEFAULT '',
+			provider TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
+			resolved_provider TEXT NOT NULL DEFAULT '',
+			resolved_model TEXT NOT NULL DEFAULT '',
+			generation_id TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT '',
+			http_status INTEGER NOT NULL DEFAULT 0,
+			prompt_tokens INTEGER NOT NULL DEFAULT 0,
+			completion_tokens INTEGER NOT NULL DEFAULT 0,
+			reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+			cached_tokens INTEGER NOT NULL DEFAULT 0,
+			total_tokens INTEGER NOT NULL DEFAULT 0,
+			cost_credits REAL NOT NULL DEFAULT 0,
+			requested_max_tokens INTEGER NOT NULL DEFAULT 0,
+			affordable_retry_max_tokens INTEGER NOT NULL DEFAULT 0,
+			duration_ms INTEGER NOT NULL DEFAULT 0,
+			error_class TEXT NOT NULL DEFAULT '',
+			error_message TEXT NOT NULL DEFAULT ''
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_llm_usage_session_created ON llm_usage_events(session_id, created_at);
+		CREATE INDEX IF NOT EXISTS idx_llm_usage_minutes_created ON llm_usage_events(minutes_id, created_at);
+		CREATE INDEX IF NOT EXISTS idx_llm_usage_model_created ON llm_usage_events(model, created_at);
 		
 		CREATE TABLE IF NOT EXISTS processing_queue (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -403,6 +482,84 @@ func checkWhisperHealth(baseURL string) {
 	} else {
 		logging.Warnf("whisper-local server returned HTTP %d at %s", resp.StatusCode, baseURL)
 	}
+}
+
+func handleUtilityCommand(ctx context.Context, db *sql.DB, args []string) (bool, error) {
+	args = stripGlobalConfigArgs(args)
+	if len(args) < 2 || args[0] != "logs" || args[1] != "usage" {
+		return false, nil
+	}
+	fs := flag.NewFlagSet("aftertalk logs usage", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	sessionID := fs.String("session", "", "filter by session_id")
+	minutesID := fs.String("minutes", "", "filter by minutes_id")
+	model := fs.String("model", "", "filter by requested model")
+	profile := fs.String("profile", "", "filter by provider profile")
+	fromRaw := fs.String("from", "", "inclusive start date/RFC3339")
+	toRaw := fs.String("to", "", "exclusive end date/RFC3339")
+	groupBy := fs.String("group-by", "session", "session|day|model|profile")
+	if err := fs.Parse(args[2:]); err != nil {
+		return true, err
+	}
+	from, err := parseUtilityTime(*fromRaw)
+	if err != nil {
+		return true, fmt.Errorf("parse --from: %w", err)
+	}
+	to, err := parseUtilityTime(*toRaw)
+	if err != nil {
+		return true, fmt.Errorf("parse --to: %w", err)
+	}
+	report, err := minutes.NewMinutesRepository(db).ReportLLMUsage(ctx, minutes.LLMUsageFilter{
+		From:      from,
+		To:        to,
+		SessionID: *sessionID,
+		MinutesID: *minutesID,
+		Model:     *model,
+		Profile:   *profile,
+	}, *groupBy)
+	if err != nil {
+		return true, err
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return true, enc.Encode(report)
+}
+
+func stripGlobalConfigArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--config" || args[i] == "-config" {
+			i++
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out
+}
+
+func parseUtilityTime(raw string) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		utc := t.UTC()
+		return &utc, nil
+	}
+	if t, err := time.Parse("2006-01-02", raw); err == nil {
+		utc := t.UTC()
+		return &utc, nil
+	}
+	return nil, fmt.Errorf("expected RFC3339 or YYYY-MM-DD")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // migrateWebhookEvents upgrades the webhook_events table to add the `payload`
@@ -490,5 +647,49 @@ func migrateSessionProfiles(ctx context.Context, db *sqlite.DB) {
 		}); err != nil {
 			logging.Warnf("migrateSessionProfiles: %s may already exist: %v", col, err)
 		}
+	}
+}
+
+func migrateLLMUsageEvents(ctx context.Context, db *sqlite.DB) {
+	if err := db.RunInTx(ctx, func(tx *sql.Tx) error {
+		_, innerErr := tx.ExecContext(ctx, `
+			CREATE TABLE IF NOT EXISTS llm_usage_events (
+				id TEXT PRIMARY KEY,
+				created_at TEXT NOT NULL DEFAULT (datetime('now')),
+				request_id TEXT NOT NULL DEFAULT '',
+				workflow_id TEXT NOT NULL DEFAULT '',
+				session_id TEXT NOT NULL DEFAULT '',
+				minutes_id TEXT NOT NULL DEFAULT '',
+				phase TEXT NOT NULL DEFAULT '',
+				batch_index INTEGER NOT NULL DEFAULT 0,
+				batch_total INTEGER NOT NULL DEFAULT 0,
+				attempt INTEGER NOT NULL DEFAULT 0,
+				provider_profile TEXT NOT NULL DEFAULT '',
+				provider TEXT NOT NULL DEFAULT '',
+				model TEXT NOT NULL DEFAULT '',
+				resolved_provider TEXT NOT NULL DEFAULT '',
+				resolved_model TEXT NOT NULL DEFAULT '',
+				generation_id TEXT NOT NULL DEFAULT '',
+				status TEXT NOT NULL DEFAULT '',
+				http_status INTEGER NOT NULL DEFAULT 0,
+				prompt_tokens INTEGER NOT NULL DEFAULT 0,
+				completion_tokens INTEGER NOT NULL DEFAULT 0,
+				reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+				cached_tokens INTEGER NOT NULL DEFAULT 0,
+				total_tokens INTEGER NOT NULL DEFAULT 0,
+				cost_credits REAL NOT NULL DEFAULT 0,
+				requested_max_tokens INTEGER NOT NULL DEFAULT 0,
+				affordable_retry_max_tokens INTEGER NOT NULL DEFAULT 0,
+				duration_ms INTEGER NOT NULL DEFAULT 0,
+				error_class TEXT NOT NULL DEFAULT '',
+				error_message TEXT NOT NULL DEFAULT ''
+			);
+			CREATE INDEX IF NOT EXISTS idx_llm_usage_session_created ON llm_usage_events(session_id, created_at);
+			CREATE INDEX IF NOT EXISTS idx_llm_usage_minutes_created ON llm_usage_events(minutes_id, created_at);
+			CREATE INDEX IF NOT EXISTS idx_llm_usage_model_created ON llm_usage_events(model, created_at);
+		`)
+		return innerErr
+	}); err != nil {
+		logging.Warnf("migrateLLMUsageEvents: %v", err)
 	}
 }

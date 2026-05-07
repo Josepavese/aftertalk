@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
@@ -111,6 +113,175 @@ func TestOpenAIProvider_Generate_Success(t *testing.T) {
 	}
 	if result != expectedResponse {
 		t.Errorf("Response mismatch:\ngot:      %s\nwant:     %s", result, expectedResponse)
+	}
+}
+
+func TestOpenAIProvider_Generate_RecordsUsageTelemetry(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":       "gen-openrouter-123",
+			"model":    "minimax/minimax-m2.7",
+			"provider": "MiniMax",
+			"usage": map[string]interface{}{
+				"prompt_tokens":     101,
+				"completion_tokens": 23,
+				"total_tokens":      124,
+				"cost":              0.000058,
+				"completion_tokens_details": map[string]interface{}{
+					"reasoning_tokens": 7,
+				},
+				"prompt_tokens_details": map[string]interface{}{
+					"cached_tokens": 11,
+				},
+			},
+			"choices": []map[string]interface{}{
+				{"message": map[string]interface{}{"content": `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	recorder := llm.NewCollectingUsageRecorder(llm.UsageBudget{})
+	ctx := llm.WithUsageRecorder(context.Background(), recorder)
+	ctx = llm.WithRequestMetadata(ctx, llm.RequestMetadata{
+		RequestID:       "req-1",
+		SessionID:       "session-1",
+		MinutesID:       "minutes-1",
+		ProviderProfile: "cloud",
+		Phase:           "minutes.batch",
+		BatchIndex:      2,
+		BatchTotal:      3,
+		Attempt:         1,
+	})
+	provider := llm.NewOpenAIProvider("sk-test-key", "minimax/minimax-m2.7").
+		WithBaseURL(server.URL).
+		WithMaxTokens(2048)
+
+	if _, err := provider.Generate(ctx, "test prompt"); err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	events := recorder.Events()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 usage event, got %d", len(events))
+	}
+	ev := events[0]
+	if ev.Status != "success" || ev.GenerationID != "gen-openrouter-123" || ev.ResolvedProvider != "MiniMax" {
+		t.Fatalf("unexpected event identity: %#v", ev)
+	}
+	if ev.SessionID != "session-1" || ev.MinutesID != "minutes-1" || ev.ProviderProfile != "cloud" || ev.Phase != "minutes.batch" {
+		t.Fatalf("metadata not propagated: %#v", ev)
+	}
+	if ev.PromptTokens != 101 || ev.CompletionTokens != 23 || ev.ReasoningTokens != 7 || ev.CachedTokens != 11 || ev.TotalTokens != 124 {
+		t.Fatalf("unexpected token usage: %#v", ev)
+	}
+	if ev.RequestedMaxTokens != 2048 || ev.CostCredits != 0.000058 {
+		t.Fatalf("unexpected budget fields: %#v", ev)
+	}
+}
+
+func TestOpenAIProvider_Generate_BackfillsOpenRouterGenerationUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/openrouter.ai/api/v1/chat/completions":
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id": "gen-backfill-1",
+				"choices": []map[string]interface{}{
+					{"message": map[string]interface{}{"content": `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`}},
+				},
+			})
+		case "/openrouter.ai/api/v1/generation":
+			if r.URL.Query().Get("id") != "gen-backfill-1" {
+				t.Fatalf("unexpected generation id: %s", r.URL.RawQuery)
+			}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": map[string]interface{}{
+					"id":                "gen-backfill-1",
+					"model":             "minimax/minimax-m2.7",
+					"provider_name":     "MiniMax",
+					"tokens_prompt":     77,
+					"tokens_completion": 13,
+					"total_cost":        0.0000387,
+				},
+			})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	recorder := llm.NewCollectingUsageRecorder(llm.UsageBudget{})
+	ctx := llm.WithUsageRecorder(context.Background(), recorder)
+	provider := llm.NewOpenAIProvider("sk-test-key", "minimax/minimax-m2.7").
+		WithBaseURL(server.URL + "/openrouter.ai/api/v1")
+
+	if _, err := provider.Generate(ctx, "test prompt"); err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	events := recorder.Events()
+	require.Len(t, events, 1)
+	ev := events[0]
+	assertUsage := map[string]int{
+		"prompt":     ev.PromptTokens,
+		"completion": ev.CompletionTokens,
+		"total":      ev.TotalTokens,
+	}
+	if assertUsage["prompt"] != 77 || assertUsage["completion"] != 13 || assertUsage["total"] != 90 {
+		t.Fatalf("usage was not backfilled: %#v", ev)
+	}
+	if ev.ResolvedProvider != "MiniMax" || ev.CostCredits != 0.0000387 {
+		t.Fatalf("generation metadata was not backfilled: %#v", ev)
+	}
+}
+
+func TestOpenAIProvider_Generate_UpdatesUsageStatusOnMalformedProviderResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("not valid json"))
+	}))
+	defer server.Close()
+
+	recorder := llm.NewCollectingUsageRecorder(llm.UsageBudget{})
+	ctx := llm.WithUsageRecorder(context.Background(), recorder)
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
+
+	_, err := provider.Generate(ctx, "test prompt")
+	require.Error(t, err)
+	events := recorder.Events()
+	require.Len(t, events, 1)
+	if events[0].Status != "parse_failure" || events[0].ErrorClass != "chat_response_parse" {
+		t.Fatalf("expected usage parse failure, got %#v", events[0])
+	}
+}
+
+func TestOpenAIProvider_Generate_StopsBeforeRequestWhenBudgetExceeded(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	recorder := llm.NewCollectingUsageRecorder(llm.UsageBudget{MaxSessionCostCredits: 0.01})
+	require.NoError(t, recorder.RecordLLMUsage(context.Background(), llm.UsageEvent{
+		Status:      "success",
+		CostCredits: 0.01,
+	}))
+	ctx := llm.WithUsageRecorder(context.Background(), recorder)
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
+
+	_, err := provider.Generate(ctx, "test prompt")
+	if !errors.Is(err, llm.ErrLLMBudgetExceeded) {
+		t.Fatalf("expected budget error, got %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("expected no HTTP request after budget guard, got %d", requests)
+	}
+	events := recorder.Events()
+	if events[len(events)-1].Status != "budget_exceeded" {
+		t.Fatalf("expected budget event, got %#v", events[len(events)-1])
 	}
 }
 

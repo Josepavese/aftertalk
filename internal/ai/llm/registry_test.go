@@ -116,6 +116,10 @@ func TestLLMRegistry_ProfileRuntimeTuning(t *testing.T) {
 	}
 
 	cloud := registry.Get("cloud")
+	profileProvider, ok := cloud.(llm.ProfileNameProvider)
+	if !ok || profileProvider.ProfileName() != "cloud" {
+		t.Fatalf("expected cloud provider profile name, got %#v", cloud)
+	}
 	runtimeProvider, ok := cloud.(llm.RuntimeConfigProvider)
 	if !ok {
 		t.Fatal("expected cloud provider to expose runtime config")
@@ -127,11 +131,44 @@ func TestLLMRegistry_ProfileRuntimeTuning(t *testing.T) {
 	if runtime.Retry.MaxAttempts != 4 || runtime.Retry.InitialBackoff != 2*time.Second || runtime.Retry.MaxBackoff != 30*time.Second {
 		t.Fatalf("unexpected retry runtime config: %#v", runtime.Retry)
 	}
+	if !runtime.Budget.IsZero() {
+		t.Fatalf("unexpected budget runtime config: %#v", runtime.Budget)
+	}
 	if _, err := cloud.Generate(context.Background(), "test prompt"); err != nil {
 		t.Fatalf("profile request_timeout was not applied: %v", err)
 	}
 
 	if _, ok := registry.Get("local").(llm.RuntimeConfigProvider); ok {
 		t.Fatal("local profile should not expose runtime config when none is configured")
+	}
+}
+
+func TestLLMRegistry_ProfileBudgetRuntime(t *testing.T) {
+	registry, err := llm.NewLLMRegistry(&config.LLMConfig{
+		Provider:       "stub",
+		DefaultProfile: "cloud",
+		Budget: config.LLMBudgetConfig{
+			MaxSessionCostCredits: 0.5,
+			MaxDailyCostCredits:   2.0,
+		},
+		Profiles: map[string]config.LLMProfileConfig{
+			"cloud": {
+				Provider: "stub",
+				Budget: config.LLMBudgetConfig{
+					MaxSessionCostCredits: 0.25,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewLLMRegistry failed: %v", err)
+	}
+	runtimeProvider, ok := registry.Get("cloud").(llm.RuntimeConfigProvider)
+	if !ok {
+		t.Fatal("expected budgeted profile to expose runtime config")
+	}
+	budget := runtimeProvider.RuntimeConfig().Budget
+	if budget.MaxSessionCostCredits != 0.25 || budget.MaxDailyCostCredits != 0 {
+		t.Fatalf("unexpected profile budget: %#v", budget)
 	}
 }

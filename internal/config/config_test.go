@@ -166,6 +166,10 @@ func TestConfig_Default(t *testing.T) {
 	assert.Equal(t, 8081, cfg.WebSocket.Port)
 	assert.Equal(t, "info", cfg.Logging.Level)
 	assert.Equal(t, "json", cfg.Logging.Format)
+	assert.True(t, cfg.Logging.Output.Stdout)
+	assert.Equal(t, "./logs/aftertalk.jsonl", cfg.Logging.Output.File.Path)
+	assert.Equal(t, 100, cfg.Logging.Rotation.MaxSizeMB)
+	assert.True(t, cfg.Logging.Redaction.Enabled)
 	assert.Equal(t, "aftertalk", cfg.JWT.Issuer)
 	assert.Equal(t, "change-this-in-production", cfg.JWT.Secret)
 	assert.Equal(t, 2*time.Hour, cfg.JWT.Expiration)
@@ -303,6 +307,23 @@ func TestConfig_InvalidLogFormat(t *testing.T) {
 			assert.Equal(t, expected[i] == "invalid", err != nil)
 		})
 	}
+}
+
+func TestConfig_InvalidLoggingOutput(t *testing.T) {
+	cfg := validBase()
+	cfg.Logging.Output.Stdout = false
+	cfg.Logging.Output.File.Enabled = false
+	err := validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "logging.output")
+}
+
+func TestConfig_InvalidLLMBudget(t *testing.T) {
+	cfg := validBase()
+	cfg.LLM.Budget.MaxSessionCostCredits = -1
+	err := validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "llm.budget.max_session_cost_credits")
 }
 
 func TestConfig_InvalidSTTProvider(t *testing.T) {

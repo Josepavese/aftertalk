@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
+
 	"github.com/Josepavese/aftertalk/internal/ai/llm"
 	"github.com/Josepavese/aftertalk/internal/ai/stt"
 	"github.com/Josepavese/aftertalk/internal/config"
@@ -53,6 +55,12 @@ type MinutesAdapter struct {
 
 func (a *MinutesAdapter) GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage, llmProfile string) (interface{}, error) {
 	provider := a.LLMRegistry.Get(llmProfile)
+	ctx = llm.WithRequestMetadata(ctx, llm.RequestMetadata{
+		RequestID:       chimiddleware.GetReqID(ctx),
+		SessionID:       sessionID,
+		ProviderProfile: llmProfile,
+		Provider:        provider.Name(),
+	})
 	return a.Svc.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage, provider)
 }
 

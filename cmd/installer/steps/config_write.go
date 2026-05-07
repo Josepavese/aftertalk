@@ -116,6 +116,10 @@ llm:
 {{ if $p.Reasoning.Enabled }}        enabled: {{ boolPtr $p.Reasoning.Enabled }}
 {{ end }}{{ if $p.Reasoning.Effort }}        effort: "{{ $p.Reasoning.Effort }}"
 {{ end }}{{ if $p.Reasoning.Exclude }}        exclude: true
+{{ end }}{{ end }}{{ if profileBudget $p }}      budget:
+{{ if $p.Budget.MaxSessionCostCredits }}        max_session_cost_credits: {{ $p.Budget.MaxSessionCostCredits }}
+{{ end }}{{ if $p.Budget.MaxDailyCostCredits }}        max_daily_cost_credits: {{ $p.Budget.MaxDailyCostCredits }}
+{{ end }}{{ if $p.Budget.AllowLocalFallback }}        allow_local_fallback: true
 {{ end }}{{ end }}{{ end }}{{ end }}
 webhook:
   url:           "{{ .WebhookURL }}"
@@ -132,6 +136,31 @@ session:
 logging:
   level: info
   format: json
+  output:
+    stdout: true
+    file:
+      enabled: true
+      path: "{{ pathJoin .ServiceRoot "logs" "aftertalk.jsonl" }}"
+  rotation:
+    max_size_mb: 100
+    max_age_days: 30
+    max_backups: 20
+    compress: true
+  retention:
+    delete_after_days: 90
+    emergency_cutoff_size_mb: 2048
+  redaction:
+    enabled: true
+    fields:
+      - api_key
+      - token
+      - authorization
+      - secret
+      - password
+      - webhook_payload
+      - transcript_text
+      - minutes
+      - raw_provider_payload
 
 webrtc:
   ice_udp_port_min: {{ .ICEUDPPortMin }}
@@ -164,7 +193,9 @@ func runConfigWrite(_ context.Context, cfg *instconfig.InstallConfig, log Logger
 		"hasReasoning":     hasReasoning,
 		"profileReasoning": profileReasoning,
 		"profileRetry":     profileRetry,
+		"profileBudget":    profileBudget,
 		"boolPtr":          boolPtr,
+		"pathJoin":         pathJoinSlash,
 	}).Parse(yamlTemplate)
 	if err != nil {
 		return fmt.Errorf("parse yaml template: %w", err)
@@ -270,6 +301,16 @@ func profileRetry(profile instconfig.LLMProfileEntry) bool {
 	return profile.Retry.MaxAttempts > 0 || profile.Retry.InitialBackoff != "" || profile.Retry.MaxBackoff != ""
 }
 
+func profileBudget(profile instconfig.LLMProfileEntry) bool {
+	return profile.Budget.MaxSessionCostCredits > 0 ||
+		profile.Budget.MaxDailyCostCredits > 0 ||
+		profile.Budget.AllowLocalFallback
+}
+
 func boolPtr(v *bool) bool {
 	return v != nil && *v
+}
+
+func pathJoinSlash(parts ...string) string {
+	return filepath.ToSlash(filepath.Join(parts...))
 }

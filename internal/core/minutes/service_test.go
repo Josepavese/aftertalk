@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -243,6 +245,48 @@ func TestGenerateMinutes_DelegatesToGenerationOrchestrator(t *testing.T) {
 	assert.Equal(t, "orchestrated", mins.Summary.Overview)
 	assert.Equal(t, []string{"test_quality_warning"}, mins.QualityWarnings)
 	assert.Contains(t, string(mins.Sections["themes"]), "orchestration")
+}
+
+func TestGenerateMinutes_PersistsOpenAIUsageTelemetry(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewMinutesRepository(db)
+	service := NewService(repo).WithGenerationConfig(GenerationConfig{DisableFinalVerification: true})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":       "gen-service-1",
+			"model":    "minimax/minimax-m2.7",
+			"provider": "MiniMax",
+			"usage": map[string]interface{}{
+				"prompt_tokens":     50,
+				"completion_tokens": 10,
+				"total_tokens":      60,
+				"cost":              0.000027,
+				"completion_tokens_details": map[string]interface{}{
+					"reasoning_tokens": 3,
+				},
+			},
+			"choices": []map[string]interface{}{
+				{"message": map[string]interface{}{"content": `{"summary":{"overview":"usage ok","phases":[]},"sections":{},"citations":[]}`}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := llm.NewOpenAIProvider("sk-test-key", "minimax/minimax-m2.7").WithBaseURL(server.URL)
+	mins, err := service.GenerateMinutes(context.Background(), "session-usage-service", "[0ms therapist]: Ciao", config.DefaultTemplates()[0], webhook.SessionContext{}, "it", provider)
+	require.NoError(t, err)
+	assert.Equal(t, 1, mins.LLMUsage.Calls)
+	assert.Equal(t, 50, mins.LLMUsage.PromptTokens)
+	assert.Equal(t, 10, mins.LLMUsage.CompletionTokens)
+	assert.Equal(t, 3, mins.LLMUsage.ReasoningTokens)
+	assert.InDelta(t, 0.000027, mins.LLMUsage.CostCredits, 0.0000001)
+
+	summary, err := repo.LLMUsageSummaryForSession(context.Background(), "session-usage-service")
+	require.NoError(t, err)
+	assert.Equal(t, 1, summary.Calls)
+	assert.Equal(t, 60, summary.TotalTokens)
 }
 
 func TestGenerateMinutes_ReturnsExistingReadyMinutes(t *testing.T) {

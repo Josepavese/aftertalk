@@ -74,7 +74,7 @@ func NewLLMRegistry(cfg *config.LLMConfig) (*LLMRegistry, error) {
 		if err != nil {
 			return nil, err
 		}
-		r.providers["default"] = p
+		r.providers["default"] = wrapNamedProvider("default", p, runtimeConfigFromBudget(cfg.Budget))
 		if r.defaultProfile == "" {
 			r.defaultProfile = "default"
 		}
@@ -152,9 +152,7 @@ func NewLLMRegistry(cfg *config.LLMConfig) (*LLMRegistry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("llm profile %q: %w", name, err)
 		}
-		if runtime := runtimeConfigFromProfile(pcfg); !runtime.IsZero() {
-			p = &profileProvider{inner: p, runtime: runtime}
-		}
+		p = wrapNamedProvider(name, p, runtimeConfigFromProfile(pcfg, cfg.Budget))
 		r.providers[name] = p
 		logging.Infof("LLM registry: profile=%s provider=%s", name, p.Name())
 	}
@@ -249,6 +247,7 @@ func convertReasoning(in config.ReasoningConfig) ReasoningConfig {
 
 type profileProvider struct {
 	inner   LLMProvider
+	name    string
 	runtime RuntimeConfig
 }
 
@@ -268,7 +267,43 @@ func (p *profileProvider) RuntimeConfig() RuntimeConfig {
 	return p.runtime
 }
 
-func runtimeConfigFromProfile(p config.LLMProfileConfig) RuntimeConfig {
+func (p *profileProvider) ProfileName() string {
+	return p.name
+}
+
+type namedProvider struct {
+	inner LLMProvider
+	name  string
+}
+
+func (p *namedProvider) Generate(ctx context.Context, prompt string) (string, error) {
+	return p.inner.Generate(ctx, prompt)
+}
+
+func (p *namedProvider) Name() string {
+	return p.inner.Name()
+}
+
+func (p *namedProvider) IsAvailable() bool {
+	return p.inner.IsAvailable()
+}
+
+func (p *namedProvider) ProfileName() string {
+	return p.name
+}
+
+func wrapNamedProvider(name string, p LLMProvider, runtime RuntimeConfig) LLMProvider {
+	if runtime.IsZero() {
+		return &namedProvider{inner: p, name: name}
+	}
+	return &profileProvider{inner: p, name: name, runtime: runtime}
+}
+
+func runtimeConfigFromProfile(p config.LLMProfileConfig, inheritedBudget config.LLMBudgetConfig) RuntimeConfig {
+	budget := inheritedBudget
+	if !budgetConfigIsZero(p.Budget) {
+		budget = p.Budget
+	}
 	return RuntimeConfig{
 		GenerationTimeout: p.GenerationTimeout,
 		Retry: RetryConfig{
@@ -276,6 +311,7 @@ func runtimeConfigFromProfile(p config.LLMProfileConfig) RuntimeConfig {
 			InitialBackoff: p.Retry.InitialBackoff,
 			MaxBackoff:     p.Retry.MaxBackoff,
 		},
+		Budget: usageBudgetFromConfig(budget),
 	}
 }
 
@@ -283,5 +319,24 @@ func (c RuntimeConfig) IsZero() bool {
 	return c.GenerationTimeout == 0 &&
 		c.Retry.MaxAttempts == 0 &&
 		c.Retry.InitialBackoff == 0 &&
-		c.Retry.MaxBackoff == 0
+		c.Retry.MaxBackoff == 0 &&
+		c.Budget.IsZero()
+}
+
+func runtimeConfigFromBudget(budget config.LLMBudgetConfig) RuntimeConfig {
+	return RuntimeConfig{Budget: usageBudgetFromConfig(budget)}
+}
+
+func usageBudgetFromConfig(budget config.LLMBudgetConfig) UsageBudget {
+	return UsageBudget{
+		MaxSessionCostCredits: budget.MaxSessionCostCredits,
+		MaxDailyCostCredits:   budget.MaxDailyCostCredits,
+		AllowLocalFallback:    budget.AllowLocalFallback,
+	}
+}
+
+func budgetConfigIsZero(budget config.LLMBudgetConfig) bool {
+	return budget.MaxSessionCostCredits == 0 &&
+		budget.MaxDailyCostCredits == 0 &&
+		!budget.AllowLocalFallback
 }

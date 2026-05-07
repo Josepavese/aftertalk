@@ -29,6 +29,7 @@ type Minutes struct {
 	Status          MinutesStatus              `json:"status"`
 	Provider        string                     `json:"provider"`
 	Summary         Summary                    `json:"summary"`
+	LLMUsage        LLMUsageSummary            `json:"llm_usage,omitempty"`
 	Citations       []Citation                 `json:"citations"`
 	QualityWarnings []string                   `json:"quality_warnings,omitempty"`
 	Version         int                        `json:"version"`
@@ -59,11 +60,22 @@ type Citation struct {
 	TimestampMs int    `json:"timestamp_ms"`
 }
 
+type LLMUsageSummary struct {
+	CostCredits      float64 `json:"cost_credits,omitempty"`
+	Calls            int     `json:"calls,omitempty"`
+	PromptTokens     int     `json:"prompt_tokens,omitempty"`
+	CompletionTokens int     `json:"completion_tokens,omitempty"`
+	ReasoningTokens  int     `json:"reasoning_tokens,omitempty"`
+	CachedTokens     int     `json:"cached_tokens,omitempty"`
+	TotalTokens      int     `json:"total_tokens,omitempty"`
+}
+
 // contentBlob is the JSON structure stored in the DB content column.
 type contentBlob struct {
 	Summary         Summary                    `json:"summary"`
 	Sections        map[string]json.RawMessage `json:"sections"`
 	Citations       []Citation                 `json:"citations"`
+	LLMUsage        LLMUsageSummary            `json:"llm_usage,omitempty"`
 	QualityWarnings []string                   `json:"quality_warnings,omitempty"`
 }
 
@@ -105,6 +117,7 @@ func (m *Minutes) MarshalContent() (string, error) {
 		Summary:         m.Summary,
 		Sections:        m.Sections,
 		Citations:       m.Citations,
+		LLMUsage:        m.LLMUsage,
 		QualityWarnings: m.QualityWarnings,
 	}
 	b, err := json.Marshal(blob)
@@ -135,6 +148,7 @@ func (m *Minutes) UnmarshalContent(raw string) error {
 	m.Summary = blob.Summary
 	m.Sections = blob.Sections
 	m.Citations = blob.Citations
+	m.LLMUsage = blob.LLMUsage
 	m.QualityWarnings = blob.QualityWarnings
 	return nil
 }

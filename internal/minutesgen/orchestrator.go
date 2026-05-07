@@ -2,6 +2,7 @@ package minutesgen
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -63,6 +64,9 @@ func (o *DefaultOrchestrator) Generate(ctx context.Context, input Input) (*Resul
 			RepairPrompt:     func(raw string) string { return prompts.Repair(raw, input.Template, input.DetectedLanguage) },
 			DetectedLanguage: input.DetectedLanguage,
 			Config:           cfg,
+			Phase:            "minutes.batch",
+			BatchIndex:       i + 1,
+			BatchTotal:       len(batches),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("batch %d/%d: %w", i+1, len(batches), err)
@@ -82,6 +86,7 @@ func (o *DefaultOrchestrator) Generate(ctx context.Context, input Input) (*Resul
 			RepairPrompt:     func(raw string) string { return prompts.Repair(raw, input.Template, input.DetectedLanguage) },
 			DetectedLanguage: input.DetectedLanguage,
 			Config:           cfg,
+			Phase:            "minutes.finalize",
 		})
 		if err != nil {
 			return nil, fmt.Errorf("finalize minutes: %w", err)
@@ -103,11 +108,15 @@ func (o *DefaultOrchestrator) Generate(ctx context.Context, input Input) (*Resul
 			RepairPrompt:     func(raw string) string { return prompts.VerifyRepair(raw, input.Template, input.DetectedLanguage) },
 			DetectedLanguage: input.DetectedLanguage,
 			Config:           cfg,
+			Phase:            "minutes.verify",
 		})
 		if verifyResult != nil {
 			result.Metrics.LLMCalls += verifyResult.Calls
 		}
 		if err != nil {
+			if errors.Is(err, llm.ErrLLMBudgetExceeded) {
+				return nil, err
+			}
 			logger.Warnf("Final minutes verification failed; keeping generated minutes: %v", err)
 			verificationWarnings = append(verificationWarnings, "verification_failed")
 		} else {
@@ -233,11 +242,20 @@ func (r DefaultRunner) GenerateState(ctx context.Context, req RunRequest) (*RunR
 			}
 		}
 
-		response, genErr := req.Provider.Generate(ctx, req.Prompt)
+		callCtx := llm.WithRequestMetadata(ctx, llm.RequestMetadata{
+			Phase:      req.Phase,
+			BatchIndex: req.BatchIndex,
+			BatchTotal: req.BatchTotal,
+			Attempt:    attempt + 1,
+		})
+		response, genErr := req.Provider.Generate(callCtx, req.Prompt)
 		result.Calls++
 		if genErr != nil {
 			err = genErr
 			logger.Errorf("LLM request failed (attempt %d): %v", attempt+1, genErr)
+			if errors.Is(genErr, llm.ErrLLMBudgetExceeded) {
+				return nil, genErr
+			}
 			continue
 		}
 
@@ -253,7 +271,13 @@ func (r DefaultRunner) GenerateState(ctx context.Context, req RunRequest) (*RunR
 		} else {
 			repairPrompt = llm.GenerateMinutesRepairPrompt(response, req.Template, req.DetectedLanguage)
 		}
-		repairResponse, repairErr := req.Provider.Generate(ctx, repairPrompt)
+		repairCtx := llm.WithRequestMetadata(ctx, llm.RequestMetadata{
+			Phase:      repairPhase(req.Phase),
+			BatchIndex: req.BatchIndex,
+			BatchTotal: req.BatchTotal,
+			Attempt:    attempt + 1,
+		})
+		repairResponse, repairErr := req.Provider.Generate(repairCtx, repairPrompt)
 		result.Calls++
 		if repairErr == nil {
 			repaired, repairedErr := llm.ParseMinutesDynamic(repairResponse)
@@ -264,6 +288,9 @@ func (r DefaultRunner) GenerateState(ctx context.Context, req RunRequest) (*RunR
 			parseErr = repairedErr
 		} else {
 			logger.Errorf("LLM repair failed (attempt %d): %v", attempt+1, repairErr)
+			if errors.Is(repairErr, llm.ErrLLMBudgetExceeded) {
+				return nil, repairErr
+			}
 		}
 
 		err = fmt.Errorf("failed to parse LLM response: %w", parseErr)
@@ -272,6 +299,13 @@ func (r DefaultRunner) GenerateState(ctx context.Context, req RunRequest) (*RunR
 		return nil, fmt.Errorf("failed to generate minutes after %d retries: %w", retryConfig.MaxRetries+1, err)
 	}
 	return nil, fmt.Errorf("failed to generate minutes after %d retries", retryConfig.MaxRetries+1)
+}
+
+func repairPhase(phase string) string {
+	if phase == "" {
+		return "minutes.repair"
+	}
+	return phase + ".repair"
 }
 
 type loggingAdapter struct{}
