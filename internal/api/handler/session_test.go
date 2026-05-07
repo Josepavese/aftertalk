@@ -43,6 +43,11 @@ func (m *MockSessionService) EndSession(ctx context.Context, sessionID string) e
 	return args.Error(0)
 }
 
+func (m *MockSessionService) RegenerateSession(ctx context.Context, sessionID string) error {
+	args := m.Called(ctx, sessionID)
+	return args.Error(0)
+}
+
 func (m *MockSessionService) ValidateParticipant(ctx context.Context, jti string) (*session.Participant, error) {
 	args := m.Called(ctx, jti)
 	if args.Get(0) == nil {
@@ -243,4 +248,19 @@ func TestSessionHandler_GetSession(t *testing.T) {
 			mockService.AssertExpectations(t)
 		})
 	}
+}
+
+func TestSessionHandler_RegenerateSession(t *testing.T) {
+	mockService := new(MockSessionService)
+	mockService.On("RegenerateSession", mock.Anything, "session-123").Return(nil)
+	handler := NewSessionHandler(mockService)
+
+	req := httptest.NewRequest("POST", "/sessions/session-123/regenerate", nil)
+	req = addChiContext(req, "id", "session-123")
+	rec := httptest.NewRecorder()
+
+	handler.RegenerateSession(rec, req)
+
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	mockService.AssertExpectations(t)
 }

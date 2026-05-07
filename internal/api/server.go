@@ -33,7 +33,7 @@ func NewServer(cfg *config.Config, sessionService *session.Service, botServer *B
 	return NewServerWithDeps(cfg, sessionService, botServer, nil, nil, nil)
 }
 
-func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botServer *BotServer, minutesHandler *handler.MinutesHandler, transcriptionHandler *handler.TranscriptionHandler, rtcHandler *handler.RTCConfigHandler) *Server {
+func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botServer *BotServer, minutesHandler *handler.MinutesHandler, transcriptionHandler *handler.TranscriptionHandler, rtcHandler *handler.RTCConfigHandler, readyHandlers ...http.HandlerFunc) *Server {
 	rooms := &roomCache{
 		rooms: make(map[string]*roomEntry),
 	}
@@ -96,6 +96,10 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 	}
 
 	sessionHandler := handler.NewSessionHandler(sessionService)
+	readyHandler := handler.ReadyCheck
+	if len(readyHandlers) > 0 && readyHandlers[0] != nil {
+		readyHandler = readyHandlers[0]
+	}
 
 	// --- Public routes (no API key) ---
 
@@ -152,7 +156,7 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 		r.Route("/v1", func(r chi.Router) {
 			r.Get("/health", handler.HealthCheck)
 			r.Get("/version", handler.VersionCheck)
-			r.Get("/ready", handler.ReadyCheck)
+			r.Get("/ready", readyHandler)
 
 			// POST /v1/rooms/join — join or create a session by room code.
 			// Promotes the former /test/start logic to a stable, versioned endpoint.
@@ -261,6 +265,8 @@ func NewServerWithDeps(cfg *config.Config, sessionService *session.Service, botS
 
 			if minutesHandler != nil {
 				r.Mount("/minutes", minutesHandler.Routes())
+				r.Get("/webhooks/events", minutesHandler.ListWebhookEvents)
+				r.Post("/webhooks/events/{id}/replay", minutesHandler.ReplayWebhookEvent)
 			}
 
 			if transcriptionHandler != nil {

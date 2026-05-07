@@ -227,7 +227,8 @@ func main() {
 	minutesHandler := handler.NewMinutesHandlerWithConfig(minutesService, deleteOnPull)
 	transcriptionHandler := handler.NewTranscriptionHandler(transcriptionService)
 	rtcHandler := handler.NewRTCConfigHandler(cfg, iceProvider)
-	apiServer := api.NewServerWithDeps(cfg, sessionService, botServer, minutesHandler, transcriptionHandler, rtcHandler)
+	readyHandler := handler.NewReadyCheck(sttRegistry, llmRegistry)
+	apiServer := api.NewServerWithDeps(cfg, sessionService, botServer, minutesHandler, transcriptionHandler, rtcHandler, readyHandler)
 
 	go func() {
 		logger.Infof("HTTP server listening on %s:%d", cfg.HTTP.Host, cfg.HTTP.Port)

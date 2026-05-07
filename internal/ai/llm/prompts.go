@@ -52,6 +52,7 @@ Return a JSON object with this exact structure:
 RULES:
 - Base everything strictly on the transcript chunks plus the existing state; do not fabricate.
 - Preserve valid information already present in the existing state unless the new chunk clearly refines it.
+- Do not add recommendations, homework, future actions, risks, or techniques unless explicitly stated in the transcript or existing state.
 - Correct obvious STT errors using context but do not invent new meaning.
 - Keep summary.overview to one concise paragraph.
 - Keep summary.phases chronological, merged when adjacent phases describe the same stage.
@@ -62,6 +63,7 @@ RULES:
 - Deduplicate repeated facts, citations, and phases.
 - If the new chunk adds nothing useful, return the existing state normalized.
 %s%s- Do NOT include diagnoses or clinical assessments.
+- If your model uses mandatory reasoning/thinking, keep it internal and still put the final JSON object in the final assistant content.
 - Output MUST be a single valid JSON object (no code fences, no trailing commas).
 - %s
 - Respond ONLY with valid JSON — no extra text, no markdown fences.`,
@@ -102,11 +104,13 @@ Return a JSON object with this exact structure:
 
 RULES:
 - Do not add new facts that are not already supported by the current state.
+- Do not add recommendations, homework, future actions, risks, or techniques unless explicitly present in the current state.
 - Deduplicate overlapping items, citations, and phases.
 - Ensure summary.overview is concise and complete.
 - Ensure summary.phases are chronological and non-overlapping.
 %s%s- Do NOT include diagnoses or clinical assessments.
 - FINAL PASS: produce the best compact final version of the minutes.
+- If your model uses mandatory reasoning/thinking, keep it internal and still put the final JSON object in the final assistant content.
 - Output MUST be a single valid JSON object (no code fences, no trailing commas).
 - Respond ONLY with valid JSON — no extra text, no markdown fences.`,
 		langRule,
@@ -145,6 +149,7 @@ RULES:
 - If a field is missing, use empty values of the correct type.
 - Keep summary.overview concise, and summary.phases chronological.
 %s- Do NOT include diagnoses or clinical assessments.
+- If your model uses mandatory reasoning/thinking, keep it internal and still put the final JSON object in the final assistant content.
 - Output MUST be a single valid JSON object (no code fences, no trailing commas).
 - Respond ONLY with JSON.`,
 		langRule,
@@ -245,6 +250,9 @@ func buildSectionRules(tmpl config.TemplateConfig) string {
 	var sb strings.Builder
 	for _, sec := range tmpl.Sections {
 		fmt.Fprintf(&sb, "- sections.%s: %s\n", sec.Key, sec.Description)
+		if sec.Key == "next_steps" {
+			sb.WriteString("- sections.next_steps must include only explicitly agreed or assigned actions; never add plausible or inferred future work.\n")
+		}
 	}
 	fmt.Fprintf(&sb, "- citations.role must be one of: %s\n", formatRoleKeys(tmpl.Roles))
 	return sb.String()

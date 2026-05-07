@@ -103,6 +103,16 @@ func TestGenerateMinutesPrompt_NoClinicalAssessments(t *testing.T) {
 	}
 }
 
+func TestGenerateMinutesPrompt_NoInferredNextSteps(t *testing.T) {
+	prompt := llm.GenerateMinutesPrompt("transcript", therapyTemplate, "")
+	if !strings.Contains(prompt, "only explicitly agreed or assigned actions") {
+		t.Error("Expected prompt to forbid inferred next steps")
+	}
+	if !strings.Contains(prompt, "never add plausible or inferred future work") {
+		t.Error("Expected prompt to forbid plausible future work")
+	}
+}
+
 func TestGenerateMinutesPrompt_SectionDescriptions(t *testing.T) {
 	prompt := llm.GenerateMinutesPrompt("transcript", therapyTemplate, "")
 	for _, sec := range therapyTemplate.Sections {

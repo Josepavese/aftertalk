@@ -2,6 +2,7 @@ package stt
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/Josepavese/aftertalk/internal/config"
 	"github.com/Josepavese/aftertalk/internal/logging"
@@ -13,6 +14,13 @@ import (
 type STTRegistry struct {
 	providers      map[string]STTProvider
 	defaultProfile string
+}
+
+type ProfileStatus struct {
+	Name      string `json:"name"`
+	Provider  string `json:"provider"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 // NewSTTRegistry builds a registry from the top-level STTConfig.
@@ -105,6 +113,25 @@ func (r *STTRegistry) ProfileNames() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+func (r *STTRegistry) Readiness() []ProfileStatus {
+	names := r.ProfileNames()
+	sort.Strings(names)
+	statuses := make([]ProfileStatus, 0, len(names))
+	for _, name := range names {
+		p := r.providers[name]
+		available := p != nil && p.IsAvailable()
+		st := ProfileStatus{Name: name, Available: available}
+		if p != nil {
+			st.Provider = p.Name()
+		}
+		if !available {
+			st.Reason = "provider configuration incomplete or endpoint unavailable"
+		}
+		statuses = append(statuses, st)
+	}
+	return statuses
 }
 
 // NewSTTRegistryFromProvider wraps a single STTProvider in a registry under the

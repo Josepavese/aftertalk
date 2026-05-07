@@ -1,6 +1,9 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,6 +178,26 @@ func TestConfig_Default(t *testing.T) {
 	assert.False(t, cfg.Performance.EnableProfiling)
 }
 
+func TestConfig_DumpYAMLUsesLoadableKoanfKeys(t *testing.T) {
+	out, err := DumpYAML()
+	require.NoError(t, err)
+	assert.Contains(t, out, "default_profile:")
+	assert.Contains(t, out, "base_url:")
+	assert.Contains(t, out, "request_timeout:")
+	assert.NotContains(t, out, "defaultprofile:")
+	assert.NotContains(t, out, "baseurl:")
+
+	out = strings.ReplaceAll(out, "your-api-key-change-this-in-production", "valid-dump-api-key")
+	out = strings.ReplaceAll(out, "change-this-in-production", "valid-dump-secret")
+	path := filepath.Join(t.TempDir(), "aftertalk.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(out), 0o600))
+
+	loaded, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "valid-dump-secret", loaded.JWT.Secret)
+	assert.Equal(t, "valid-dump-api-key", loaded.API.Key)
+}
+
 func TestConfig_EmptyDatabasePath(t *testing.T) {
 	cfg := Default()
 	cfg.Database.Path = ""
@@ -317,6 +340,54 @@ func TestConfig_ValidLLMProviders(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func TestConfig_LLMProfileValidationAllowsMixedProviders(t *testing.T) {
+	enabled := true
+	think := false
+	cfg := validBase()
+	cfg.LLM.Provider = "ollama"
+	cfg.LLM.DefaultProfile = "local"
+	cfg.LLM.Ollama.Model = "gemma3:4b"
+	cfg.LLM.Profiles = map[string]LLMProfileConfig{
+		"local": {
+			Provider: "ollama",
+			Model:    "gemma3:4b",
+			Think:    &think,
+		},
+		"cloud": {
+			Provider:       "openai",
+			APIKey:         "sk-cloud",
+			Model:          "openrouter/minimax/minimax-m2.7",
+			BaseURL:        "https://openrouter.ai/api",
+			MaxTokens:      2048,
+			RequestTimeout: 90 * time.Second,
+			Reasoning: ReasoningConfig{
+				Enabled: &enabled,
+				Effort:  "low",
+				Exclude: true,
+			},
+		},
+	}
+
+	require.NoError(t, validate(cfg))
+}
+
+func TestConfig_LLMProfileValidationRequiresInheritedCredentials(t *testing.T) {
+	cfg := validBase()
+	cfg.LLM.Provider = "ollama"
+	cfg.LLM.DefaultProfile = "cloud"
+	cfg.LLM.OpenAI.APIKey = ""
+	cfg.LLM.Profiles = map[string]LLMProfileConfig{
+		"cloud": {
+			Provider: "openai",
+			Model:    "gpt-4o",
+		},
+	}
+
+	err := validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "llm.profiles.cloud.api_key")
 }
 
 func TestConfig_NestedConfigs(t *testing.T) {

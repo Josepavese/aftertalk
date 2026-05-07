@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -157,8 +159,16 @@ type WhisperLocalSTTConfig struct {
 // LLMProfileConfig selects a provider and optionally overrides the model for a
 // named tier. Credentials are inherited from the parent LLMConfig section.
 type LLMProfileConfig struct {
-	Provider string `koanf:"provider"` // openai | anthropic | azure | ollama | stub
-	Model    string `koanf:"model"`    // optional model override
+	Provider       string          `koanf:"provider"` // openai | anthropic | azure | ollama | stub
+	Model          string          `koanf:"model"`    // optional model override
+	APIKey         string          `koanf:"api_key"`
+	BaseURL        string          `koanf:"base_url"`
+	Endpoint       string          `koanf:"endpoint"`
+	Deployment     string          `koanf:"deployment"`
+	RequestTimeout time.Duration   `koanf:"request_timeout"`
+	MaxTokens      int             `koanf:"max_tokens"`
+	Reasoning      ReasoningConfig `koanf:"reasoning"`
+	Think          *bool           `koanf:"think"`
 }
 
 type LLMConfig struct {
@@ -174,26 +184,38 @@ type LLMConfig struct {
 type OllamaLLMConfig struct {
 	BaseURL string `koanf:"base_url"`
 	Model   string `koanf:"model"`
+	Think   *bool  `koanf:"think"`
 }
 
 type OpenAIConfig struct {
-	APIKey         string        `koanf:"api_key"`
-	Model          string        `koanf:"model"`
-	BaseURL        string        `koanf:"base_url"` // optional override, e.g. https://openrouter.ai/api
-	RequestTimeout time.Duration `koanf:"request_timeout"`
+	APIKey         string          `koanf:"api_key"`
+	Model          string          `koanf:"model"`
+	BaseURL        string          `koanf:"base_url"` // optional override, e.g. https://openrouter.ai/api
+	RequestTimeout time.Duration   `koanf:"request_timeout"`
+	MaxTokens      int             `koanf:"max_tokens"`
+	Reasoning      ReasoningConfig `koanf:"reasoning"`
 }
 
 type AnthropicConfig struct {
 	APIKey         string        `koanf:"api_key"`
 	Model          string        `koanf:"model"`
 	RequestTimeout time.Duration `koanf:"request_timeout"`
+	MaxTokens      int           `koanf:"max_tokens"`
 }
 
 type AzureLLMConfig struct {
-	APIKey         string        `koanf:"api_key"`
-	Endpoint       string        `koanf:"endpoint"`
-	Deployment     string        `koanf:"deployment"`
-	RequestTimeout time.Duration `koanf:"request_timeout"`
+	APIKey         string          `koanf:"api_key"`
+	Endpoint       string          `koanf:"endpoint"`
+	Deployment     string          `koanf:"deployment"`
+	RequestTimeout time.Duration   `koanf:"request_timeout"`
+	MaxTokens      int             `koanf:"max_tokens"`
+	Reasoning      ReasoningConfig `koanf:"reasoning"`
+}
+
+type ReasoningConfig struct {
+	Enabled *bool  `koanf:"enabled"`
+	Effort  string `koanf:"effort"`
+	Exclude bool   `koanf:"exclude"`
 }
 
 // WebhookConfig controls how generated minutes are delivered to the caller's system.
@@ -541,9 +563,70 @@ func DefaultTemplates() []TemplateConfig {
 // practice for a static struct).
 func DumpYAML() (string, error) {
 	cfg := Default()
-	out, err := yaml.Marshal(cfg)
+	out, err := yaml.Marshal(configYAMLValue(reflect.ValueOf(cfg)))
 	if err != nil {
 		return "", fmt.Errorf("marshal config: %w", err)
 	}
 	return string(out), nil
+}
+
+func configYAMLValue(v reflect.Value) interface{} {
+	if !v.IsValid() {
+		return nil
+	}
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return nil
+		}
+		return configYAMLValue(v.Elem())
+	}
+	if v.Type() == reflect.TypeOf(time.Duration(0)) {
+		return v.Interface().(time.Duration).String()
+	}
+
+	switch v.Kind() {
+	case reflect.Struct:
+		out := make(map[string]interface{}, v.NumField())
+		t := v.Type()
+		for i := 0; i < v.NumField(); i++ {
+			field := t.Field(i)
+			if field.PkgPath != "" {
+				continue
+			}
+			name := configYAMLFieldName(field)
+			if name == "-" {
+				continue
+			}
+			out[name] = configYAMLValue(v.Field(i))
+		}
+		return out
+	case reflect.Slice, reflect.Array:
+		out := make([]interface{}, v.Len())
+		for i := 0; i < v.Len(); i++ {
+			out[i] = configYAMLValue(v.Index(i))
+		}
+		return out
+	case reflect.Map:
+		if v.IsNil() {
+			return map[string]interface{}{}
+		}
+		out := make(map[string]interface{}, v.Len())
+		iter := v.MapRange()
+		for iter.Next() {
+			out[fmt.Sprint(iter.Key().Interface())] = configYAMLValue(iter.Value())
+		}
+		return out
+	default:
+		if v.CanInterface() {
+			return v.Interface()
+		}
+		return nil
+	}
+}
+
+func configYAMLFieldName(field reflect.StructField) string {
+	if tag := field.Tag.Get("koanf"); tag != "" {
+		return strings.Split(tag, ",")[0]
+	}
+	return strings.ToLower(field.Name)
 }

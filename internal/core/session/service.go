@@ -65,6 +65,7 @@ type MinutesServiceInterface interface {
 	// llmProfile selects the LLM provider profile; empty = registry default.
 	GenerateMinutes(ctx context.Context, sessionID, transcriptionText string, tmpl config.TemplateConfig, sessCtx webhook.SessionContext, detectedLanguage, llmProfile string) (interface{}, error)
 	GetMinutes(ctx context.Context, sessionID string) (interface{}, error)
+	MarkSessionError(ctx context.Context, sessionID, templateID, llmProfile string, sessCtx webhook.SessionContext, cause error) error
 }
 
 // defaultInactivityTimeout is the fallback when SessionConfig.InactivityTimeout is 0.
@@ -326,11 +327,27 @@ func (s *Service) RecoverProcessingSessions(ctx context.Context) {
 	logging.Warnf("RecoverProcessingSessions: found %d session(s) stuck in 'processing' — re-triggering minutes generation", len(sessions))
 	for _, sess := range sessions {
 		id := sess.ID
+		if s.isProcessingExpired(sess) {
+			logging.Errorf("RecoverProcessingSessions: session %s exceeded minutes timeout; marking error", id)
+			s.failSessionWithCause(sess, fmt.Errorf("stuck processing exceeded timeout %s", s.minutesTimeout))
+			continue
+		}
 		go func() {
 			s.processRemainingAudio(id)
 			s.generateMinutesForSession(id)
 		}()
 	}
+}
+
+func (s *Service) isProcessingExpired(sess *Session) bool {
+	if s.minutesTimeout <= 0 {
+		return false
+	}
+	start := sess.CreatedAt
+	if sess.EndedAt != nil {
+		start = *sess.EndedAt
+	}
+	return time.Since(start) > s.minutesTimeout
 }
 
 // reaperSweepInterval is how often the reaper checks for expired sessions.
@@ -631,6 +648,25 @@ func (s *Service) EndSession(ctx context.Context, sessionID string) error {
 	return nil
 }
 
+// RegenerateSession retries minutes generation for an ended/completed/error
+// session using the already persisted transcriptions. It does not duplicate a
+// ready minutes row: minutes.Service is idempotent and only resets error rows.
+func (s *Service) RegenerateSession(ctx context.Context, sessionID string) error {
+	session, err := s.repo.GetByID(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+	if session.Status == StatusActive {
+		return fmt.Errorf("cannot regenerate active session %s; end it first", sessionID) //nolint:err113
+	}
+	session.StartProcessing()
+	if err := s.repo.Update(ctx, session); err != nil {
+		return fmt.Errorf("failed to mark session processing: %w", err)
+	}
+	go s.generateMinutesForSession(sessionID) //nolint:contextcheck // regeneration continues after request returns
+	return nil
+}
+
 func (s *Service) processRemainingAudio(sessionID string) {
 	if s.audioBuffer == nil {
 		return
@@ -711,22 +747,19 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.minutesTimeout)
 	defer cancel()
 
-	// failSession marks the session as error in the DB so operators can
-	// distinguish "permanently failed" from "still processing".
-	failSession := func(sess *Session) {
-		sess.Fail()
-		if updateErr := s.repo.Update(ctx, sess); updateErr != nil {
-			logging.Errorf("generateMinutesForSession: failed to mark session %s as error: %v", sessionID, updateErr)
-		}
-	}
-
 	var transcriptionText string
 	var detectedLanguage string
+	session, err := s.repo.GetByID(ctx, sessionID)
+	if err != nil {
+		logging.Errorf("Failed to get session for minutes=%s: %v", sessionID, err)
+		return
+	}
+
 	if s.transcription != nil {
-		var err error
 		transcriptionText, err = s.transcription.GetTranscriptionsAsText(ctx, sessionID)
 		if err != nil {
 			logging.Errorf("Failed to get transcriptions for session=%s: %v", sessionID, err)
+			s.failSessionWithCause(session, err)
 			return
 		}
 		if transcriptionText == "" {
@@ -736,12 +769,6 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 		if detectedLanguage != "" {
 			logging.Infof("Detected language for session=%s: %s", sessionID, detectedLanguage)
 		}
-	}
-
-	session, err := s.repo.GetByID(ctx, sessionID)
-	if err != nil {
-		logging.Errorf("Failed to get session for minutes=%s: %v", sessionID, err)
-		return
 	}
 
 	tmpl, ok := s.templates[session.TemplateID]
@@ -776,7 +803,7 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 		_, err = s.minutes.GenerateMinutes(ctx, sessionID, transcriptionText, tmpl, sessCtx, detectedLanguage, session.LLMProfile)
 		if err != nil {
 			logging.Errorf("Failed to generate minutes for session=%s: %v", sessionID, err)
-			failSession(session)
+			s.failSessionWithContext(session, tmpl.ID, sessCtx, err)
 			return
 		}
 	}
@@ -784,6 +811,28 @@ func (s *Service) generateMinutesForSession(sessionID string) {
 	session.Complete()
 	if err := s.repo.Update(ctx, session); err != nil {
 		logging.Errorf("Failed to mark session as completed: %v", err)
+	}
+}
+
+func (s *Service) failSessionWithCause(sess *Session, cause error) {
+	s.failSessionWithContext(sess, sess.TemplateID, webhook.SessionContext{Metadata: sess.Metadata}, cause)
+}
+
+func (s *Service) failSessionWithContext(sess *Session, templateID string, sessCtx webhook.SessionContext, cause error) {
+	if sess == nil {
+		return
+	}
+	failCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	sess.Fail()
+	if updateErr := s.repo.Update(failCtx, sess); updateErr != nil {
+		logging.Errorf("generateMinutesForSession: failed to mark session %s as error: %v", sess.ID, updateErr)
+	}
+	if s.minutes != nil {
+		if err := s.minutes.MarkSessionError(failCtx, sess.ID, templateID, sess.LLMProfile, sessCtx, cause); err != nil {
+			logging.Errorf("generateMinutesForSession: failed to mark minutes for session %s as error: %v", sess.ID, err)
+		}
 	}
 }
 

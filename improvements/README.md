@@ -18,6 +18,7 @@
 ## Current status
 
 - Core improvements 01-09, 11-21, 24-27, 29 PHP compatibility, and 30 are closed.
+- The 2026-05-06 Mondopsicologi production issue pack is closed under `../issues/closed/`.
 - `10-linter-warnings.md` is now functionally resolved for the active CI profile: `golangci-lint run` returns `0 issues`.
 - Remaining open documents are backlog/follow-up items, not active release blockers.
 
@@ -95,15 +96,16 @@
   - Release workflow injects commit/tag/build time/source into server and installer binaries
   - Installer verification can fail on expected tag/commit mismatch
 
+- **[../issues/closed/2026-05-06-mondopsicologi-minutes-stuck-processing.md](../issues/closed/2026-05-06-mondopsicologi-minutes-stuck-processing.md)** — stuck processing incident recovery ✅
+- **[../issues/closed/2026-05-06-provider-reasoning-controls-and-token-budget.md](../issues/closed/2026-05-06-provider-reasoning-controls-and-token-budget.md)** — provider reasoning controls and token budgets ✅
+- **[../issues/closed/2026-05-06-mixed-provider-profile-config.md](../issues/closed/2026-05-06-mixed-provider-profile-config.md)** — mixed local/cloud profile configuration ✅
+- **[../issues/closed/2026-05-06-session-error-recovery-and-regeneration.md](../issues/closed/2026-05-06-session-error-recovery-and-regeneration.md)** — terminal error states and regeneration ✅
+- **[../issues/closed/2026-05-06-profile-readiness-healthchecks.md](../issues/closed/2026-05-06-profile-readiness-healthchecks.md)** — profile readiness and deploy verification ✅
+- **[../issues/closed/2026-05-06-webhook-status-and-replay.md](../issues/closed/2026-05-06-webhook-status-and-replay.md)** — error webhooks, status list, and replay ✅
+
 ### Open Backlog
 
 - **[22-golang-sdk.md](22-golang-sdk.md)** — Go SDK.
 - **[23-sdk-distribution-automation.md](23-sdk-distribution-automation.md)** — package distribution automation.
 - **[28-readme-impact.md](28-readme-impact.md)** — README/product impact refinement.
 - **[29-ci-release-hardening-followups.md](29-ci-release-hardening-followups.md)** — CI/release hardening follow-ups that remain outside this release scope.
-- **[2026-05-06-mondopsicologi-minutes-stuck-processing.md](2026-05-06-mondopsicologi-minutes-stuck-processing.md)** — production incident report for stuck minutes generation.
-- **[2026-05-06-provider-reasoning-controls-and-token-budget.md](2026-05-06-provider-reasoning-controls-and-token-budget.md)** — provider reasoning controls, Ollama `think:false`, OpenRouter reasoning controls, and token budgets.
-- **[2026-05-06-mixed-provider-profile-config.md](2026-05-06-mixed-provider-profile-config.md)** — mixed-provider profile config must materialize every provider's runtime credentials.
-- **[2026-05-06-session-error-recovery-and-regeneration.md](2026-05-06-session-error-recovery-and-regeneration.md)** — terminal error states, stuck-processing recovery, and first-class regeneration.
-- **[2026-05-06-profile-readiness-healthchecks.md](2026-05-06-profile-readiness-healthchecks.md)** — profile-level readiness and deploy health checks.
-- **[2026-05-06-webhook-status-and-replay.md](2026-05-06-webhook-status-and-replay.md)** — terminal error notifications, webhook inspection, and replay.

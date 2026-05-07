@@ -115,6 +115,14 @@ func validate(cfg *Config) error { //nolint:gocyclo // validation function needs
 	if !validLLMProviders[cfg.LLM.Provider] {
 		return fmt.Errorf("%w: %s (supported: openai, anthropic, azure, ollama, stub)", errInvalidLLMProvider, cfg.LLM.Provider)
 	}
+	for name, profile := range cfg.LLM.Profiles {
+		if !validLLMProviders[profile.Provider] {
+			return fmt.Errorf("%w in profile %q: %s (supported: openai, anthropic, azure, ollama, stub)", errInvalidLLMProvider, name, profile.Provider)
+		}
+		if err := validateLLMProfile(name, profile, cfg.LLM); err != nil {
+			return err
+		}
+	}
 
 	if cfg.JWT.Expiration <= 0 {
 		return errJWTExpirationPositive
@@ -129,4 +137,55 @@ func validate(cfg *Config) error { //nolint:gocyclo // validation function needs
 	}
 
 	return nil
+}
+
+func validateLLMProfile(name string, profile LLMProfileConfig, llm LLMConfig) error {
+	switch profile.Provider {
+	case "openai":
+		apiKey := firstNonEmpty(profile.APIKey, llm.OpenAI.APIKey)
+		model := firstNonEmpty(profile.Model, llm.OpenAI.Model)
+		if apiKey == "" {
+			return fmt.Errorf("llm.profiles.%s.api_key is required for openai profile", name)
+		}
+		if model == "" {
+			return fmt.Errorf("llm.profiles.%s.model is required for openai profile", name)
+		}
+	case "anthropic":
+		apiKey := firstNonEmpty(profile.APIKey, llm.Anthropic.APIKey)
+		model := firstNonEmpty(profile.Model, llm.Anthropic.Model)
+		if apiKey == "" {
+			return fmt.Errorf("llm.profiles.%s.api_key is required for anthropic profile", name)
+		}
+		if model == "" {
+			return fmt.Errorf("llm.profiles.%s.model is required for anthropic profile", name)
+		}
+	case "azure":
+		apiKey := firstNonEmpty(profile.APIKey, llm.Azure.APIKey)
+		endpoint := firstNonEmpty(profile.Endpoint, llm.Azure.Endpoint)
+		deployment := firstNonEmpty(profile.Deployment, profile.Model, llm.Azure.Deployment)
+		if apiKey == "" {
+			return fmt.Errorf("llm.profiles.%s.api_key is required for azure profile", name)
+		}
+		if endpoint == "" {
+			return fmt.Errorf("llm.profiles.%s.endpoint is required for azure profile", name)
+		}
+		if deployment == "" {
+			return fmt.Errorf("llm.profiles.%s.deployment is required for azure profile", name)
+		}
+	case "ollama":
+		model := firstNonEmpty(profile.Model, llm.Ollama.Model)
+		if model == "" {
+			return fmt.Errorf("llm.profiles.%s.model is required for ollama profile", name)
+		}
+	}
+	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

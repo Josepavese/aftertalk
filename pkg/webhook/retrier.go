@@ -38,6 +38,8 @@ const payloadTypeMinutes = "minutes"
 // payloadTypeNotification is the notify_pull-mode payload discriminator.
 const payloadTypeNotification = "notification"
 
+const payloadTypeError = "error"
+
 // Enqueue persists a pending push-mode webhook event (full minutes payload).
 // The background worker will call Client.Send() to deliver it with retries.
 func (r *Retrier) Enqueue(ctx context.Context, minutesID, webhookURL string, payload *MinutesPayload) error {
@@ -48,6 +50,10 @@ func (r *Retrier) Enqueue(ctx context.Context, minutesID, webhookURL string, pay
 // The background worker will call Client.SendNotification() to deliver it.
 func (r *Retrier) EnqueueNotification(ctx context.Context, minutesID, webhookURL string, payload *NotificationPayload) error {
 	return r.enqueue(ctx, minutesID, webhookURL, payloadTypeNotification, payload)
+}
+
+func (r *Retrier) EnqueueError(ctx context.Context, minutesID, webhookURL string, payload *ErrorPayload) error {
+	return r.enqueue(ctx, minutesID, webhookURL, payloadTypeError, payload)
 }
 
 func (r *Retrier) enqueue(ctx context.Context, minutesID, webhookURL, payloadType string, payload interface{}) error {
@@ -190,6 +196,14 @@ func (r *Retrier) deliver(ctx context.Context, id, minutesID, webhookURL, payloa
 			return
 		}
 		sendErr = r.client.SendNotification(deliverCtx, &payload)
+	case payloadTypeError:
+		var payload ErrorPayload
+		if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+			logging.Errorf("webhook retrier: unmarshal error payload for event %s: %v", id, err)
+			r.markFailed(ctx, id, attempt, "unmarshal error: "+err.Error())
+			return
+		}
+		sendErr = r.client.SendError(deliverCtx, &payload)
 	default: // payloadTypeMinutes and legacy rows
 		var payload MinutesPayload
 		if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {

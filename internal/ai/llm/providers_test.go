@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -322,6 +323,231 @@ func TestOpenAIProvider_Generate_ResponseFormatRequirement(t *testing.T) {
 	provider.Generate(context.Background(), "test prompt")
 }
 
+func TestOpenAIProvider_Generate_MaxTokensAndReasoning(t *testing.T) {
+	enabled := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		if reqBody["max_tokens"] != float64(2048) {
+			t.Fatalf("expected max_tokens=2048, got %#v", reqBody["max_tokens"])
+		}
+		if reqBody["include_reasoning"] != false {
+			t.Fatalf("expected include_reasoning=false, got %#v", reqBody["include_reasoning"])
+		}
+		reasoning, ok := reqBody["reasoning"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected reasoning object, got %#v", reqBody["reasoning"])
+		}
+		if reasoning["enabled"] != true || reasoning["effort"] != "low" || reasoning["exclude"] != true {
+			t.Fatalf("unexpected reasoning payload: %#v", reasoning)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]interface{}{"content": `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").
+		WithBaseURL(server.URL).
+		WithMaxTokens(2048).
+		WithReasoning(llm.ReasoningConfig{Enabled: &enabled, Effort: "low", Exclude: true})
+	if _, err := provider.Generate(context.Background(), "test prompt"); err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+}
+
+func TestOpenAIProvider_Generate_DropsDisableReasoningForMandatoryModel(t *testing.T) {
+	enabled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		if _, ok := reqBody["reasoning"]; ok {
+			t.Fatalf("expected no reasoning object for mandatory reasoning model disable, got %#v", reqBody["reasoning"])
+		}
+		if _, ok := reqBody["include_reasoning"]; ok {
+			t.Fatalf("expected no include_reasoning flag for mandatory reasoning model disable, got %#v", reqBody["include_reasoning"])
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]interface{}{"content": `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := llm.NewOpenAIProvider("sk-test-key", "minimax/minimax-m2.7").
+		WithBaseURL(server.URL).
+		WithReasoning(llm.ReasoningConfig{Enabled: &enabled, Effort: "low", Exclude: true})
+	if _, err := provider.Generate(context.Background(), "test prompt"); err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+}
+
+func TestOpenAIProvider_Generate_RetriesAffordableMaxTokens(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+
+		if requests == 1 {
+			if _, ok := reqBody["max_tokens"]; ok {
+				t.Fatalf("expected first request without max_tokens, got %#v", reqBody["max_tokens"])
+			}
+			w.WriteHeader(http.StatusPaymentRequired)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "This request requires more credits, or fewer max_tokens. You requested up to 65536 tokens, but can only afford 31064.",
+					"code":    402,
+				},
+			})
+			return
+		}
+
+		if reqBody["max_tokens"] != float64(30040) {
+			t.Fatalf("expected retry max_tokens=30040, got %#v", reqBody["max_tokens"])
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]interface{}{"content": `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := llm.NewOpenAIProvider("sk-test-key", "minimax/minimax-m2.7").WithBaseURL(server.URL)
+	if _, err := provider.Generate(context.Background(), "test prompt"); err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("expected 2 requests, got %d", requests)
+	}
+}
+
+func TestOpenAIProvider_Generate_ReducesMaxTokensAfterAffordableRetryTimeout(t *testing.T) {
+	var mu sync.Mutex
+	requestedMaxTokens := []interface{}{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		mu.Lock()
+		requestedMaxTokens = append(requestedMaxTokens, reqBody["max_tokens"])
+		mu.Unlock()
+
+		switch reqBody["max_tokens"] {
+		case nil:
+			w.WriteHeader(http.StatusPaymentRequired)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "This request requires more credits, or fewer max_tokens. You requested up to 65536 tokens, but can only afford 31064.",
+					"code":    402,
+				},
+			})
+		case float64(30040):
+			time.Sleep(100 * time.Millisecond)
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{"message": map[string]interface{}{"content": `{"summary":{"overview":"slow","phases":[]},"sections":{},"citations":[]}`}},
+				},
+			})
+		case float64(16384):
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{"message": map[string]interface{}{"content": `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`}},
+				},
+			})
+		default:
+			t.Fatalf("unexpected max_tokens retry: %#v", reqBody["max_tokens"])
+		}
+	}))
+	defer server.Close()
+
+	provider, err := llm.NewProvider(&llm.LLMConfig{
+		Provider: "openai",
+		OpenAI: llm.OpenAIConfig{
+			APIKey:         "sk-test-key",
+			Model:          "minimax/minimax-m2.7",
+			BaseURL:        server.URL,
+			RequestTimeout: 20 * time.Millisecond,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewProvider failed: %v", err)
+	}
+
+	result, err := provider.Generate(context.Background(), "test prompt")
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if !strings.Contains(result, `"overview":"ok"`) {
+		t.Fatalf("expected fallback result, got %s", result)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(requestedMaxTokens) != 3 {
+		t.Fatalf("expected 3 requests, got %d: %#v", len(requestedMaxTokens), requestedMaxTokens)
+	}
+}
+
+func TestOpenAIProvider_Generate_ReasoningOnlyError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]interface{}{"reasoning_content": "internal chain of thought"}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := llm.NewOpenAIProvider("sk-test-key", "gpt-4").WithBaseURL(server.URL)
+	_, err := provider.Generate(context.Background(), "test prompt")
+	if err == nil || !strings.Contains(err.Error(), "reasoning/thinking") {
+		t.Fatalf("expected reasoning-only error, got %v", err)
+	}
+}
+
+func TestOpenAIProvider_Generate_ReasoningOnlyJSONFallback(t *testing.T) {
+	expected := `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]interface{}{"reasoning_content": "final JSON:\n```json\n" + expected + "\n```"}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := llm.NewOpenAIProvider("sk-test-key", "minimax/minimax-m2.7").WithBaseURL(server.URL)
+	result, err := provider.Generate(context.Background(), "test prompt")
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if result != expected {
+		t.Fatalf("expected reasoning JSON fallback %s, got %s", expected, result)
+	}
+}
+
 func TestAnthropicProvider_Name(t *testing.T) {
 	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229")
 	name := provider.Name()
@@ -410,6 +636,33 @@ func TestAnthropicProvider_Generate_Success(t *testing.T) {
 	}
 	if result != expectedResponse {
 		t.Errorf("Response mismatch:\ngot:      %s\nwant:     %s", result, expectedResponse)
+	}
+}
+
+func TestAnthropicProvider_Generate_CustomMaxTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if reqBody["max_tokens"] != float64(8192) {
+			t.Fatalf("expected max_tokens=8192, got %#v", reqBody["max_tokens"])
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"content": []map[string]interface{}{
+				{"type": "text", "text": `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := llm.NewAnthropicProvider("sk-ant-test-key", "claude-3-opus-20240229").
+		WithBaseURL(server.URL).
+		WithMaxTokens(8192)
+	if _, err := provider.Generate(context.Background(), "test prompt"); err != nil {
+		t.Fatalf("Generate failed: %v", err)
 	}
 }
 
@@ -585,6 +838,52 @@ func TestAzureOpenAIProvider_Generate_Success(t *testing.T) {
 	}
 	if result != expectedResponse {
 		t.Errorf("Response mismatch:\ngot:      %s\nwant:     %s", result, expectedResponse)
+	}
+}
+
+func TestAzureOpenAIProvider_Generate_MaxTokensAndReasoning(t *testing.T) {
+	enabled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if reqBody["max_tokens"] != float64(1024) {
+			t.Fatalf("expected max_tokens=1024, got %#v", reqBody["max_tokens"])
+		}
+		reasoning, ok := reqBody["reasoning"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected reasoning object, got %#v", reqBody["reasoning"])
+		}
+		if reasoning["enabled"] != false || reasoning["effort"] != "medium" {
+			t.Fatalf("unexpected reasoning payload: %#v", reasoning)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]interface{}{"content": `{"summary":{"overview":"ok","phases":[]},"sections":{},"citations":[]}`}},
+			},
+		})
+	}))
+	defer server.Close()
+
+	cfg := &llm.LLMConfig{
+		Provider: "azure",
+		Azure: llm.AzureLLMConfig{
+			APIKey:     "azure-key",
+			Endpoint:   server.URL,
+			Deployment: "gpt-4-deployment",
+			MaxTokens:  1024,
+			Reasoning:  llm.ReasoningConfig{Enabled: &enabled, Effort: "medium"},
+		},
+	}
+	provider, err := llm.NewProvider(cfg)
+	if err != nil {
+		t.Fatalf("NewProvider failed: %v", err)
+	}
+	if _, err := provider.Generate(context.Background(), "test prompt"); err != nil {
+		t.Fatalf("Generate failed: %v", err)
 	}
 }
 

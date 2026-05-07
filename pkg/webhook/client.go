@@ -122,6 +122,20 @@ type NotificationPayload struct {
 	Participants    []ParticipantSummary `json:"participants,omitempty"`
 }
 
+// ErrorPayload is a terminal failure notification. It intentionally contains
+// no transcript/minutes content; recipients use it to stop "in progress"
+// polling and surface an operator-safe failure state.
+type ErrorPayload struct {
+	Timestamp       time.Time            `json:"timestamp"`
+	SessionID       string               `json:"session_id"`
+	MinutesID       string               `json:"minutes_id,omitempty"`
+	Status          string               `json:"status"`
+	ErrorCode       string               `json:"error_code"`
+	ErrorMessage    string               `json:"error_message,omitempty"`
+	SessionMetadata string               `json:"session_metadata,omitempty"`
+	Participants    []ParticipantSummary `json:"participants,omitempty"`
+}
+
 // Send delivers a MinutesPayload (push mode). No HMAC signing.
 func (c *Client) Send(ctx context.Context, payload *MinutesPayload) error {
 	if c.url == "" {
@@ -169,6 +183,33 @@ func (c *Client) SendNotification(ctx context.Context, payload *NotificationPayl
 
 	// HMAC-SHA256 signature over the raw JSON body.
 	// Header format: "hmac-sha256=<hex-digest>"
+	if c.secret != "" {
+		mac := hmac.New(sha256.New, []byte(c.secret))
+		mac.Write(jsonPayload)
+		req.Header.Set("X-Aftertalk-Signature", "hmac-sha256="+hex.EncodeToString(mac.Sum(nil)))
+	}
+
+	return c.do(req, payload.SessionID)
+}
+
+func (c *Client) SendError(ctx context.Context, payload *ErrorPayload) error {
+	if c.url == "" {
+		logging.Warnf("webhook URL not configured, skipping error notification")
+		return nil
+	}
+
+	logging.Infof("sending error webhook to %s for session %s", c.url, payload.SessionID)
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
 	if c.secret != "" {
 		mac := hmac.New(sha256.New, []byte(c.secret))
 		mac.Write(jsonPayload)

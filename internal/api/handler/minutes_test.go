@@ -62,6 +62,17 @@ func (m *MockMinutesService) GetMinutesHistory(ctx context.Context, minutesID st
 	return v, args.Error(1)
 }
 
+func (m *MockMinutesService) ListWebhookEvents(ctx context.Context, sessionID, minutesID string) ([]minutes.WebhookEvent, error) {
+	args := m.Called(ctx, sessionID, minutesID)
+	v, _ := args.Get(0).([]minutes.WebhookEvent)
+	return v, args.Error(1)
+}
+
+func (m *MockMinutesService) ReplayWebhookEvent(ctx context.Context, eventID string) error {
+	args := m.Called(ctx, eventID)
+	return args.Error(0)
+}
+
 func (m *MockMinutesService) ConsumeRetrievalToken(ctx context.Context, tokenID string) (*minutes.RetrievalToken, error) {
 	args := m.Called(ctx, tokenID)
 	v, _ := args.Get(0).(*minutes.RetrievalToken)
@@ -414,4 +425,48 @@ func TestMinutesHandler_GetMinutesHistory(t *testing.T) {
 			mockService.AssertExpectations(t)
 		})
 	}
+}
+
+func TestMinutesHandler_ListWebhookEvents(t *testing.T) {
+	mockService := new(MockMinutesService)
+	mockService.On("ListWebhookEvents", mock.Anything, "session-1", "minutes-1").
+		Return([]minutes.WebhookEvent{
+			{
+				ID:            "event-1",
+				MinutesID:     "minutes-1",
+				WebhookURL:    "https://example.test/hook",
+				PayloadType:   "error",
+				Status:        "failed",
+				AttemptNumber: 5,
+			},
+		}, nil)
+	handler := NewMinutesHandler(mockService)
+
+	req := httptest.NewRequest("GET", "/webhooks/events?session_id=session-1&minutes_id=minutes-1", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ListWebhookEvents(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var events []minutes.WebhookEvent
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &events))
+	require.Len(t, events, 1)
+	assert.Equal(t, "event-1", events[0].ID)
+	assert.Equal(t, "error", events[0].PayloadType)
+	mockService.AssertExpectations(t)
+}
+
+func TestMinutesHandler_ReplayWebhookEvent(t *testing.T) {
+	mockService := new(MockMinutesService)
+	mockService.On("ReplayWebhookEvent", mock.Anything, "event-1").Return(nil)
+	handler := NewMinutesHandler(mockService)
+
+	req := httptest.NewRequest("POST", "/webhooks/events/event-1/replay", nil)
+	req = addChiContext(req, "id", "event-1")
+	rec := httptest.NewRecorder()
+
+	handler.ReplayWebhookEvent(rec, req)
+
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+	mockService.AssertExpectations(t)
 }

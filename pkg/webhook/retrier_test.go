@@ -233,6 +233,39 @@ func TestRetrier_ProcessPending_DeliveredPayloadMatchesEnqueued(t *testing.T) {
 	assert.Equal(t, "session-xyz", receivedPayload.SessionID)
 }
 
+func TestRetrier_ProcessPending_DeliversErrorPayload(t *testing.T) {
+	var receivedPayload ErrorPayload
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&receivedPayload) //nolint:errcheck
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	db := openTestDB(t)
+	r := NewRetrier(db, NewClient(srv.URL, 5*time.Second))
+
+	payload := &ErrorPayload{
+		SessionID:    "session-error",
+		MinutesID:    "min-error",
+		Status:       "error",
+		ErrorCode:    "provider_timeout",
+		ErrorMessage: "generation deadline exceeded",
+		Timestamp:    time.Date(2026, 5, 6, 12, 0, 0, 0, time.UTC),
+	}
+	require.NoError(t, r.EnqueueError(context.Background(), "min-error", srv.URL, payload))
+	r.processPending(context.Background())
+
+	assert.Equal(t, "session-error", receivedPayload.SessionID)
+	assert.Equal(t, "min-error", receivedPayload.MinutesID)
+	assert.Equal(t, "provider_timeout", receivedPayload.ErrorCode)
+
+	var payloadType, status string
+	require.NoError(t, db.QueryRowContext(context.Background(),
+		`SELECT payload_type, status FROM webhook_events WHERE minutes_id='min-error'`).Scan(&payloadType, &status))
+	assert.Equal(t, "error", payloadType)
+	assert.Equal(t, "delivered", status)
+}
+
 // ── Run (background worker) ───────────────────────────────────────────────
 
 func TestRetrier_Run_DeliversEventWithinInterval(t *testing.T) {

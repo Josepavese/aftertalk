@@ -25,6 +25,7 @@ type LLMConfig struct {
 type OllamaConfig struct {
 	BaseURL string
 	Model   string
+	Think   *bool
 }
 
 type OpenAIConfig struct {
@@ -32,12 +33,15 @@ type OpenAIConfig struct {
 	Model          string
 	BaseURL        string // optional override, e.g. https://openrouter.ai/api
 	RequestTimeout time.Duration
+	MaxTokens      int
+	Reasoning      ReasoningConfig
 }
 
 type AnthropicConfig struct {
 	APIKey         string
 	Model          string
 	RequestTimeout time.Duration
+	MaxTokens      int
 }
 
 type AzureLLMConfig struct {
@@ -45,6 +49,16 @@ type AzureLLMConfig struct {
 	Endpoint       string
 	Deployment     string
 	RequestTimeout time.Duration
+	MaxTokens      int
+	Reasoning      ReasoningConfig
+}
+
+// ReasoningConfig captures provider-specific controls for thinking/reasoning
+// models. Adapters translate these fields into each provider's request shape.
+type ReasoningConfig struct {
+	Enabled *bool
+	Effort  string
+	Exclude bool
 }
 
 // Citation is a verbatim quote from the transcript with a role label.

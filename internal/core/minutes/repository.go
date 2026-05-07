@@ -18,6 +18,19 @@ type MinutesRepository struct {
 	*core.BaseRepository
 }
 
+type WebhookEvent struct {
+	DeliveredAt   *time.Time `json:"delivered_at,omitempty"`
+	NextRetryAt   *time.Time `json:"next_retry_at,omitempty"`
+	ID            string     `json:"id"`
+	MinutesID     string     `json:"minutes_id"`
+	WebhookURL    string     `json:"webhook_url"`
+	PayloadType   string     `json:"payload_type"`
+	Status        string     `json:"status"`
+	ErrorMessage  string     `json:"error_message,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	AttemptNumber int        `json:"attempt_number"`
+}
+
 func NewMinutesRepository(db *sql.DB) *MinutesRepository {
 	return &MinutesRepository{
 		BaseRepository: core.NewBaseRepository(db),
@@ -59,8 +72,8 @@ func (r *MinutesRepository) Update(ctx context.Context, m *Minutes) error {
 	}
 
 	_, err = r.ExecContext(ctx, `
-		UPDATE minutes SET version = ?, content = ?, delivered_at = ?, status = ? WHERE id = ?`,
-		m.Version, content, deliveredAt, string(m.Status), m.ID,
+		UPDATE minutes SET template_id = ?, version = ?, content = ?, delivered_at = ?, status = ?, provider = ? WHERE id = ?`,
+		m.TemplateID, m.Version, content, deliveredAt, string(m.Status), m.Provider, m.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update minutes: %w", err)
@@ -95,6 +108,109 @@ func (r *MinutesRepository) HasWebhookEvent(ctx context.Context, minutesID strin
 		return false, fmt.Errorf("inspect webhook events: %w", err)
 	}
 	return count > 0, nil
+}
+
+func (r *MinutesRepository) ListWebhookEvents(ctx context.Context, sessionID, minutesID string) ([]WebhookEvent, error) {
+	query := `
+		SELECT e.id, e.minutes_id, e.webhook_url, COALESCE(e.payload_type, 'minutes'),
+		       e.attempt_number, e.status, e.delivered_at, e.error_message, e.next_retry_at, e.created_at
+		FROM webhook_events e
+		JOIN minutes m ON m.id = e.minutes_id`
+	args := []interface{}{}
+	var filters []string
+	if sessionID != "" {
+		filters = append(filters, "m.session_id = ?")
+		args = append(args, sessionID)
+	}
+	if minutesID != "" {
+		filters = append(filters, "e.minutes_id = ?")
+		args = append(args, minutesID)
+	}
+	if len(filters) > 0 {
+		query += " WHERE " + strings.Join(filters, " AND ")
+	}
+	query += " ORDER BY e.created_at DESC"
+
+	rows, err := r.QueryContext(ctx, query, args...)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no such table: webhook_events") {
+			return []WebhookEvent{}, nil
+		}
+		return nil, fmt.Errorf("list webhook events: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var events []WebhookEvent
+	for rows.Next() {
+		ev, err := scanWebhookEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, ev)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate webhook events: %w", err)
+	}
+	return events, nil
+}
+
+func (r *MinutesRepository) ReplayWebhookEvent(ctx context.Context, eventID string) error {
+	res, err := r.ExecContext(ctx, `
+		UPDATE webhook_events
+		SET status='pending', attempt_number=0, next_retry_at=?, delivered_at=NULL, error_message=NULL
+		WHERE id=?`,
+		time.Now().UTC().Format(time.RFC3339), eventID,
+	)
+	if err != nil {
+		return fmt.Errorf("replay webhook event: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err == nil && rows == 0 {
+		return fmt.Errorf("webhook event not found: %s", eventID) //nolint:err113
+	}
+	return nil
+}
+
+type webhookEventScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanWebhookEvent(row webhookEventScanner) (WebhookEvent, error) {
+	var ev WebhookEvent
+	var deliveredAt, errorMessage, nextRetryAt, createdAt sql.NullString
+	if err := row.Scan(
+		&ev.ID,
+		&ev.MinutesID,
+		&ev.WebhookURL,
+		&ev.PayloadType,
+		&ev.AttemptNumber,
+		&ev.Status,
+		&deliveredAt,
+		&errorMessage,
+		&nextRetryAt,
+		&createdAt,
+	); err != nil {
+		return ev, fmt.Errorf("scan webhook event: %w", err)
+	}
+	if deliveredAt.Valid {
+		if parsed, err := time.Parse(time.RFC3339, deliveredAt.String); err == nil {
+			ev.DeliveredAt = &parsed
+		}
+	}
+	if nextRetryAt.Valid {
+		if parsed, err := time.Parse(time.RFC3339, nextRetryAt.String); err == nil {
+			ev.NextRetryAt = &parsed
+		}
+	}
+	if createdAt.Valid {
+		if parsed, err := time.Parse(time.RFC3339, createdAt.String); err == nil {
+			ev.CreatedAt = parsed
+		}
+	}
+	if errorMessage.Valid {
+		ev.ErrorMessage = errorMessage.String
+	}
+	return ev, nil
 }
 
 func (r *MinutesRepository) scanOne(row *sql.Row, hint string) (*Minutes, error) {

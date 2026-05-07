@@ -581,6 +581,39 @@ func TestNotificationPayload_SessionContextRoundtrip(t *testing.T) {
 	}
 }
 
+func TestClient_SendError_SignedWithSecret(t *testing.T) {
+	var signature string
+	var received ErrorPayload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		signature = r.Header.Get("X-Aftertalk-Signature")
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewClientWithSecret(server.URL, "01234567890123456789012345678901", 5*time.Second)
+	payload := &ErrorPayload{
+		SessionID:    "sess-error",
+		MinutesID:    "min-error",
+		Status:       "error",
+		ErrorCode:    "provider_timeout",
+		ErrorMessage: "deadline exceeded",
+		Timestamp:    time.Now(),
+	}
+	if err := client.SendError(context.Background(), payload); err != nil {
+		t.Fatalf("SendError: %v", err)
+	}
+	if !strings.HasPrefix(signature, "hmac-sha256=") {
+		t.Fatalf("expected HMAC signature, got %q", signature)
+	}
+	if received.SessionID != "sess-error" || received.ErrorCode != "provider_timeout" {
+		t.Fatalf("unexpected error payload: %+v", received)
+	}
+}
+
 func TestMinutesPayload_DeliveredWithSessionContext(t *testing.T) {
 	var received MinutesPayload
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
