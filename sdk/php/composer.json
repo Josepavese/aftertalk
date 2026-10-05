@@ -3,7 +3,14 @@
   "description": "PHP SDK for the Aftertalk REST API — session management, participant tokens, webhook verification.",
   "type": "library",
   "license": "MIT",
-  "keywords": ["aftertalk", "sdk", "webhook", "webrtc", "transcription", "minutes"],
+  "keywords": [
+    "aftertalk",
+    "sdk",
+    "webhook",
+    "webrtc",
+    "transcription",
+    "minutes"
+  ],
   "homepage": "https://github.com/Josepavese/aftertalk",
   "require": {
     "php": ">=7.4",
